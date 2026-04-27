@@ -1,0 +1,94 @@
+name: Deploy to GitHub Pages
+
+# Auto-deploy a hosted demo to GitHub Pages whenever a release is
+# published. Manual reruns are available via workflow_dispatch (e.g.
+# to refresh the demo when only assets changed).
+#
+# One-time maintainer setup outside this workflow:
+#   Settings → Pages → Source = "GitHub Actions"
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Required by actions/deploy-pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Two near-simultaneous releases queue rather than race.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: build + deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java (Temurin 21)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up Clojure CLI
+        uses: DeLaGuardo/setup-clojure@13.0
+        with:
+          cli: 'latest'
+
+      - name: Cache Maven (~/.m2)
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('deps.edn') }}
+          restore-keys: ${{ runner.os }}-m2-
+
+      - name: Cache gitlibs
+        uses: actions/cache@v4
+        with:
+          path: ~/.gitlibs
+          key: ${{ runner.os }}-gitlibs-${{ hashFiles('deps.edn') }}
+          restore-keys: ${{ runner.os }}-gitlibs-
+
+      - name: Cache shadow-cljs
+        uses: actions/cache@v4
+        with:
+          path: .shadow-cljs
+          key: ${{ runner.os }}-shadow-${{ hashFiles('shadow-cljs.edn', 'deps.edn') }}
+          restore-keys: ${{ runner.os }}-shadow-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Release build
+        run: npx shadow-cljs release app
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # The static SPA: index.html, public/js/main.js (built),
+          # public/assets/, public/styles/ — the whole `public/`
+          # directory is the deployable site.
+          path: ./public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

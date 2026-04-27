@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bareforge</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    :root { color-scheme: light dark; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body { font-family: system-ui, sans-serif; }
+    x-theme {
+      display: block;
+      min-height: 100vh;
+      background: var(--x-color-bg);
+      color: var(--x-color-text);
+    }
+    #app { min-height: 100vh; }
+
+    /* --- chrome layout ------------------------------------------------ */
+    .chrome {
+      display: grid;
+      grid-template-columns: 240px 1fr 320px;
+      grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-areas:
+        "toolbar   toolbar    toolbar"
+        "palette   canvas     inspector"
+        "layers    canvas     inspector";
+      height: 100vh;
+    }
+
+    /* --- preview mode -------------------------------------------------- */
+    .chrome[data-mode="preview"] {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas:
+        "toolbar"
+        "canvas";
+    }
+    .chrome[data-mode="preview"] .panel-palette,
+    .chrome[data-mode="preview"] .panel-layers,
+    .chrome[data-mode="preview"] .panel-inspector { display: none; }
+    .chrome[data-mode="preview"] .canvas-host { padding: 0; }
+    .chrome[data-mode="preview"] [data-bareforge-container]:empty {
+      /* Drop the edit-mode placeholder outline + label in preview. */
+      min-height: 0;
+      min-width: 0;
+      margin: 0;
+      outline: none;
+    }
+    .chrome[data-mode="preview"] [data-bareforge-container]:empty::before {
+      content: none;
+    }
+    .panel-layers {
+      grid-area: layers;
+      border-top: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .panel-inspector { grid-row: palette / span 2; }
+    .canvas-host     { grid-row: palette / span 2; }
+    /* The toolbar itself is an <x-navbar>; it brings its own
+       shadow-DOM styling for the navbar shell (background, border,
+       padding, alignment). Bareforge only needs to place it in the
+       grid and size the brand logo in the light-DOM brand slot.
+       `position: relative` + explicit z-index creates a stacking
+       context above .canvas-host (which is position: relative with
+       overflow: auto) so the x-menu popup the File button opens
+       isn't clipped/shadowed by the canvas host below. */
+    .toolbar {
+      grid-area: toolbar;
+      position: relative;
+      z-index: 20;
+    }
+    .toolbar-brand { display: flex; align-items: center; }
+    .toolbar-brand img { display: block; height: 28px; width: auto; }
+    .toolbar-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .toolbar-title {
+      font-size: 13px;
+      opacity: 0.8;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.85));
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 42ch;
+    }
+    .toolbar-divider {
+      width: 1px;
+      height: 22px;
+      margin: 0 6px;
+      background: var(--x-color-border, rgba(127, 127, 127, 0.35));
+    }
+    .toolbar-icon-button span { font-size: 16px; line-height: 1; }
+    .panel {
+      border-right: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+      padding: 12px;
+      overflow: auto;
+      background: var(--x-color-surface);
+    }
+    .panel-palette   { grid-area: palette; }
+    .panel-inspector {
+      grid-area: inspector;
+      border-right: none;
+      border-left: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+    }
+    .canvas-host {
+      grid-area: canvas;
+      padding: 24px;
+      overflow: auto;
+      position: relative;
+    }
+    .bareforge-selection-overlay {
+      position: absolute;
+      pointer-events: none;
+      border: 1px solid var(--x-color-primary, #4f46e5);
+      border-radius: 2px;
+      box-sizing: border-box;
+      z-index: 100;
+      transition: left 80ms ease, top 80ms ease, width 80ms ease, height 80ms ease;
+    }
+    .bareforge-selection-overlay[data-hidden] { display: none; }
+    .chrome[data-mode="preview"] .bareforge-selection-overlay { display: none; }
+    /* Disable the follow-selection transition while a resize is
+       in progress; otherwise the overlay visibly lags the handle. */
+    .bareforge-selection-overlay[data-resizing] {
+      transition: none;
+    }
+    /* Resize handles — hidden by default, revealed based on the
+       overlay's data-resize-mode. `free` shows all eight; `flow`
+       shows only the three growth handles (E, S, SE). */
+    .bareforge-selection-handle {
+      display: none;
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: var(--x-color-primary, #4f46e5);
+      border: 1px solid white;
+      box-sizing: border-box;
+      pointer-events: auto;
+      z-index: 1;
+    }
+    .bareforge-selection-overlay[data-resize-mode="free"] .bareforge-selection-handle {
+      display: block;
+    }
+    .bareforge-selection-overlay[data-resize-mode="flow"] .bareforge-selection-handle[data-handle="e"],
+    .bareforge-selection-overlay[data-resize-mode="flow"] .bareforge-selection-handle[data-handle="s"],
+    .bareforge-selection-overlay[data-resize-mode="flow"] .bareforge-selection-handle[data-handle="se"] {
+      display: block;
+    }
+    .bareforge-selection-handle[data-handle="nw"] { top: -5px;    left: -5px;    cursor: nw-resize; }
+    .bareforge-selection-handle[data-handle="n"]  { top: -5px;    left: 50%;     margin-left: -5px; cursor: n-resize; }
+    .bareforge-selection-handle[data-handle="ne"] { top: -5px;    right: -5px;   cursor: ne-resize; }
+    .bareforge-selection-handle[data-handle="e"]  { top: 50%;     right: -5px;   margin-top: -5px;  cursor: e-resize; }
+    .bareforge-selection-handle[data-handle="se"] { bottom: -5px; right: -5px;   cursor: se-resize; }
+    .bareforge-selection-handle[data-handle="s"]  { bottom: -5px; left: 50%;     margin-left: -5px; cursor: s-resize; }
+    .bareforge-selection-handle[data-handle="sw"] { bottom: -5px; left: -5px;    cursor: sw-resize; }
+    .bareforge-selection-handle[data-handle="w"]  { top: 50%;     left: -5px;    margin-top: -5px;  cursor: w-resize; }
+    .bareforge-inline-edit {
+      position: absolute;
+      z-index: 101;
+      box-sizing: border-box;
+      background: var(--x-color-bg, #fff);
+      color: var(--x-color-text, #1a1a1a);
+      border: 1px dashed var(--x-color-primary, #4f46e5);
+      outline: none;
+      resize: none;
+      overflow: hidden;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+    }
+    .chrome[data-mode="preview"] .bareforge-inline-edit { display: none; }
+    .placeholder-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+
+    /* --- palette ------------------------------------------------------ */
+    .palette-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      margin-bottom: 8px;
+    }
+    .panel-palette { display: flex; flex-direction: column; gap: 10px; }
+    .palette-search { width: 100%; }
+    .palette-groups { display: flex; flex-direction: column; gap: 6px; }
+    .palette-category { border-radius: 6px; }
+    .palette-category-summary {
+      cursor: pointer;
+      padding: 6px 4px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      list-style: none;
+      user-select: none;
+    }
+    .palette-category[open] .palette-category-summary { color: var(--x-color-text); }
+    .palette-category-items {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 2px 0 6px 0;
+    }
+    .palette-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+    .palette-item:hover {
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.12));
+    }
+    .palette-item:active {
+      background: var(--x-color-surface-active, rgba(127, 127, 127, 0.2));
+    }
+    .palette-item-label { font-size: 13px; font-weight: 500; }
+    .palette-item-tag {
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+    .palette-empty {
+      font-size: 12px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      padding: 12px 4px;
+      text-align: center;
+    }
+
+    /* --- layers ------------------------------------------------------- */
+    .layers-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+    .layers-list {
+      display: flex;
+      flex-direction: column;
+      overflow: auto;
+      flex: 1;
+    }
+    .layers-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 4px 8px;
+      font-size: 12px;
+      cursor: grab;
+      border-radius: 4px;
+      user-select: none;
+      touch-action: none;
+    }
+    .layers-row:hover {
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.12));
+    }
+    .layers-row.is-selected {
+      background: var(--x-color-primary, #4f46e5);
+      color: #fff;
+    }
+    .layers-row.is-selected .layers-row-tag { color: rgba(255, 255, 255, 0.7); }
+    .layers-row-label { font-weight: 500; }
+    .layers-row-tag {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+
+    /* --- inspector --------------------------------------------------- */
+    .panel-inspector { display: flex; flex-direction: column; gap: 10px; }
+    .inspector-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+    .inspector-body { display: flex; flex-direction: column; gap: 16px; }
+    .inspector-header {
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+    }
+    .inspector-header-label { font-size: 14px; font-weight: 600; }
+    .inspector-header-tag {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+    .inspector-section { display: flex; flex-direction: column; gap: 8px; }
+    .inspector-section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+    .inspector-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .inspector-field-label {
+      font-size: 11px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .inspector-field-widget { width: 100%; }
+    /* Compact x-color-picker for the Inspector. Halves the main
+       colour-area height and tightens the strip heights + gap so a
+       picker with alpha still fits where the default (alpha-less)
+       picker used to sit. */
+    /* `:host{display:inline-block}` by default and its inner
+       `[part=container]` is sized by `--x-color-picker-width`
+       (240px). Override both so the picker stretches to fill the
+       surrounding column, and halve the inner strip/area heights so
+       a picker with alpha still fits where the default (alpha-less)
+       picker used to sit. Applies to both the Inspector and the
+       floating Theme panel — they share the same constraints. */
+    .inspector-color-picker,
+    .theme-color-picker {
+      display: block;
+      width: 100%;
+      --x-color-picker-width: 100%;
+      --x-color-picker-area-height: 80px;
+      --x-color-picker-strip-height: 10px;
+      --x-color-picker-gap: 6px;
+      --x-color-picker-swatch-size: 20px;
+    }
+    .inspector-slot {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      padding: 4px 0;
+    }
+    .inspector-slot-name { font-weight: 500; }
+    .inspector-slot-meta {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+    .inspector-readonly-value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.08));
+    }
+    .inspector-empty {
+      font-size: 12px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      padding: 4px 0;
+    }
+    .inspector-empty-state { padding: 12px 4px; text-align: center; }
+
+    /* --- inspector fields locked row -------------------------------- */
+    .inspector-data-row--locked { opacity: 0.55; }
+    .inspector-data-row--locked .inspector-data-field::before {
+      content: "🔒 ";
+    }
+    .inspector-data-field { font-size: 12px; line-height: 1.3; }
+    .inspector-data-field--stacked {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .inspector-data-field-head { font-size: 12px; }
+    .inspector-data-field-summary {
+      font-size: 10px;
+      opacity: 0.65;
+    }
+
+    /* --- inspector bind picker --------------------------------------- */
+    .inspector-bind-picker {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.3));
+      border-radius: 4px;
+      background: var(--x-color-surface, rgba(255, 255, 255, 0.02));
+    }
+    .inspector-bind-picker-body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .inspector-bind-section {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.7;
+      padding: 6px 4px 2px;
+      border-bottom: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.25));
+    }
+    .inspector-bind-suggestion { padding: 4px 6px; cursor: pointer; border-radius: 2px; }
+    .inspector-bind-suggestion:hover { background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.08)); }
+    .inspector-bind-suggestion--dim  { opacity: 0.45; }
+    .inspector-bind-suggestion--setter { padding-left: 16px; opacity: 0.75; font-style: italic; }
+    .inspector-bind-subsection {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.55;
+      padding: 4px 4px 2px 16px;
+    }
+
+    /* --- inspector events section ------------------------------------ */
+    .inspector-event-row-wrap { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+    .inspector-event-hint { font-size: 11px; opacity: 0.55; padding-left: 2px; }
+
+    /* --- inspector seed-records table -------------------------------- */
+    .inspector-field-def { display: flex; flex-direction: column; gap: 4px; }
+    .inspector-seed-toggle { flex: 0 0 auto; margin-right: 4px; }
+    .inspector-seed-editor {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 4px 0 4px 12px;
+      border-left: 2px solid var(--x-color-border, rgba(127, 127, 127, 0.3));
+    }
+    .inspector-seed-table {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .inspector-seed-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      padding: 6px 8px;
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.25));
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--x-color-surface, #fff) 92%, transparent);
+    }
+    .inspector-seed-cells {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 6px;
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow-x: auto;
+    }
+    .inspector-seed-cell-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1 1 96px;
+      min-width: 72px;
+    }
+    .inspector-seed-caption {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.55;
+      padding-left: 2px;
+    }
+    .inspector-seed-cell { width: 100%; }
+    /* Seed cells aren't searches — hide the leading icon and reclaim
+       its horizontal space for the input itself. */
+    .inspector-seed-cell::part(icon) { display: none; }
+    .inspector-seed-cell::part(wrapper) { padding-inline-start: 0.4rem; }
+    .inspector-seed-remove {
+      flex: 0 0 auto;
+      margin-left: auto;
+      --x-button-padding-inline: 0.35rem;
+    }
+    .inspector-seed-add { display: flex; justify-content: flex-start; }
+
+    /* --- drag ghost / drop target ------------------------------------ */
+    .bareforge-drag-ghost {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 9999;
+      pointer-events: none;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: var(--x-color-primary, #4f46e5);
+      color: #fff;
+      border-radius: 4px;
+      box-shadow: 0 6px 16px rgba(15, 23, 42, 0.25);
+      opacity: 0.92;
+      transition: background 80ms ease, opacity 80ms ease;
+    }
+    .bareforge-drag-ghost.is-invalid {
+      background: #94a3b8;
+      opacity: 0.55;
+    }
+    .bareforge-drop-inside {
+      outline: 2px dashed var(--x-color-primary, #4f46e5) !important;
+      outline-offset: 2px;
+      transition: outline-color 120ms ease;
+    }
+    .bareforge-drop-before {
+      box-shadow: 0 -3px 0 0 var(--x-color-primary, #4f46e5);
+    }
+    .bareforge-drop-after {
+      box-shadow: 0 3px 0 0 var(--x-color-primary, #4f46e5);
+    }
+    .bareforge-slot-target {
+      outline: 2px dashed var(--x-color-primary, #4f46e5);
+      outline-offset: 2px;
+      border-radius: 4px;
+      background: var(--x-color-surface-hover, rgba(79, 70, 229, 0.08));
+    }
+    /* Per-slot drop-zone overlay for multi-slot canvas components.
+       The container layer itself does not capture the cursor;
+       individual strips DO, so `elementFromPoint` lands on a strip
+       and the drag layer's `find-slot-row` walk picks it up as a
+       slot target (same path as the Inspector's slot rows). */
+    .bareforge-slot-strips-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 101;
+    }
+    .bareforge-slot-strips-overlay[data-hidden] { display: none; }
+    .bareforge-slot-strip {
+      position: absolute;
+      pointer-events: auto;
+      outline: 2px dashed var(--x-color-primary, #4f46e5);
+      outline-offset: -2px;
+      background: rgba(79, 70, 229, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+    .bareforge-slot-strip-label {
+      font: 500 11px/1 system-ui, sans-serif;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--x-color-primary, #4f46e5);
+      color: white;
+      pointer-events: none;
+    }
+    .chrome[data-mode="preview"] .bareforge-slot-strips-overlay { display: none; }
+    .inspector-slot { padding: 6px 8px; border-radius: 4px; }
+    .palette-item { touch-action: none; }
+
+    /* --- theme editor panel ------------------------------------------ */
+    .theme-panel {
+      position: fixed;
+      top: 60px;
+      right: 16px;
+      z-index: 9000;
+      width: 280px;
+      max-height: calc(100vh - 80px);
+      overflow: auto;
+      padding: 14px 16px;
+      border-radius: 10px;
+      background: var(--x-color-surface);
+      color: var(--x-color-text);
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.3));
+      box-shadow: 0 20px 48px rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .theme-panel[data-hidden] { display: none; }
+    .theme-panel-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+    .theme-body { display: flex; flex-direction: column; gap: 10px; }
+    .theme-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .theme-row-label {
+      font-size: 11px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .theme-row-widget,
+    .theme-preset-select { width: 100%; }
+
+    /* --- templates panel --------------------------------------------- */
+    .templates-panel {
+      position: fixed;
+      top: 60px;
+      right: 16px;
+      z-index: 9000;
+      width: 320px;
+      max-height: calc(100vh - 80px);
+      overflow: auto;
+      padding: 14px 16px;
+      border-radius: 10px;
+      background: var(--x-color-surface);
+      color: var(--x-color-text);
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.3));
+      box-shadow: 0 20px 48px rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .templates-panel[data-hidden] { display: none; }
+    .templates-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      margin-bottom: 4px;
+    }
+    .template-card {
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.3));
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+    .template-card:hover {
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.1));
+      border-color: var(--x-color-primary, #4f46e5);
+    }
+    .template-card-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .template-card-desc {
+      font-size: 11px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      margin-top: 2px;
+    }
+
+    /* --- empty container affordance ---------------------------------- */
+    /* Give container-like components a visible footprint when they're
+       empty so designers can see and target them in edit mode. Leaves
+       (x-button, x-switch, etc.) do not carry data-bareforge-container
+       so they are unaffected. */
+    .canvas-host [data-bareforge-container]:empty {
+      display: block;
+      position: relative;
+      min-height: 80px;
+      min-width: 120px;
+      margin: 4px 0;
+      outline: 1px dashed var(--x-color-border, rgba(127, 127, 127, 0.5));
+      outline-offset: -1px;
+      border-radius: 6px;
+    }
+    .canvas-host [data-bareforge-container]:empty::before {
+      content: attr(data-bareforge-tag) "  (empty)";
+      position: absolute;
+      top: 6px;
+      left: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      letter-spacing: 0.4px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      pointer-events: none;
+      user-select: none;
+    }
+    /* Containers that host an absolute :background child get this
+       class from the reconciler so they form a positioned ancestor
+       without touching their own inline style. `isolation: isolate`
+       establishes a fresh stacking context so the background child
+       (z-index: 0) stays visually below the flow siblings
+       (z-index: 1) regardless of their own DOM order. */
+    .bareforge-positioned {
+      position: relative;
+      isolation: isolate;
+    }
+    .bareforge-positioned > [data-bareforge-placement="background"] {
+      z-index: 0;
+    }
+    /* Flow siblings paint above background (z-index 0) but below
+       free-positioned decoratives (z-index 2 set inline). Elements
+       with :free placement are already absolute and must NOT get
+       position: relative from this rule or they lose their
+       coordinates. */
+    .bareforge-positioned
+      > :not([data-bareforge-placement="background"]):not([data-bareforge-placement="free"]) {
+      position: relative;
+      z-index: 1;
+    }
+    /* Edit mode: background layers are clickable so users can select
+       them by clicking empty canvas space. Preview mode: they are
+       transparent to pointer events so real content underneath stays
+       interactive. */
+    [data-bareforge-placement="background"] { pointer-events: auto; }
+    .chrome[data-mode="preview"] [data-bareforge-placement="background"] {
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <x-theme preset="ocean">
+    <div id="app"></div>
+  </x-theme>
+  <script src="/js/main.js"></script>
+</body>
+</html>

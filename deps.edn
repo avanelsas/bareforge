@@ -1,0 +1,28 @@
+{:paths ["src" "test"]
+ :deps  {org.clojure/clojure          {:mvn/version "1.12.0"}
+         org.clojure/clojurescript    {:mvn/version "1.11.132"}
+         thheller/shadow-cljs         {:mvn/version "2.28.18"}
+         com.github.avanelsas/baredom {:mvn/version "2.4.0"}}
+
+ :aliases
+ ;; Scaffolder for onboarding a new BareDOM component into Bareforge.
+ ;; Reads the BareDOM jar off the classpath, extracts observed
+ ;; attributes, and edits public_api.cljs / augment.cljs /
+ ;; categories.cljs via rewrite-clj. See scripts/scaffold_component.clj
+ ;; and CLAUDE.md for the user-facing recipe. Dev-only — rewrite-clj
+ ;; and tools.reader never ship in the app build.
+ {:scaffold
+  {:extra-paths ["scripts" "src"]
+   :extra-deps  {rewrite-clj/rewrite-clj {:mvn/version "1.1.49"}}
+   :exec-fn     scaffold-component/scaffold!}
+
+  ;; Scaffold a new export plugin (target directory + skeleton
+  ;; plugin.cljs with a pre-filled manifest). See
+  ;; scripts/new_export.clj and docs/plugins.md for the user-facing
+  ;; recipe.
+  ;;
+  ;;   clojure -X:new-export :id :react :label "React"
+  ;;   clojure -X:new-export :id :svelte :label "Svelte" :order 50 :dry-run true
+  :new-export
+  {:extra-paths ["scripts"]
+   :exec-fn     new-export/-main}}}

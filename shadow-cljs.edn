@@ -1,0 +1,23 @@
+{:deps     true
+ :dev-http {8765 "public"}
+ :builds
+ {:app  {:target     :browser
+         :output-dir "public/js"
+         ;; Relative asset-path (no leading slash) so the same release
+         ;; artefact serves correctly under both the dev server's `/`
+         ;; root and a sub-path host like GitHub Pages
+         ;; (https://<owner>.github.io/bareforge/).
+         :asset-path "js"
+         :modules    {:main {:init-fn bareforge.main/init}}
+         :devtools   {:preloads []}
+         :compiler-options {:output-feature-set :es2020}
+         :release    {:compiler-options {:optimizations :advanced}}}
+
+  :test {:target    :node-test
+         :output-to "out/node-tests.js"
+         :ns-regexp "-test$"
+         :autorun   true}
+
+  :export-cljs {:target    :node-script
+                :output-to "out/export-cljs.js"
+                :main      bareforge.export.cljs-script/main}}}

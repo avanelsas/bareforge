@@ -1,0 +1,5 @@
+{:indents    {}
+ :remove-surrounding-whitespace? true
+ :remove-trailing-whitespace?    true
+ :insert-missing-whitespace?     true
+ :remove-consecutive-blank-lines? true}

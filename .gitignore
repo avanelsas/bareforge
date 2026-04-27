@@ -1,0 +1,12 @@
+.shadow-cljs/
+target/
+public/js/
+node_modules/
+.clj-kondo/.cache/
+.cpcache/
+out/
+*.zip
+
+# macOS Finder metadata
+.DS_Store
+**/.DS_Store
