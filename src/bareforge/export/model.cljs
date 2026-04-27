@@ -159,17 +159,17 @@
     {:fields   (or (:fields node) [])
      :actions  (or (:actions node) [])
      :bindings (into []
-                 (for [n all-nodes
-                       [prop-name {:keys [field direction]}] (:bindings n)]
-                   {:prop      prop-name
-                    :field     field
-                    :direction direction
-                    :node-id   (:id n)
-                    :tag       (:tag n)}))
+                     (for [n all-nodes
+                           [prop-name {:keys [field direction]}] (:bindings n)]
+                       {:prop      prop-name
+                        :field     field
+                        :direction direction
+                        :node-id   (:id n)
+                        :tag       (:tag n)}))
      :events   (into []
-                 (for [n all-nodes
-                       t (:events n)]
-                   (assoc t :node-id (:id n) :tag (:tag n))))}))
+                     (for [n all-nodes
+                           t (:events n)]
+                       (assoc t :node-id (:id n) :tag (:tag n))))}))
 
 (defn collect-group-data
   "Collect all fields, actions, bindings, and triggers from all
@@ -194,10 +194,10 @@
    own no state — their db file carries specs only."
   [doc group]
   (boolean
-    (some (fn [id]
-            (when-let [n (m/get-node doc id)]
-              (actions/template-group? doc n)))
-          (:instance-ids group))))
+   (some (fn [id]
+           (when-let [n (m/get-node doc id)]
+             (actions/template-group? doc n)))
+         (:instance-ids group))))
 
 (defn stateful-group?
   "True when a group owns state — the inverse of template-group?."
@@ -216,9 +216,9 @@
    `explicit-field-owners` first and fall back to this index."
   [doc all-groups]
   (into {}
-    (for [g all-groups
-          {:keys [name]} (:fields (collect-group-data doc (:instance-ids g) all-groups))]
-      [name (:ns-name g)])))
+        (for [g all-groups
+              {:keys [name]} (:fields (collect-group-data doc (:instance-ids g) all-groups))]
+          [name (:ns-name g)])))
 
 (defn name->ns-name-map
   "Map from a group's user-facing `:name` (as stored in bindings /
@@ -226,10 +226,10 @@
    the picked group name back to the compiled namespace identifier."
   [doc all-groups]
   (into {}
-    (for [g     all-groups
-          :let  [node (m/get-node doc (first (:instance-ids g)))]
-          :when (:name node)]
-      [(:name node) (:ns-name g)])))
+        (for [g     all-groups
+              :let  [node (m/get-node doc (first (:instance-ids g)))]
+              :when (:name node)]
+          [(:name node) (:ns-name g)])))
 
 (defn explicit-field-owners
   "Walk `node`'s subtree (stopping at sub-group boundaries) and
@@ -240,12 +240,12 @@
   ([node] (explicit-field-owners node #{}))
   ([node sub-group-ids]
    (let [own   (concat
-                 (when (and (:text-field node)
-                            (:text-field-owner node))
-                   [[(:text-field node) (:text-field-owner node)]])
-                 (for [[_ {:keys [field owner]}] (:bindings node)
-                       :when (and field owner)]
-                   [field owner]))
+                (when (and (:text-field node)
+                           (:text-field-owner node))
+                  [[(:text-field node) (:text-field-owner node)]])
+                (for [[_ {:keys [field owner]}] (:bindings node)
+                      :when (and field owner)]
+                  [field owner]))
          kids  (for [[_ kids] (m/slot-entries node)
                      c        kids
                      :when    (not (contains? sub-group-ids (:id c)))
@@ -263,10 +263,10 @@
   ([node] (collect-read-bindings node #{}))
   ([node sub-group-ids]
    (let [own (concat
-               (for [[_ {:keys [field direction]}] (:bindings node)
-                     :when (contains? #{:read :read-write} direction)]
-                 field)
-               (when-let [tf (:text-field node)] [tf]))
+              (for [[_ {:keys [field direction]}] (:bindings node)
+                    :when (contains? #{:read :read-write} direction)]
+                field)
+              (when-let [tf (:text-field node)] [tf]))
          child-bindings (for [[_ kids] (m/slot-entries node)
                               child kids
                               :when (not (contains? sub-group-ids (:id child)))
@@ -318,10 +318,10 @@
                      child kids
                      entry (if (contains? group-ids (:id child))
                              [{:child child :slot-name (first
-                                                         (for [[s ks] (m/slot-entries n)
-                                                               c ks
-                                                               :when (= (:id c) (:id child))]
-                                                           s))}]
+                                                        (for [[s ks] (m/slot-entries n)
+                                                              c ks
+                                                              :when (= (:id c) (:id child))]
+                                                          s))}]
                              (walk child))]
                  entry))]
     (for [{:keys [child slot-name]} (walk node)]
@@ -334,13 +334,13 @@
    via `:of-group`. Returns nil if no such host exists."
   [doc all-groups tpl-name]
   (first
-    (for [g all-groups
-          :let [node (m/get-node doc (first (:instance-ids g)))]
-          fd    (:fields node)
-          :when (and (collection-field? fd)
-                     (= (:of-group fd) tpl-name))]
-      {:ns-name    (:ns-name g)
-       :field-name (cljs.core/name (:name fd))})))
+   (for [g all-groups
+         :let [node (m/get-node doc (first (:instance-ids g)))]
+         fd    (:fields node)
+         :when (and (collection-field? fd)
+                    (= (:of-group fd) tpl-name))]
+     {:ns-name    (:ns-name g)
+      :field-name (cljs.core/name (:name fd))})))
 
 (defn filter-by-of-group
   "Template group name that owns the record shape for a

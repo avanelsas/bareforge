@@ -59,7 +59,7 @@
    `#rrggbbaa`. Returns nil when the string doesn't match."
   [s]
   (when-let [m (re-find #"(?i)^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$"
-                       s)]
+                        s)]
     (let [[_ r g b a] m
           hex6 (str "#" (byte->hex2 (js/parseFloat r))
                     (byte->hex2 (js/parseFloat g))

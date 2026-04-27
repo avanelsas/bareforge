@@ -31,9 +31,9 @@
                                                :attrs {"variant" "primary"}
                                                :props {:disabled true}})
         s1                    (assoc s0 :document d3
-                                        :theme {:base-preset "aurora"
-                                                :overrides {"--x-color-primary" "#ff00aa"
-                                                            "--x-radius-lg"    "24px"}})
+                                     :theme {:base-preset "aurora"
+                                             :overrides {"--x-color-primary" "#ff00aa"
+                                                         "--x-radius-lg"    "24px"}})
         r                     (idb/deserialize (pr-str (idb/serialize s1)))]
     (is (= (:document s1) (:document r)))
     (is (= (:theme    s1) (:theme    r)))
@@ -52,6 +52,6 @@
 
 (deftest deserialize-accepts-minimal-valid
   (is (some? (idb/deserialize (pr-str {:format "bareforge-project"
-                                        :version 1
-                                        :document (m/empty-document)
-                                        :theme {}})))))
+                                       :version 1
+                                       :document (m/empty-document)
+                                       :theme {}})))))

@@ -95,14 +95,14 @@
   [app-ns og-ns record]
   (str "{"
        (str/join ", "
-         (for [[k v] record]
-           (str "\"" (record-key app-ns og-ns (cljs.core/name k)) "\": "
-                (cond
-                  (string? v)  (str "\"" (esc v) "\"")
-                  (number? v)  (str v)
-                  (boolean? v) (str v)
-                  (nil? v)     "null"
-                  :else        (str "\"" (esc (str v)) "\"")))))
+                 (for [[k v] record]
+                   (str "\"" (record-key app-ns og-ns (cljs.core/name k)) "\": "
+                        (cond
+                          (string? v)  (str "\"" (esc v) "\"")
+                          (number? v)  (str v)
+                          (boolean? v) (str v)
+                          (nil? v)     "null"
+                          :else        (str "\"" (esc (str v)) "\"")))))
        "}"))
 
 (defn- field-default-literal
@@ -116,7 +116,7 @@
       (em/collection-field? fd)
       (str "["
            (str/join ", "
-             (for [r (or v [])] (seed-record-literal app-ns og r)))
+                     (for [r (or v [])] (seed-record-literal app-ns og r)))
            "]")
 
       (nil? v)
@@ -149,9 +149,9 @@
         (str "// Auto-generated: db slice for group \"" (:ns-name group) "\".\n"
              "export const defaultDb = {\n"
              (str/join ",\n"
-               (for [fd fields]
-                 (str "  \"" (field-key app-ns (:ns-name group) (:name fd)) "\": "
-                      (field-default-literal app-ns fd))))
+                       (for [fd fields]
+                         (str "  \"" (field-key app-ns (:ns-name group) (:name fd)) "\": "
+                              (field-default-literal app-ns fd))))
              "\n};\n")))))
 
 ;; --- subs (per stateful group) ------------------------------------------
@@ -219,8 +219,8 @@
   (let [id      (sub-id app-ns (:ns-name group) (:name fd))
         sources (:source-fields (:computed fd))
         src-ids (str/join ", "
-                  (for [s sources]
-                    (str "\"" (sub-id app-ns (:ns-name group) s) "\"")))]
+                          (for [s sources]
+                            (str "\"" (sub-id app-ns (:ns-name group) s) "\"")))]
     (str "regSubMulti(\"" id "\", [" src-ids
          "], (vs) => vs.some(Boolean));")))
 
@@ -294,10 +294,10 @@
         multi?  (some #{:any-of :filter-by :join-on} ops)
         direct? (some (complement em/computed?) fields)
         needs-qualify? (boolean
-                         (some (fn [fd]
-                                 (and (= :join-on (get-in fd [:computed :operation]))
-                                      (get-in fd [:computed :join-target :of-group])))
-                               fields))]
+                        (some (fn [fd]
+                                (and (= :join-on (get-in fd [:computed :operation]))
+                                     (get-in fd [:computed :join-target :of-group])))
+                              fields))]
     (cond-> []
       direct? (conj "regSubDirect")
       simple? (conj "regSubDerived")
@@ -318,10 +318,10 @@
                "import { " (str/join ", " imports)
                " } from \"../runtime.js\";\n\n"
                (str/join "\n"
-                 (for [fd fields]
-                   (if (em/computed? fd)
-                     (emit-computed-sub app-ns group fd doc all-groups)
-                     (emit-direct-sub app-ns group fd))))
+                         (for [fd fields]
+                           (if (em/computed? fd)
+                             (emit-computed-sub app-ns group fd doc all-groups)
+                             (emit-direct-sub app-ns group fd))))
                "\n"))))))
 
 ;; --- events (per stateful group) ----------------------------------------
@@ -400,10 +400,10 @@
    (or :set) on an :of-group target?"
   [doc group all-groups actions]
   (boolean
-    (some (fn [{:keys [operation target-field]}]
-            (and (contains? #{:add :remove :set} operation)
-                 (field-of-group doc group all-groups target-field)))
-          actions)))
+   (some (fn [{:keys [operation target-field]}]
+           (and (contains? #{:add :remove :set} operation)
+                (field-of-group doc group all-groups target-field)))
+         actions)))
 
 (defn- uses-deep-equal?
   "Does any declared action need the deep-equal helper — i.e. :remove."
@@ -433,9 +433,9 @@
              "import { " (str/join ", " extra-imports)
              " } from \"../runtime.js\";\n\n"
              (str/join "\n\n"
-               (concat
-                 (for [fd auto-setters] (emit-auto-setter app-ns group fd))
-                 (for [a declared] (emit-action app-ns group a doc all-groups))))
+                       (concat
+                        (for [fd auto-setters] (emit-auto-setter app-ns group fd))
+                        (for [a declared] (emit-action app-ns group a doc all-groups))))
              "\n")))))
 
 ;; --- views ---------------------------------------------------------------
@@ -609,9 +609,9 @@
         src-field  (:source-field sub-group)
         host       (when-not (or src-sub-kw src-field)
                      (em/stateful-host-for-template
-                       (:doc ctx)
-                       (:all-groups ctx)
-                       (:ns-name sub-group)))
+                      (:doc ctx)
+                      (:all-groups ctx)
+                      (:ns-name sub-group)))
         sub-ref (cond
                   src-sub-kw
                   (str app-ns "."
@@ -685,11 +685,11 @@
   (when (seq attrs)
     (str "{"
          (str/join ", "
-           (for [[k v] (sort-by key attrs)]
-             (str "\"" (esc k) "\": "
-                  (cond
-                    (true? v)   "\"\""    ; presence-based attr
-                    :else       (str "\"" (esc (str v)) "\"")))))
+                   (for [[k v] (sort-by key attrs)]
+                     (str "\"" (esc k) "\": "
+                          (cond
+                            (true? v)   "\"\""    ; presence-based attr
+                            :else       (str "\"" (esc (str v)) "\"")))))
          "}")))
 
 (defn- inner-html-tree->js
@@ -783,16 +783,16 @@
         destructure
         (str "const { "
              (str/join ", "
-               (for [fd fields
-                     :let [fname (cljs.core/name (:name fd))]]
-                 (str "\"" (record-key app-ns (:ns-name group) (:name fd))
-                      "\": " fname)))
+                       (for [fd fields
+                             :let [fname (cljs.core/name (:name fd))]]
+                         (str "\"" (record-key app-ns (:ns-name group) (:name fd))
+                              "\": " fname)))
              " } = record;")
         sub-groups (em/find-sub-groups node all-groups)
         sub-groups-by-id (into {} (map (juxt :id identity)) sub-groups)
         template-groups (into #{}
-                          (for [g all-groups :when (em/template-group? doc g)]
-                            (:ns-name g)))
+                              (for [g all-groups :when (em/template-group? doc g)]
+                                (:ns-name g)))
         owner-idx (em/field-owner-index doc all-groups)
         field->owner (fn [field]
                        (or (get owner-idx field) (:ns-name group)))
@@ -817,8 +817,8 @@
         sub-groups (em/find-sub-groups node all-groups)
         sub-groups-by-id (into {} (map (juxt :id identity)) sub-groups)
         template-groups (into #{}
-                          (for [g all-groups :when (em/template-group? doc g)]
-                            (:ns-name g)))
+                              (for [g all-groups :when (em/template-group? doc g)]
+                                (:ns-name g)))
         owner-idx (em/field-owner-index doc all-groups)
         field->owner (fn [field]
                        (or (get owner-idx field) (:ns-name group)))
@@ -847,13 +847,13 @@
                                    (filter #(em/template-group? doc %) all-groups)))
                            sub-groups)]
     (str/join "\n"
-      (for [sg (->> templates (map :ns-name) (filter some?) distinct)]
+              (for [sg (->> templates (map :ns-name) (filter some?) distinct)]
         ;; tpl_<ident> is a JS binding name (must be a valid JS
         ;; identifier — no hyphens). The path segment keeps the
         ;; original kebab-case ns-name since file paths handle
         ;; hyphens fine.
-        (str "import { view as tpl_" (js-ident sg)
-             " } from \"../" sg "/views.js\";")))))
+                (str "import { view as tpl_" (js-ident sg)
+                     " } from \"../" sg "/views.js\";")))))
 
 (defn emit-group-views
   "Pick the right view shape based on whether the group is a
@@ -908,8 +908,8 @@
         sub-groups (em/find-sub-groups root-node groups)
         sub-groups-by-id (into {} (map (juxt :id identity)) sub-groups)
         template-groups (into #{}
-                          (for [g groups :when (em/template-group? doc g)]
-                            (:ns-name g)))
+                              (for [g groups :when (em/template-group? doc g)]
+                                (:ns-name g)))
         owner-idx (em/field-owner-index doc groups)
         field->owner (fn [field] (or (get owner-idx field) "main"))
         ctx {:app-ns "app"

@@ -120,11 +120,11 @@
   (if (or (nil? manifest) (empty? tags))
     ""
     (apply str
-      (for [tag (sort tags)
-            :let [filename (str tag ".js")
-                  sri      (integrity-for manifest filename)]
-            :when sri]
-        (preload-link base-url filename sri)))))
+           (for [tag (sort tags)
+                 :let [filename (str tag ".js")
+                       sri      (integrity-for manifest filename)]
+                 :when sri]
+             (preload-link base-url filename sri)))))
 
 ;; --- effectful: fetch ---------------------------------------------------
 
@@ -145,6 +145,6 @@
       (.then parse-manifest)
       (.catch (fn [err]
                 (js/console.warn
-                  "Integrity manifest unavailable; export will ship without SRI."
-                  err)
+                 "Integrity manifest unavailable; export will ship without SRI."
+                 err)
                 nil))))

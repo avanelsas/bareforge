@@ -61,15 +61,15 @@
           base-top  (+ (- (:top  el-rect) (:top  host-rect)) host-scroll-top)
           cut       (fn [i] (+ base-left (long (* (/ (* width i) n)))))]
       (vec
-        (for [i (range n)
-              :let [left  (cut i)
-                    right (if (= i (dec n))
-                            (+ base-left width)
-                            (cut (inc i)))]]
-          {:left   left
-           :top    base-top
-           :width  (- right left)
-           :height height})))
+       (for [i (range n)
+             :let [left  (cut i)
+                   right (if (= i (dec n))
+                           (+ base-left width)
+                           (cut (inc i)))]]
+         {:left   left
+          :top    base-top
+          :width  (- right left)
+          :height height})))
     []))
 
 ;; --- effectful -----------------------------------------------------------

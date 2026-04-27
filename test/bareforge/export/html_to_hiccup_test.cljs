@@ -89,7 +89,7 @@
 
 (deftest parse-html-svg-icon-data-shape
   (let [[svg] (h2h/parse-html
-                "<svg viewBox=\"0 0 24 24\"><path d=\"M0 0\"/></svg>")]
+               "<svg viewBox=\"0 0 24 24\"><path d=\"M0 0\"/></svg>")]
     (is (= "svg" (:tag svg)))
     (is (= "0 0 24 24" (get (:attrs svg) "viewBox")))
     (is (= 1 (count (:children svg))))

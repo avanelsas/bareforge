@@ -60,13 +60,13 @@
 
 (deftest sanitize-svg-strips-script-blocks
   (let [out (sn/sanitize-svg-fragment
-              "<svg><script>alert(1)</script><path d=\"M0 0\"/></svg>")]
+             "<svg><script>alert(1)</script><path d=\"M0 0\"/></svg>")]
     (is (not (str/includes? out "<script")))
     (is (str/includes? out "<path"))))
 
 (deftest sanitize-svg-strips-foreignObject
   (let [out (sn/sanitize-svg-fragment
-              "<svg><foreignObject><div>html</div></foreignObject></svg>")]
+             "<svg><foreignObject><div>html</div></foreignObject></svg>")]
     (is (not (str/includes? out "foreignObject")))
     (is (not (str/includes? out "<div")))))
 
@@ -144,7 +144,7 @@
 
 (deftest sanitize-doc-strips-icon-script
   (let [doc      (doc-with-icon
-                   "<svg><script>alert(1)</script><path d=\"M0\"/></svg>")
+                  "<svg><script>alert(1)</script><path d=\"M0\"/></svg>")
         cleaned  (sn/sanitize-doc doc)
         new-html (-> cleaned :root :slots (get "default") first :inner-html)]
     (is (not (str/includes? new-html "<script")))

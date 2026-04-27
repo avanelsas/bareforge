@@ -141,20 +141,20 @@
    this directly: any non-empty result refuses the load."
   [doc]
   (vec
-    (mapcat
-      (fn [[path node]]
-        (concat
-          (when-let [ih (:inner-html node)]
-            (when-not (safe-svg-fragment? ih)
-              [{:path   (conj path :inner-html)
-                :reason "inner-html contains script/event/javascript-url payload"
-                :preview (subs ih 0 (min 80 (count ih)))}]))
-          (for [[k v] (:attrs node)
-                :when (and (url-attr? k) (string? v) (not (safe-url? v)))]
-            {:path   (conj path :attrs k)
-             :reason (str "attr " (pr-str k) " carries unsafe URL scheme")
-             :preview v})))
-      (walk-nodes-with-path doc))))
+   (mapcat
+    (fn [[path node]]
+      (concat
+       (when-let [ih (:inner-html node)]
+         (when-not (safe-svg-fragment? ih)
+           [{:path   (conj path :inner-html)
+             :reason "inner-html contains script/event/javascript-url payload"
+             :preview (subs ih 0 (min 80 (count ih)))}]))
+       (for [[k v] (:attrs node)
+             :when (and (url-attr? k) (string? v) (not (safe-url? v)))]
+         {:path   (conj path :attrs k)
+          :reason (str "attr " (pr-str k) " carries unsafe URL scheme")
+          :preview v})))
+    (walk-nodes-with-path doc))))
 
 (defn- sanitize-node-attrs
   "Drop URL-typed attrs whose value isn't safe. Non-URL attrs pass
@@ -162,11 +162,11 @@
    not a script-execution surface."
   [attrs]
   (reduce-kv
-    (fn [acc k v]
-      (if (and (url-attr? k) (string? v) (not (safe-url? v)))
-        acc
-        (assoc acc k v)))
-    {} (or attrs {})))
+   (fn [acc k v]
+     (if (and (url-attr? k) (string? v) (not (safe-url? v)))
+       acc
+       (assoc acc k v)))
+   {} (or attrs {})))
 
 (defn- sanitize-node
   [node]
@@ -176,9 +176,9 @@
     true (update :slots
                  (fn [slots]
                    (reduce-kv
-                     (fn [acc sname kids]
-                       (assoc acc sname (mapv sanitize-node kids)))
-                     {} (or slots {}))))))
+                    (fn [acc sname kids]
+                      (assoc acc sname (mapv sanitize-node kids)))
+                    {} (or slots {}))))))
 
 (defn sanitize-doc
   "Return a copy of `doc` with `:inner-html` filtered through

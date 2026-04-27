@@ -112,8 +112,8 @@
       (let [align (apply str (repeat (+ depth 3 (count (or tag ""))) " "))]
         (str "{" (first props) "\n"
              (str/join "\n"
-               (for [p (rest props)]
-                 (str align p)))
+                       (for [p (rest props)]
+                         (str align p)))
              "}")))))
 
 (defn- node->prop-strings
@@ -131,13 +131,13 @@
                          :when (and k (some? v))]
                      (let [binding (get bindings k)]
                        (if (and binding
-                                 (contains? #{:read :read-write} (:direction binding)))
+                                (contains? #{:read :read-write} (:direction binding)))
                          (str ":" k " " (cljs.core/name (:field binding)))
                          (if (= "" v)
                            (str ":" k " true")
                            (str ":" k " \""
                                 (h2h/escape-cljs-str
-                                  (normalize-attr-value (:tag node) k v))
+                                 (normalize-attr-value (:tag node) k v))
                                 "\"")))))
         ;; :props holds values the inspector committed via setv! — one
         ;; per augment-declared boolean / number / enum widget — that
@@ -255,14 +255,14 @@
    auto-setter dispatch actually resolves."
   [node sub-group-ids name->ns owner-idx own-ns-name]
   (distinct
-    (concat
-      (node-write-binding-owners node name->ns owner-idx own-ns-name)
-      (for [[_ kids] (m/slot-entries node)
-            c kids
-            :when (not (contains? sub-group-ids (:id c)))
-            a (collect-write-binding-aliases
-                c sub-group-ids name->ns owner-idx own-ns-name)]
-        a))))
+   (concat
+    (node-write-binding-owners node name->ns owner-idx own-ns-name)
+    (for [[_ kids] (m/slot-entries node)
+          c kids
+          :when (not (contains? sub-group-ids (:id c)))
+          a (collect-write-binding-aliases
+             c sub-group-ids name->ns owner-idx own-ns-name)]
+      a))))
 
 (defn- payload-arg
   "Resolve one payload entry to the argument expression inserted into
@@ -363,11 +363,11 @@
 
                   :else
                   (throw (ex-info
-                           (str "Template group \"" sub-group-name
-                                "\" has no data source. Select its root node in "
-                                "the inspector and pick a 'Rendered from' "
-                                "source field (or declare a :source-sub).")
-                           {:group sub-group-name})))]
+                          (str "Template group \"" sub-group-name
+                               "\" has no data source. Select its root node in "
+                               "the inspector and pick a 'Rendered from' "
+                               "source field (or declare a :source-sub).")
+                          {:group sub-group-name})))]
     (str (pad "[:div {:style \"display: contents\"}")
          "\n"
          (pad (str "  (for [p (rf/query [" sub-ref "])]"))
@@ -415,7 +415,7 @@
                                               (get field-owner-ns-map field)
                                               own-ns-name)
                                  prop    (write-binding->dispatch
-                                           (:tag node) k field owner-ns)]
+                                          (:tag node) k field owner-ns)]
                           :when prop]
                       prop)
         props      (format-props-map (concat base-props event-props write-props)
@@ -432,53 +432,53 @@
         kid-pad    (fn [s] (indent (+ depth 1) s))
         children
         (first
-          (reduce
-            (fn [[acc rendered-tpls] [sname child]]
-              (if (contains? (set sub-group-ids) (:id child))
-                (let [g (first (filter #(some #{(:id child)}
-                                              (:instance-ids %))
-                                       all-groups))
-                      gname (:ns-name g)
-                      tpl?  (contains? template-groups gname)]
-                  (cond
-                    (and tpl? (contains? rendered-tpls gname))
-                    [acc rendered-tpls]
+         (reduce
+          (fn [[acc rendered-tpls] [sname child]]
+            (if (contains? (set sub-group-ids) (:id child))
+              (let [g (first (filter #(some #{(:id child)}
+                                            (:instance-ids %))
+                                     all-groups))
+                    gname (:ns-name g)
+                    tpl?  (contains? template-groups gname)]
+                (cond
+                  (and tpl? (contains? rendered-tpls gname))
+                  [acc rendered-tpls]
 
-                    tpl?
-                    (let [;; Fall back to the (single) collection field that
+                  tpl?
+                  (let [;; Fall back to the (single) collection field that
                           ;; points at this template when the instance has no
                           ;; explicit :source-field / :source-sub set. Lets the
                           ;; user declare a collection + name the template
                           ;; without also having to manually wire the
                           ;; 'Rendered from' source in the inspector.
-                          fallback  (when (and (nil? (:source-sub child))
-                                               (nil? (:source-field child)))
-                                      (stateful-host-for-template
-                                        doc all-groups gname))
-                          src-field (or (:source-field child)
-                                        (when fallback
-                                          (keyword (:field-name fallback))))
-                          field-ns  (or (get field-owner-ns-map
-                                             (:source-field child))
-                                        (when fallback (:ns-name fallback)))]
-                      [(conj acc (collection-iteration-call
-                                   gname kid-pad
-                                   (:source-sub child)
-                                   src-field
-                                   field-ns))
-                       (conj rendered-tpls gname)])
+                        fallback  (when (and (nil? (:source-sub child))
+                                             (nil? (:source-field child)))
+                                    (stateful-host-for-template
+                                     doc all-groups gname))
+                        src-field (or (:source-field child)
+                                      (when fallback
+                                        (keyword (:field-name fallback))))
+                        field-ns  (or (get field-owner-ns-map
+                                           (:source-field child))
+                                      (when fallback (:ns-name fallback)))]
+                    [(conj acc (collection-iteration-call
+                                gname kid-pad
+                                (:source-sub child)
+                                src-field
+                                field-ns))
+                     (conj rendered-tpls gname)])
 
-                    :else
-                    [(conj acc
-                           (kid-pad (str "(" gname ".views/" gname ")")))
-                     rendered-tpls]))
-                [(conj acc
-                       (node->hiccup-with-events ctx child sname (+ depth 1)))
-                 rendered-tpls]))
-            [[] #{}]
-            (for [[sname kids] (m/slot-entries node)
-                  child kids]
-              [sname child])))]
+                  :else
+                  [(conj acc
+                         (kid-pad (str "(" gname ".views/" gname ")")))
+                   rendered-tpls]))
+              [(conj acc
+                     (node->hiccup-with-events ctx child sname (+ depth 1)))
+               rendered-tpls]))
+          [[] #{}]
+          (for [[sname kids] (m/slot-entries node)
+                child kids]
+            [sname child])))]
     (cond
       inner-html
       (let [inner-hiccup (h2h/html->hiccup-str inner-html (+ depth 1))]
@@ -525,8 +525,8 @@
         own-ns-name     (:ns-name group)
         template?       (template-group? doc group)
         template-groups (into #{}
-                          (for [g all-groups :when (template-group? doc g)]
-                            (:ns-name g)))
+                              (for [g all-groups :when (template-group? doc g)]
+                                (:ns-name g)))
         sub-groups      (find-sub-groups node all-groups)
         sub-group-ids   (set (map :id sub-groups))
         read-fields     (collect-read-bindings node sub-group-ids)
@@ -546,24 +546,24 @@
         owner-idx       (field-owner-index doc all-groups)
         name->ns        (name->ns-name-map doc all-groups)
         explicit        (into {}
-                          (for [[f owner] (explicit-field-owners node sub-group-ids)]
-                            [f (get name->ns owner owner)]))
+                              (for [[f owner] (explicit-field-owners node sub-group-ids)]
+                                [f (get name->ns owner owner)]))
         field->owner    (into {} (for [f let-fields]
                                    [f (or (get explicit f)
                                           (get owner-idx f)
                                           own-ns-name)]))
         subs-aliases    (distinct (map #(str % ".subs") (vals field->owner)))
         field->sym      (into {}
-                          (concat
-                            (for [f let-fields] [f (cljs.core/name f)])
-                            (for [f own-record-fields] [f (cljs.core/name f)])))
+                              (concat
+                               (for [f let-fields] [f (cljs.core/name f)])
+                               (for [f own-record-fields] [f (cljs.core/name f)])))
         action-aliases  (distinct (map action-ref->alias
                                        (collect-trigger-action-refs node sub-group-ids)))
         ;; Write / read-write bindings dispatch the field's auto
         ;; setter event; the enclosing view must require the owning
         ;; group's `.events` ns to resolve `::<alias>/<field>-changed`.
         write-events-aliases (collect-write-binding-aliases
-                               node sub-group-ids name->ns owner-idx own-ns-name)
+                              node sub-group-ids name->ns owner-idx own-ns-name)
         ;; For each template sub-group child, its records come from
         ;; either :source-sub (its own ns) or :source-field (owning
         ;; group's subs ns — resolved via field-owner-idx). When
@@ -574,23 +574,23 @@
         ;; resolved sub's namespace is actually imported.
         tpl-child-sub-aliases
         (distinct
-          (concat
-            (for [sg sub-groups
-                  :let [inst (m/get-node doc (:id sg))
-                        src  (:source-sub inst)]
-                  :when (and (contains? template-groups (:ns-name sg)) src)]
-              (action-ref->alias src))
-            (for [sg sub-groups
-                  :let [inst     (m/get-node doc (:id sg))
-                        sf       (:source-field inst)
-                        owner    (when sf (get owner-idx sf))
-                        fallback (when (and (nil? sf) (nil? (:source-sub inst)))
-                                   (stateful-host-for-template
-                                     doc all-groups (:ns-name sg)))
-                        owner*   (or owner (:ns-name fallback))]
-                  :when (and (contains? template-groups (:ns-name sg))
-                             owner*)]
-              (str owner* ".subs"))))
+         (concat
+          (for [sg sub-groups
+                :let [inst (m/get-node doc (:id sg))
+                      src  (:source-sub inst)]
+                :when (and (contains? template-groups (:ns-name sg)) src)]
+            (action-ref->alias src))
+          (for [sg sub-groups
+                :let [inst     (m/get-node doc (:id sg))
+                      sf       (:source-field inst)
+                      owner    (when sf (get owner-idx sf))
+                      fallback (when (and (nil? sf) (nil? (:source-sub inst)))
+                                 (stateful-host-for-template
+                                  doc all-groups (:ns-name sg)))
+                      owner*   (or owner (:ns-name fallback))]
+                :when (and (contains? template-groups (:ns-name sg))
+                           owner*)]
+            (str owner* ".subs"))))
         own-db-alias    (when template?
                           (str own-ns-name ".db"))
         all-subs-aliases (distinct (concat subs-aliases tpl-child-sub-aliases))
@@ -601,33 +601,33 @@
         fn-sig          (if template?
                           (str "[{:keys ["
                                (str/join " "
-                                 (for [f own-record-fields]
-                                   (str "::" own-db-alias "/"
-                                        (cljs.core/name f))))
+                                         (for [f own-record-fields]
+                                           (str "::" own-db-alias "/"
+                                                (cljs.core/name f))))
                                "] :as " tmpl-record-sym "}]")
                           "[]")
         has-template-subgroup? (boolean
-                                 (some #(contains? template-groups (:ns-name %))
-                                       sub-groups))
+                                (some #(contains? template-groups (:ns-name %))
+                                      sub-groups))
         uses-rf?        (or has-let?
                             (seq action-aliases)
                             (seq write-events-aliases)
                             has-template-subgroup?)
         require-entries (distinct
-                          (concat
-                            (when uses-rf?
-                              [(str "[" app-ns ".framework :as rf]")])
-                            (when own-db-alias
-                              [(str "[" app-ns "." own-db-alias
-                                    " :as " own-db-alias "]")])
-                            (for [a all-subs-aliases]
-                              (str "[" app-ns "." a " :as " a "]"))
-                            (for [a action-aliases]
-                              (str "[" app-ns "." a " :as " a "]"))
-                            (for [a write-events-aliases]
-                              (str "[" app-ns "." a " :as " a "]"))
-                            (for [sg (distinct (map :ns-name sub-groups))]
-                              (str "[" app-ns "." sg ".views :as " sg ".views]"))))
+                         (concat
+                          (when uses-rf?
+                            [(str "[" app-ns ".framework :as rf]")])
+                          (when own-db-alias
+                            [(str "[" app-ns "." own-db-alias
+                                  " :as " own-db-alias "]")])
+                          (for [a all-subs-aliases]
+                            (str "[" app-ns "." a " :as " a "]"))
+                          (for [a action-aliases]
+                            (str "[" app-ns "." a " :as " a "]"))
+                          (for [a write-events-aliases]
+                            (str "[" app-ns "." a " :as " a "]"))
+                          (for [sg (distinct (map :ns-name sub-groups))]
+                            (str "[" app-ns "." sg ".views :as " sg ".views]"))))
         ns-clause       (if (seq require-entries)
                           (str "(ns " ns-path "\n"
                                "  (:require " (str/join "\n            " require-entries) "))\n")
@@ -647,11 +647,11 @@
          (if has-let?
            (str "  (let ["
                 (str/join "\n        "
-                  (for [field let-fields]
-                    (let [owner (field->owner field)
-                          alias (str owner ".subs")
-                          fname (cljs.core/name field)]
-                      (str fname " (rf/query [::" alias "/" fname "])"))))
+                          (for [field let-fields]
+                            (let [owner (field->owner field)
+                                  alias (str owner ".subs")
+                                  fname (cljs.core/name field)]
+                              (str fname " (rf/query [::" alias "/" fname "])"))))
                 "]\n"
                 (node->hiccup-with-events hiccup-ctx node root-slot 4)
                 "))\n")
@@ -677,8 +677,8 @@
         record-spec (str "(s/def ::record\n"
                          "  (s/keys :req [::"
                          (str/join " ::"
-                           (for [{:keys [name]} stored]
-                             (cljs.core/name name)))
+                                   (for [{:keys [name]} stored]
+                                     (cljs.core/name name)))
                          "]))")]
     (str "(ns " ns-path "\n"
          "  (:require [clojure.spec.alpha :as s]))\n"
@@ -707,8 +707,8 @@
    key should land (aligned with the first key, just past the `{`)."
   [og-ns record key-col]
   (let [entries (vec
-                  (for [[k v] record]
-                    (str "::" og-ns "/" (cljs.core/name k) " " (pr-str v))))
+                 (for [[k v] record]
+                   (str "::" og-ns "/" (cljs.core/name k) " " (pr-str v))))
         key-pad (apply str (repeat (dec key-col) " "))]
     (str "{" (first entries)
          (apply str (for [e (rest entries)] (str "\n" key-pad e)))
@@ -773,20 +773,20 @@
           of-group-requires (distinct (keep :of-group stored))]
       (if has-data?
         (let [spec-defs (concat
-                          (for [fd stored] (field-spec-def fd))
-                          (for [{:keys [field]} bindings
-                                :when (not (contains? declared-keys field))]
-                            (str "(s/def ::" (cljs.core/name field) " any?)")))
+                         (for [fd stored] (field-spec-def fd))
+                         (for [{:keys [field]} bindings
+                               :when (not (contains? declared-keys field))]
+                           (str "(s/def ::" (cljs.core/name field) " any?)")))
               db-entries (distinct
-                           (concat
-                             (for [fd stored] (field-default-entry fd))
-                             (for [{:keys [field]} bindings
-                                   :when (not (contains? declared-keys field))]
-                               (str "::" (cljs.core/name field) " nil"))))
+                          (concat
+                           (for [fd stored] (field-default-entry fd))
+                           (for [{:keys [field]} bindings
+                                 :when (not (contains? declared-keys field))]
+                             (str "::" (cljs.core/name field) " nil"))))
               extra-requires
               (apply str
-                (for [og of-group-requires]
-                  (str "\n            [" app-ns "." og ".db :as " og ".db]")))]
+                     (for [og of-group-requires]
+                       (str "\n            [" app-ns "." og ".db :as " og ".db]")))]
           (str "(ns " ns-path "\n"
                "  (:require [clojure.spec.alpha :as s]" extra-requires "))\n"
                "\n"
@@ -881,8 +881,8 @@
     (str "(rf/reg-sub\n"
          " ::" fname "\n"
          (str/join ""
-           (for [s sources]
-             (str " :<- [::" (cljs.core/name s) "]\n")))
+                   (for [s sources]
+                     (str " :<- [::" (cljs.core/name s) "]\n")))
          " (fn [vs _] (boolean (some identity vs))))")))
 
 (def ^:private stateful-host-for-template em/stateful-host-for-template)
@@ -999,12 +999,12 @@
             computed     (filter computed-field? fields)
             computed-names (set (map :name computed))
             stored-names (distinct
-                           (concat
-                             (for [f fields :when (not (computed-field? f))]
-                               (:name f))
-                             (for [{:keys [field]} bindings
-                                   :when (not (contains? computed-names field))]
-                               field)))
+                          (concat
+                           (for [f fields :when (not (computed-field? f))]
+                             (:name f))
+                           (for [{:keys [field]} bindings
+                                 :when (not (contains? computed-names field))]
+                             field)))
             stored-forms   (for [f stored-names] (emit-stored-sub f db-alias))
             computed-forms (for [c computed]
                              (case (get-in c [:computed :operation])
@@ -1014,14 +1014,14 @@
                                (emit-computed-sub c doc all-groups)))
             all-forms      (concat stored-forms computed-forms)
             ns-aliases     (distinct
-                             (concat (keep #(join-target-subs-alias % doc all-groups)
-                                           computed)
-                                     (keep join-target-db-alias computed)
-                                     (keep #(filter-by-db-alias % doc all-groups)
-                                           computed)))
+                            (concat (keep #(join-target-subs-alias % doc all-groups)
+                                          computed)
+                                    (keep join-target-db-alias computed)
+                                    (keep #(filter-by-db-alias % doc all-groups)
+                                          computed)))
             extra-requires (str/join ""
-                             (for [a ns-aliases]
-                               (str "\n            [" app-ns "." a " :as " a "]")))
+                                     (for [a ns-aliases]
+                                       (str "\n            [" app-ns "." a " :as " a "]")))
             ;; `clojure.string` is needed by every emitted :filter-by
             ;; handler — add one require when any such field exists.
             string-require (when (some #(= :filter-by (get-in % [:computed :operation]))
@@ -1171,13 +1171,13 @@
   [doc groups app-ns]
   (let [stateful (filter #(stateful-group? doc %) groups)
         requires (str/join "\n            "
-                   (cons (str "[" app-ns ".framework :as rf]")
-                         (for [g stateful]
-                           (str "[" app-ns "." (:ns-name g) ".db :as "
-                                (:ns-name g) ".db]"))))
+                           (cons (str "[" app-ns ".framework :as rf]")
+                                 (for [g stateful]
+                                   (str "[" app-ns "." (:ns-name g) ".db :as "
+                                        (:ns-name g) ".db]"))))
         merge-args (str/join "\n                       "
-                     (for [g stateful]
-                       (str (:ns-name g) ".db/default-db")))]
+                             (for [g stateful]
+                               (str (:ns-name g) ".db/default-db")))]
     (str "(ns " app-ns ".db\n"
          "  (:require " requires "))\n"
          "\n"
@@ -1218,26 +1218,26 @@
         sg-ids         (into #{} (map :id) nameds)
         nested-groups  (for [n nameds
                              :let [g (first
-                                       (filter #(some #{(:id n)}
-                                                      (:instance-ids %))
-                                               groups))]
+                                      (filter #(some #{(:id n)}
+                                                     (:instance-ids %))
+                                              groups))]
                              :when g]
                          g)
         read-fields    (collect-read-bindings node sg-ids)
         payload-fields (collect-trigger-payload-fields node sg-ids)
         explicit       (into {}
-                         (for [[f o] (explicit-field-owners node sg-ids)]
-                           [f (get name->ns o o)]))
+                             (for [[f o] (explicit-field-owners node sg-ids)]
+                               [f (get name->ns o o)]))
         candidate-let  (distinct (concat read-fields payload-fields))
         field->owner   (into {}
-                         (for [f candidate-let
-                               :let [o (or (get explicit f)
-                                           (get owner-idx f))]
-                               :when o]
-                           [f o]))
+                             (for [f candidate-let
+                                   :let [o (or (get explicit f)
+                                               (get owner-idx f))]
+                                   :when o]
+                               [f o]))
         let-fields     (vec (filter field->owner candidate-let))
         field->sym     (into {}
-                         (for [f let-fields] [f (cljs.core/name f)]))]
+                             (for [f let-fields] [f (cljs.core/name f)]))]
     {:entry         entry
      :node          node
      :sub-group-ids sg-ids
@@ -1276,7 +1276,7 @@
                               sf    (:source-field inst)
                               host  (when-not sf
                                       (stateful-host-for-template
-                                        doc groups (:ns-name g)))
+                                       doc groups (:ns-name g)))
                               owner (or (get owner-idx sf)
                                         (:ns-name host))]
                         :when owner]
@@ -1288,18 +1288,18 @@
         inline-write-aliases
         (distinct (for [{:keys [node sub-group-ids]} inline-entries
                         a (collect-write-binding-aliases
-                            node sub-group-ids name->ns owner-idx nil)]
+                           node sub-group-ids name->ns owner-idx nil)]
                     a))]
     (str/join ""
-      (distinct
-        (concat
-          (for [g root-groups] (require-line app-ns (:ns-name g) ".views"))
-          (for [n root-tpl-subs]       (require-line app-ns n ".subs"))
-          (for [n nested-view-aliases] (require-line app-ns n ".views"))
-          (for [n nested-tpl-subs]     (require-line app-ns n ".subs"))
-          (for [a inline-sub-aliases]    (require-line app-ns a ""))
-          (for [a inline-action-aliases] (require-line app-ns a ""))
-          (for [a inline-write-aliases]  (require-line app-ns a "")))))))
+              (distinct
+               (concat
+                (for [g root-groups] (require-line app-ns (:ns-name g) ".views"))
+                (for [n root-tpl-subs]       (require-line app-ns n ".subs"))
+                (for [n nested-view-aliases] (require-line app-ns n ".views"))
+                (for [n nested-tpl-subs]     (require-line app-ns n ".subs"))
+                (for [a inline-sub-aliases]    (require-line app-ns a ""))
+                (for [a inline-action-aliases] (require-line app-ns a ""))
+                (for [a inline-write-aliases]  (require-line app-ns a "")))))))
 
 (defn- core-group-body
   "Body segment for a root-order entry that IS a named group —
@@ -1335,24 +1335,24 @@
         (first (filter #(= (:id (:entry %)) (:id entry))
                        inline-entries))
         hiccup (node->hiccup-with-events
-                 {:doc                doc
-                  :field->sym         field->sym
-                  :sub-group-ids      sub-group-ids
-                  :all-groups         groups
-                  :template-groups    template-names
-                  :field-owner-ns-map owner-idx
-                  :tmpl-record-sym    nil
-                  :name->ns           name->ns
-                  :own-ns-name        nil}
-                 node nil (if (seq let-fields) 4 3))]
+                {:doc                doc
+                 :field->sym         field->sym
+                 :sub-group-ids      sub-group-ids
+                 :all-groups         groups
+                 :template-groups    template-names
+                 :field-owner-ns-map owner-idx
+                 :tmpl-record-sym    nil
+                 :name->ns           name->ns
+                 :own-ns-name        nil}
+                node nil (if (seq let-fields) 4 3))]
     (if-not (seq let-fields)
       hiccup
       (str "   (let ["
            (str/join "\n         "
-             (for [f let-fields
-                   :let [owner (field->owner f)
-                         fname (cljs.core/name f)]]
-               (str fname " (rf/query [::" owner ".subs/" fname "])")))
+                     (for [f let-fields
+                           :let [owner (field->owner f)
+                                 fname (cljs.core/name f)]]
+                       (str fname " (rf/query [::" owner ".subs/" fname "])")))
            "]\n"
            hiccup ")"))))
 
@@ -1361,10 +1361,10 @@
    root-order entry, newline-separated."
   [inline-entries {:keys [root-order] :as ctx}]
   (str/join "\n"
-    (for [entry root-order]
-      (if (:group? entry)
-        (core-group-body entry ctx)
-        (core-inline-body entry inline-entries ctx)))))
+            (for [entry root-order]
+              (if (:group? entry)
+                (core-group-body entry ctx)
+                (core-inline-body entry inline-entries ctx)))))
 
 (defn- generate-core
   "Generate core.cljs — entry point using renderer/mount! with hiccup
@@ -1379,21 +1379,21 @@
   [doc groups root-order app-ns]
   (let [root-groups    (filter :group? root-order)
         template-names (into #{}
-                         (for [g groups :when (template-group? doc g)]
-                           (:ns-name g)))
+                             (for [g groups :when (template-group? doc g)]
+                               (:ns-name g)))
         owner-idx      (field-owner-index doc groups)
         name->ns       (name->ns-name-map doc groups)
         root-tpl-subs  (distinct
-                         (for [entry root-groups
-                               :when (contains? template-names (:ns-name entry))
-                               :let [inst  (m/get-node doc (:id entry))
-                                     owner (get owner-idx (:source-field inst))]
-                               :when owner]
-                           owner))
+                        (for [entry root-groups
+                              :when (contains? template-names (:ns-name entry))
+                              :let [inst  (m/get-node doc (:id entry))
+                                    owner (get owner-idx (:source-field inst))]
+                              :when owner]
+                          owner))
         inline-entries (vec
-                         (for [entry root-order
-                               :when (not (:group? entry))]
-                           (inline-entry doc groups name->ns owner-idx entry)))
+                        (for [entry root-order
+                              :when (not (:group? entry))]
+                          (inline-entry doc groups name->ns owner-idx entry)))
         ctx            {:app-ns         app-ns
                         :doc            doc
                         :groups         groups
@@ -1470,14 +1470,14 @@
        ;; CLJS export self-hosts the shadow-cljs JS bundle; everything
        ;; runs from same-origin. Strict CSP.
        "  <meta http-equiv=\"Content-Security-Policy\" content=\""
-         "default-src 'self'; "
-         "script-src 'self' 'unsafe-inline'; "
-         "style-src 'self' 'unsafe-inline'; "
-         "img-src 'self' data:; "
-         "font-src 'self' data:; "
-         "connect-src 'self'; "
-         "object-src 'none'; "
-         "base-uri 'self'\">\n"
+       "default-src 'self'; "
+       "script-src 'self' 'unsafe-inline'; "
+       "style-src 'self' 'unsafe-inline'; "
+       "img-src 'self' data:; "
+       "font-src 'self' data:; "
+       "connect-src 'self'; "
+       "object-src 'none'; "
+       "base-uri 'self'\">\n"
        "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
        "  <title>" title "</title>\n"
        "  <style>\n"
@@ -1552,25 +1552,25 @@
   (let [{:keys [groups root-order]} (detect-groups doc)
         src-base (str "src/" (kebab->snake app-ns) "/")
         group-files (into {}
-                      (for [g groups
-                            [suffix content] [["db.cljs"     (generate-db doc g groups app-ns)]
-                                              ["subs.cljs"   (generate-subs doc g groups app-ns)]
-                                              ["events.cljs" (generate-events doc g groups app-ns)]
-                                              ["views.cljs"  (generate-views doc g groups app-ns)]]
-                            :when content]
-                        [(str src-base (kebab->snake (:ns-name g)) "/" suffix)
-                         content]))
+                          (for [g groups
+                                [suffix content] [["db.cljs"     (generate-db doc g groups app-ns)]
+                                                  ["subs.cljs"   (generate-subs doc g groups app-ns)]
+                                                  ["events.cljs" (generate-events doc g groups app-ns)]
+                                                  ["views.cljs"  (generate-views doc g groups app-ns)]]
+                                :when content]
+                            [(str src-base (kebab->snake (:ns-name g)) "/" suffix)
+                             content]))
         core-file (generate-core doc groups root-order app-ns)]
     (merge
-      {"deps.edn"          (generate-deps-edn)
-       "shadow-cljs.edn"   (generate-shadow-cljs-edn app-ns port)
-       "package.json"      (generate-package-json title)
-       "public/index.html" (generate-index-html title)}
+     {"deps.edn"          (generate-deps-edn)
+      "shadow-cljs.edn"   (generate-shadow-cljs-edn app-ns port)
+      "package.json"      (generate-package-json title)
+      "public/index.html" (generate-index-html title)}
 
-      {(str src-base "framework.cljs") (generate-framework app-ns)
-       (str src-base "renderer.cljs")  (generate-renderer app-ns)}
+     {(str src-base "framework.cljs") (generate-framework app-ns)
+      (str src-base "renderer.cljs")  (generate-renderer app-ns)}
 
-      {(str src-base "db.cljs")   (generate-root-db doc groups app-ns)
-       (str src-base "core.cljs") core-file}
+     {(str src-base "db.cljs")   (generate-root-db doc groups app-ns)
+      (str src-base "core.cljs") core-file}
 
-      group-files)))
+     group-files)))

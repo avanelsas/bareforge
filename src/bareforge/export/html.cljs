@@ -235,7 +235,7 @@
       "<head>\n"
       "  <meta charset=\"utf-8\">\n"
       "  <meta http-equiv=\"Content-Security-Policy\" content=\""
-        (escape-attr csp) "\">\n"
+      (escape-attr csp) "\">\n"
       "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
       "  <title>" (escape-text title) "</title>\n"
       "  <style>\n"
@@ -319,7 +319,7 @@
    (let [snapshot (current-snapshot)
          version  (or cdn-version versions/baredom-version)]
      (-> (integrity/fetch-manifest!
-           (integrity/manifest-url cdn-base version))
+          (integrity/manifest-url cdn-base version))
          (.then (fn [manifest]
                   (let [html (render-html snapshot
                                           {:title              title

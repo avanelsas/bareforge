@@ -51,9 +51,9 @@
   (if-let [url (io/resource (component-resource-path tag))]
     (slurp url)
     (throw (ex-info
-             (str (component-resource-path tag)
-                  " not on classpath. Did you bump deps.edn?")
-             {:tag tag}))))
+            (str (component-resource-path tag)
+                 " not on classpath. Did you bump deps.edn?")
+            {:tag tag}))))
 
 (defn- extract-attr-defs
   "Scan a model source for `(def attr-<name> \"<value>\")` forms and
@@ -63,8 +63,8 @@
   [source]
   (into {}
         (for [[_ sym val] (re-seq
-                            #"\(def\s+(attr-[\w-]+)\s+\"([^\"]+)\"\s*\)"
-                            source)]
+                           #"\(def\s+(attr-[\w-]+)\s+\"([^\"]+)\"\s*\)"
+                           source)]
           [sym val])))
 
 (defn- resolve-attr
@@ -156,16 +156,16 @@
     (if (public-api-has-tag? source tag)
       :skipped
       (let [with-require (insert-at-sorted-position
-                           source require-line-re tag
-                           (public-api-require-line tag))
+                          source require-line-re tag
+                          (public-api-require-line tag))
             ;; Close the `:require` bracket: the inserted line sits
             ;; inside a `(:require …)` form, so if we happened to
             ;; insert at the end it might now sit outside the
             ;; closing bracket. Handle below in the api-map
             ;; insertion by using a fresh source read.
             with-api-map (insert-at-sorted-position
-                           with-require api-map-line-re tag
-                           (public-api-map-line tag))]
+                          with-require api-map-line-re tag
+                          (public-api-map-line tag))]
         (if dry-run?
           :would-add
           (do (spit public-api-path with-api-map)
@@ -191,8 +191,8 @@
                                        (pr-str attr)
                                        (h/infer-kind attr))))]
     (format
-      "(def ^:private %s\n  {:category %s\n   :label    %s\n   :properties\n   [%s]})"
-      tag category (pr-str label) prop-lines)))
+     "(def ^:private %s\n  {:category %s\n   :label    %s\n   :properties\n   [%s]})"
+     tag category (pr-str label) prop-lines)))
 
 (defn- augment-registration-text
   "Single-line `\"<tag>\" <tag>` entry for the augment map."
@@ -208,16 +208,16 @@
   (let [source (slurp augment-path)]
     (if (augment-has-tag? source tag)
       (throw (ex-info
-               (str tag " already registered in augment.cljs. "
-                    "Scaffolder aborting to avoid clobbering hand edits.")
-               {:tag tag}))
+              (str tag " already registered in augment.cljs. "
+                   "Scaffolder aborting to avoid clobbering hand edits.")
+              {:tag tag}))
       (let [entry (augment-entry-text tag category label attrs)
             reg   (augment-registration-text tag)
             ;; Insert the new def block right before `(def augment`
             with-entry (str/replace-first
-                         source
-                         "(def augment"
-                         (str entry "\n\n(def augment"))
+                        source
+                        "(def augment"
+                        (str entry "\n\n(def augment"))
             ;; Find the final `})` in the file — that's the closing
             ;; of the augment map — and insert the registration on a
             ;; new line immediately before it (no trailing newline so

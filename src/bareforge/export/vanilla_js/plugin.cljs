@@ -47,7 +47,7 @@
   [doc manifest]
   (let [tags (conj (html/collect-tags doc) "x-theme")
         tag-literals (str/join ",\n      "
-                       (for [t tags] (str "\"" t "\"")))
+                               (for [t tags] (str "\"" t "\"")))
         base-url (str "https://cdn.jsdelivr.net/npm/@vanelsas/baredom@"
                       versions/baredom-version "/dist/")]
     (str (integrity/modulepreload-block manifest tags base-url)
@@ -74,14 +74,14 @@
        "<head>\n"
        "  <meta charset=\"utf-8\">\n"
        "  <meta http-equiv=\"Content-Security-Policy\" content=\""
-         "default-src 'self'; "
-         "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-         "style-src 'self' 'unsafe-inline'; "
-         "img-src 'self' data: https:; "
-         "font-src 'self' data: https://cdn.jsdelivr.net; "
-         "connect-src 'self' https://cdn.jsdelivr.net; "
-         "object-src 'none'; "
-         "base-uri 'self'\">\n"
+       "default-src 'self'; "
+       "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+       "style-src 'self' 'unsafe-inline'; "
+       "img-src 'self' data: https:; "
+       "font-src 'self' data: https://cdn.jsdelivr.net; "
+       "connect-src 'self' https://cdn.jsdelivr.net; "
+       "object-src 'none'; "
+       "base-uri 'self'\">\n"
        "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
        "  <title>" title "</title>\n"
        "  <style>\n"
@@ -132,19 +132,19 @@
   (let [{:keys [groups]} (em/detect-groups doc)
         _                (codegen/assert-supported! doc groups)]
     (merge
-      {"index.html"   (index-html doc title integrity-manifest)
-       "package.json" (package-json title)
-       "runtime.js"   runtime-js-template
-       "renderer.js"  renderer-js-template
-       "app.js"       (codegen/emit-app-js doc groups)}
-      (into {}
-        (for [g groups
-              [suffix content] [["db.js"     (codegen/emit-group-db doc g groups)]
-                                ["subs.js"   (codegen/emit-group-subs doc g groups)]
-                                ["events.js" (codegen/emit-group-events doc g groups)]
-                                ["views.js"  (codegen/emit-group-views doc g groups)]]
-              :when content]
-          [(str (:ns-name g) "/" suffix) content])))))
+     {"index.html"   (index-html doc title integrity-manifest)
+      "package.json" (package-json title)
+      "runtime.js"   runtime-js-template
+      "renderer.js"  renderer-js-template
+      "app.js"       (codegen/emit-app-js doc groups)}
+     (into {}
+           (for [g groups
+                 [suffix content] [["db.js"     (codegen/emit-group-db doc g groups)]
+                                   ["subs.js"   (codegen/emit-group-subs doc g groups)]
+                                   ["events.js" (codegen/emit-group-events doc g groups)]
+                                   ["views.js"  (codegen/emit-group-views doc g groups)]]
+                 :when content]
+             [(str (:ns-name g) "/" suffix) content])))))
 
 (def manifest
   {:id           :vanilla-js

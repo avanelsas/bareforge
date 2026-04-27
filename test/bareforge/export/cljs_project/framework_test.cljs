@@ -121,8 +121,8 @@
   (rf/reg-sub :xs   :-> :xs)
   (rf/reg-sub :mult :-> :mult)
   (rf/reg-sub :scaled
-    :<- [:xs] :<- [:mult]
-    (fn [[xs m] _] (mapv #(* m %) xs)))
+              :<- [:xs] :<- [:mult]
+              (fn [[xs m] _] (mapv #(* m %) xs)))
   (is (= [10 20 30] (rf/query :scaled))))
 
 (deftest reg-sub-single-signal-unwraps-for-backward-compat
@@ -138,9 +138,9 @@
   (let [fx-log (atom [])]
     (rf/reg-fx :log (fn [v] (swap! fx-log conj v)))
     (rf/reg-event-fx :start-load
-      (fn [db _]
-        {:db  (assoc db :loading? true)
-         :log "started"}))
+                     (fn [db _]
+                       {:db  (assoc db :loading? true)
+                        :log "started"}))
     (rf/dispatch [:start-load])
     (is (= true (:loading? @(rf/get-store))))
     (is (= ["started"] @fx-log))))
@@ -150,8 +150,8 @@
   (let [fx-log (atom [])]
     (rf/reg-fx :log (fn [v] (swap! fx-log conj v)))
     (rf/reg-event-fx :side-effect-only
-      (fn [_db _]
-        {:log "fired"}))
+                     (fn [_db _]
+                       {:log "fired"}))
     (rf/dispatch [:side-effect-only])
     (is (= {:count 42} @(rf/get-store)) "db unchanged")
     (is (= ["fired"] @fx-log))))

@@ -135,15 +135,15 @@
 (deftest render-html-import-base-override-rewrites-cdn-url
   (testing "a custom :import-base (bundle-mode) replaces the CDN base entirely"
     (let [out (html/render-html (simple-snapshot)
-                                 {:import-base "./vendor/baredom/"})]
+                                {:import-base "./vendor/baredom/"})]
       (is (str/includes? out "const __base = \"./vendor/baredom/\";"))
       (is (not (str/includes? out "cdn.jsdelivr.net"))
           "CDN URL must not appear when an import-base override is supplied"))))
 
 (deftest render-html-default-csp-allows-jsdelivr
   (testing "default CDN-mode export carries a Content-Security-Policy "
-           "that whitelists jsDelivr — Bareforge's audit gate against "
-           "third-party script hijacking via supply-chain compromise"
+    "that whitelists jsDelivr — Bareforge's audit gate against "
+    "third-party script hijacking via supply-chain compromise"
     (let [out (html/render-html (simple-snapshot) nil)]
       (is (str/includes? out "Content-Security-Policy"))
       (is (str/includes? out "default-src 'self'"))
@@ -153,21 +153,21 @@
 (deftest render-html-bundle-csp-excludes-jsdelivr
   (testing "when :import-base is set (bundle export), the CSP narrows to 'self' only"
     (let [out (html/render-html (simple-snapshot)
-                                 {:import-base "./vendor/baredom/"})]
+                                {:import-base "./vendor/baredom/"})]
       (is (str/includes? out "Content-Security-Policy"))
       (is (not (str/includes? out "cdn.jsdelivr.net"))
           "self-hosted bundle has no business referencing the CDN"))))
 
 (deftest render-html-without-manifest-omits-preload-block
   (testing "default render (no manifest passed) ships no <link rel=modulepreload> "
-           "block — matches today's behaviour exactly until BareDOM publishes integrity.json"
+    "block — matches today's behaviour exactly until BareDOM publishes integrity.json"
     (let [out (html/render-html (simple-snapshot) nil)]
       (is (not (str/includes? out "rel=\"modulepreload\""))))))
 
 (deftest render-html-with-manifest-emits-sri-preload-for-each-tag
   (testing "passing :integrity-manifest causes every BareDOM tag the doc loads "
-           "to gain a <link rel=modulepreload integrity=…> entry — SRI-binding "
-           "the dynamic import() to the bytes BareDOM published"
+    "to gain a <link rel=modulepreload integrity=…> entry — SRI-binding "
+    "the dynamic import() to the bytes BareDOM published"
     (let [manifest {:version "2.4.0" :algorithm "sha384"
                     :files {"x-container.js"  "sha384-AAA"
                             "x-typography.js" "sha384-BBB"

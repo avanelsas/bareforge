@@ -54,10 +54,10 @@
    treated as a record shape, not as state slots."
   [doc]
   (into #{}
-    (for [g (group-nodes doc)
-          fd (:fields g)
-          :when (collection-field? fd)]
-      (:of-group fd))))
+        (for [g (group-nodes doc)
+              fd (:fields g)
+              :when (collection-field? fd)]
+          (:of-group fd))))
 
 (defn template-group?
   "True when a group's `:fields` describe a record shape rather than
@@ -72,9 +72,9 @@
    pointers."
   [doc fname]
   (first
-    (for [g (group-nodes doc)
-          :when (some #(= fname (:name %)) (:fields g))]
-      g)))
+   (for [g (group-nodes doc)
+         :when (some #(= fname (:name %)) (:fields g))]
+     g)))
 
 (defn group-by-name
   "Return the group node whose `:name` equals `gname`, or nil."
@@ -137,12 +137,12 @@
   ([doc] (all-actions doc "app"))
   ([doc app-ns]
    (into []
-     (for [g (group-nodes doc)
-           :let [declared (declared-actions app-ns g)
-                 taken    (set (map :action-name declared))]
-           entry (concat declared
-                         (auto-setter-actions app-ns doc g taken))]
-       entry))))
+         (for [g (group-nodes doc)
+               :let [declared (declared-actions app-ns g)
+                     taken    (set (map :action-name declared))]
+               entry (concat declared
+                             (auto-setter-actions app-ns doc g taken))]
+           entry))))
 
 (defn field-groups-for-picker
   "Return the doc's declared fields grouped by owning group, ordered
@@ -168,11 +168,11 @@
         enclosing (filter #(= enclosing-name (:name %)) groups)
         others    (remove #(= enclosing-name (:name %)) groups)]
     (vec
-      (for [g (concat enclosing others)
-            :let [enclosing? (= enclosing-name (:name g))]]
-        {:owner-name (:name g)
-         :label      (if enclosing?
-                       (str (:name g) " (this group)")
-                       (:name g))
-         :enclosing? enclosing?
-         :fields     (vec (:fields g))}))))
+     (for [g (concat enclosing others)
+           :let [enclosing? (= enclosing-name (:name g))]]
+       {:owner-name (:name g)
+        :label      (if enclosing?
+                      (str (:name g) " (this group)")
+                      (:name g))
+        :enclosing? enclosing?
+        :fields     (vec (:fields g))}))))

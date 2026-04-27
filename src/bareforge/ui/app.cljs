@@ -32,9 +32,9 @@
         templates-panel (templates/create)
         tour-el         (welcome-tour/create)
         toolbar-el      (toolbar/create
-                          {:on-theme-toggle     #(theme-editor/toggle! theme-panel)
-                           :on-templates-toggle #(templates/toggle! templates-panel)
-                           :on-welcome-tour     welcome-tour/open!})
+                         {:on-theme-toggle     #(theme-editor/toggle! theme-panel)
+                          :on-templates-toggle #(templates/toggle! templates-panel)
+                          :on-welcome-tour     welcome-tour/open!})
         palette-el      (palette/create {:on-drag-start drag/start-from-palette!})
         layers-el       (layers/create)
         canvas-host     (u/el :div {:id    "bareforge-canvas"

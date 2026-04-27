@@ -21,9 +21,9 @@
       (assoc :inner-html nil)
       (update :slots (fn [slots]
                        (reduce-kv
-                         (fn [acc sname kids]
-                           (assoc acc sname (mapv strip-inner-html kids)))
-                         {} (or slots {}))))))
+                        (fn [acc sname kids]
+                          (assoc acc sname (mapv strip-inner-html kids)))
+                        {} (or slots {}))))))
 
 (defn- fixture-doc
   "Read the fixture and strip every node's `:inner-html`. The plugin's
@@ -160,8 +160,8 @@
 
 (deftest index-html-with-manifest-emits-modulepreload-block
   (testing ":integrity-manifest threads through to the index.html and "
-           "emits SRI-bound modulepreload links for every BareDOM tag the "
-           "doc loads"
+    "emits SRI-bound modulepreload links for every BareDOM tag the "
+    "doc loads"
     (let [doc      (fixture-doc "test/fixtures/export/demo-store-with-bindings.json")
           ;; Provide hashes for two of the demo-store's tags; the rest
           ;; pass through without preload entries (graceful partial
@@ -509,11 +509,11 @@
 
 (deftest inner-html-emits-as-nested-hiccup
   (testing "the parsed SVG appears as a nested JS array literal "
-           "inside the icon node — no innerHTML write, no sentinel "
-           "tag, just structured hiccup the renderer handles like "
-           "any other child"
+    "inside the icon node — no innerHTML write, no sentinel "
+    "tag, just structured hiccup the renderer handles like "
+    "any other child"
     (let [doc   (icon-doc
-                  "<svg viewBox=\"0 0 24 24\"><path d=\"M0 0\"/></svg>")
+                 "<svg viewBox=\"0 0 24 24\"><path d=\"M0 0\"/></svg>")
           files (vjs/generate doc {:title "icon-demo"})
           app   (get files "app.js")]
       (is (str/includes? app "\"x-icon\""))
@@ -525,11 +525,11 @@
 
 (deftest inner-html-payload-stripped-at-codegen
   (testing "even if a hostile :inner-html somehow reaches codegen "
-           "(stale autosave from a pre-sanitiser session, hand-edited "
-           "JSON), the sanitise-on-emit pass strips <script> before "
-           "the parser runs — defence-in-depth holds"
+    "(stale autosave from a pre-sanitiser session, hand-edited "
+    "JSON), the sanitise-on-emit pass strips <script> before "
+    "the parser runs — defence-in-depth holds"
     (let [doc   (icon-doc
-                  "<svg><script>alert(1)</script><path d=\"M\"/></svg>")
+                 "<svg><script>alert(1)</script><path d=\"M\"/></svg>")
           files (vjs/generate doc {:title "icon-demo"})
           app   (get files "app.js")]
       (is (not (str/includes? app "<script")))

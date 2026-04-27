@@ -297,8 +297,8 @@
         cart  (get files "src/app/cart/views.cljs")]
     (is (some? cart))
     (is (str/includes?
-          cart
-          ":on-x-popover-toggle (fn [^js e] (.preventDefault e) (rf/dispatch [::cart.events/cart-pinned-toggled])")
+         cart
+         ":on-x-popover-toggle (fn [^js e] (.preventDefault e) (rf/dispatch [::cart.events/cart-pinned-toggled])")
         "trigger handler calls preventDefault before dispatching")))
 
 (deftest generated-view-dispatches-cross-group-action
@@ -516,7 +516,6 @@
       (is (re-find #"\(fn \[v \[x\]\]\n\s+\(filterv #\(not= % \(rf/qualify-map x \"app\.cart-item\.db\"\)\) v\)\)"
                    cart-events)
           "body filterv wraps x with rf/qualify-map so equality matches qualified records"))))
-
 
 (deftest generated-hiccup-props-one-per-line-when-multiple
   (let [files  (cp/generate (fixture-doc) {:app-ns "app"})
@@ -943,7 +942,7 @@
     (is (some? subs) "product-feed subs.cljs is emitted")
     (testing "sub is a multi-signal reg-sub over the source collection + search field"
       (is (str/includes? subs
-            "(rf/reg-sub\n ::visible-products\n :<- [::products]\n :<- [::search-term]")))
+                         "(rf/reg-sub\n ::visible-products\n :<- [::products]\n :<- [::search-term]")))
     (testing "handler short-circuits on blank term"
       (is (str/includes? subs "(if (str/blank? term)"))
       (is (str/includes? subs "items")))
@@ -1026,9 +1025,9 @@
         ;; Inject a binding on the root x-container, which has no
         ;; entry in write-binding-event-names.
         doc'  (update-in doc [:root :bindings] (fnil assoc {})
-                          "value" {:field :search-term
-                                   :direction :write
-                                   :owner "Product feed"})
+                         "value" {:field :search-term
+                                  :direction :write
+                                  :owner "Product feed"})
         files (cp/generate (add-filter-by-to-fixture doc') {:app-ns "app"})
         core  (get files "src/app/core.cljs")]
     (is (not (str/includes? core ":on-nil")))

@@ -35,12 +35,12 @@
 (deftest dispatch-delete-when-selected
   (is (= :delete
          (k/dispatch (assoc base :key "Delete"
-                                 :has-selection? true :selection-id "n_3")))))
+                            :has-selection? true :selection-id "n_3")))))
 
 (deftest dispatch-backspace-when-selected
   (is (= :delete
          (k/dispatch (assoc base :key "Backspace"
-                                 :has-selection? true :selection-id "n_3")))))
+                            :has-selection? true :selection-id "n_3")))))
 
 (deftest dispatch-delete-noop-without-selection
   (is (= :noop (k/dispatch (assoc base :key "Delete" :has-selection? false)))))
@@ -48,8 +48,8 @@
 (deftest dispatch-delete-noop-on-root
   (is (= :noop
          (k/dispatch (assoc base :key "Delete"
-                                 :has-selection? true
-                                 :selection-id "root")))))
+                            :has-selection? true
+                            :selection-id "root")))))
 
 ;; --- file-menu shortcuts -----------------------------------------------
 
@@ -73,20 +73,20 @@
   (testing "typing 's' with Cmd held in an input (e.g. search field)
             falls through to the native behaviour"
     (is (= :noop (k/dispatch (assoc base :key "s" :meta? true
-                                         :tag-name "INPUT"))))
+                                    :tag-name "INPUT"))))
     (is (= :noop (k/dispatch (assoc base :key "o" :meta? true
-                                         :tag-name "X-SEARCH-FIELD"))))
+                                    :tag-name "X-SEARCH-FIELD"))))
     (is (= :noop (k/dispatch (assoc base :key "n" :meta? true
-                                         :content-editable? true))))))
+                                    :content-editable? true))))))
 
 ;; --- exit-text-edit ----------------------------------------------------
 
 (deftest dispatch-escape-exits-text-edit-when-editing
   (is (= :exit-text-edit
          (k/dispatch (assoc base :key "Escape"
-                                 :has-selection? true
-                                 :selection-id   "n_3"
-                                 :text-editing-id "n_3")))))
+                            :has-selection? true
+                            :selection-id   "n_3"
+                            :text-editing-id "n_3")))))
 
 (deftest dispatch-escape-exits-text-edit-even-in-editable
   (testing "Escape in the inline edit textarea still maps to
@@ -94,34 +94,34 @@
             first, but this is the fallback path)"
     (is (= :exit-text-edit
            (k/dispatch (assoc base :key "Escape"
-                                   :has-selection? true
-                                   :selection-id   "n_3"
-                                   :text-editing-id "n_3"
-                                   :tag-name       "TEXTAREA"))))))
+                              :has-selection? true
+                              :selection-id   "n_3"
+                              :text-editing-id "n_3"
+                              :tag-name       "TEXTAREA"))))))
 
 (deftest dispatch-escape-deselects-when-not-editing
   (testing "without text-editing-id, Escape still deselects"
     (is (= :deselect
            (k/dispatch (assoc base :key "Escape"
-                                   :has-selection? true
-                                   :selection-id   "n_3"
-                                   :text-editing-id nil))))))
+                              :has-selection? true
+                              :selection-id   "n_3"
+                              :text-editing-id nil))))))
 
 ;; --- deselect -----------------------------------------------------------
 
 (deftest dispatch-escape-with-selection-deselects
   (is (= :deselect
          (k/dispatch (assoc base :key "Escape"
-                                 :has-selection? true
-                                 :selection-id   "n_3")))))
+                            :has-selection? true
+                            :selection-id   "n_3")))))
 
 (deftest dispatch-escape-deselects-root-too
   (testing "Escape clears the selection even when root is selected —
             root-delete is blocked, but deselect should still work"
     (is (= :deselect
            (k/dispatch (assoc base :key "Escape"
-                                   :has-selection? true
-                                   :selection-id   "root"))))))
+                              :has-selection? true
+                              :selection-id   "root"))))))
 
 (deftest dispatch-escape-without-selection-noop
   (is (= :noop
@@ -130,24 +130,24 @@
 (deftest dispatch-escape-ignored-in-editable
   (is (= :noop
          (k/dispatch (assoc base :key "Escape"
-                                 :has-selection? true
-                                 :selection-id   "n_3"
-                                 :tag-name       "INPUT")))))
+                            :has-selection? true
+                            :selection-id   "n_3"
+                            :tag-name       "INPUT")))))
 
 (deftest dispatch-cmd-escape-ignored
   (testing "Cmd+Escape is reserved for OS-level actions, not deselect"
     (is (= :noop
            (k/dispatch (assoc base :key "Escape"
-                                   :meta?          true
-                                   :has-selection? true
-                                   :selection-id   "n_3"))))))
+                              :meta?          true
+                              :has-selection? true
+                              :selection-id   "n_3"))))))
 
 (deftest dispatch-delete-ignored-in-editable
   (is (= :noop
          (k/dispatch (assoc base :key "Backspace"
-                                 :has-selection? true
-                                 :selection-id "n_3"
-                                 :tag-name "x-search-field")))))
+                            :has-selection? true
+                            :selection-id "n_3"
+                            :tag-name "x-search-field")))))
 
 (deftest dispatch-delete-ignored-in-every-baredom-form-tag
   (testing "Every BareDOM form tag rendered by the Inspector must
@@ -160,9 +160,9 @@
                  "x-slider"]]
       (is (= :noop
              (k/dispatch (assoc base :key "Backspace"
-                                     :has-selection? true
-                                     :selection-id   "n_3"
-                                     :tag-name       tag)))
+                                :has-selection? true
+                                :selection-id   "n_3"
+                                :tag-name       tag)))
           (str "Backspace inside <" tag "> should be ignored")))))
 
 ;; --- arrow-key nudge -----------------------------------------------------
@@ -203,7 +203,7 @@
            (k/dispatch (assoc free-selected :key "ArrowLeft" :placement :flow))))
     (is (= :noop
            (k/dispatch (assoc free-selected :key "ArrowLeft"
-                                            :placement :background))))))
+                              :placement :background))))))
 
 (deftest dispatch-nudge-noop-without-selection
   (is (= :noop
@@ -212,7 +212,7 @@
 (deftest dispatch-nudge-ignored-in-editable
   (is (= :noop
          (k/dispatch (assoc free-selected :key "ArrowLeft"
-                                          :tag-name "INPUT")))))
+                            :tag-name "INPUT")))))
 
 (deftest dispatch-nudge-ignored-with-meta
   (testing "Cmd+Arrow is reserved for OS-level navigation, not a nudge"

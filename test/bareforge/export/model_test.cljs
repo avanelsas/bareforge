@@ -24,13 +24,13 @@
 (deftest collection-field-predicate
   (testing "vector + :of-group qualifies"
     (is (true? (em/collection-field?
-                 {:name :items :type :vector :of-group "product" :default []}))))
+                {:name :items :type :vector :of-group "product" :default []}))))
   (testing "vector alone doesn't qualify"
     (is (false? (em/collection-field?
-                  {:name :items :type :vector :default []}))))
+                 {:name :items :type :vector :default []}))))
   (testing "scalar doesn't qualify"
     (is (false? (em/collection-field?
-                  {:name :n :type :number :default 0})))))
+                 {:name :n :type :number :default 0})))))
 
 ;; --- ns-name derivation ---------------------------------------------------
 

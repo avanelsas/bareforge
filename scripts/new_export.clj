@@ -62,7 +62,7 @@
   [{:keys [id-kebab label description order interactive? extension]}]
   (let [ns-name (str "bareforge.export." id-kebab ".plugin")]
     (str
-"(ns " ns-name "
+     "(ns " ns-name "
   \"" label " export plugin. TODO — describe what this plugin emits
    and how the user runs the resulting artefact.
 
@@ -153,14 +153,14 @@
     (println (str "  order:   " order))
     (println (str "  interactive?: " (boolean interactive?)))
     (write-or-print!
-      plugin-path
-      (plugin-template {:id-kebab     id-kebab
-                        :label        label
-                        :description  description
-                        :order        order
-                        :interactive? interactive?
-                        :extension    extension})
-      dry-run)
+     plugin-path
+     (plugin-template {:id-kebab     id-kebab
+                       :label        label
+                       :description  description
+                       :order        order
+                       :interactive? interactive?
+                       :extension    extension})
+     dry-run)
     (println "\nNext steps:")
     (println (str "  1. Implement generate / download! in " plugin-path "."))
     (println "  2. Register the plugin in src/bareforge/export/registry.cljs:")

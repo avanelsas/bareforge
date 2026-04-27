@@ -111,13 +111,13 @@
    re-launch entry for the welcome tour last."
   [{:keys [on-welcome-tour]}]
   (concat
-    [["New"  "new"  on-new!]
-     ["Open" "open" on-open!]
-     ["Save" "save" on-save!]]
-    (for [p (exports/validated-plugins)]
-      [(:label p) (export-menu-value p) (export-handler p)])
-    (when on-welcome-tour
-      [["Show welcome tour" "welcome-tour" (fn [_] (on-welcome-tour))]])))
+   [["New"  "new"  on-new!]
+    ["Open" "open" on-open!]
+    ["Save" "save" on-save!]]
+   (for [p (exports/validated-plugins)]
+     [(:label p) (export-menu-value p) (export-handler p)])
+   (when on-welcome-tour
+     [["Show welcome tour" "welcome-tour" (fn [_] (on-welcome-tour))]])))
 
 (defn- file-menu-actions
   "Map from x-menu-item value → effectful handler, derived live
@@ -156,7 +156,7 @@
     (doseq [[label value] (file-menu-items opts)]
       (.appendChild menu
                     (u/set-text!
-                      (u/el :x-menu-item {:value value}) label)))
+                     (u/el :x-menu-item {:value value}) label)))
     (let [actions (file-menu-actions opts)]
       (u/on! menu :x-menu-select
              (fn [^js e]
@@ -183,7 +183,7 @@
         undo-btn      (icon-button "↶" "Undo" (fn [_] (state/undo!)))
         redo-btn      (icon-button "↷" "Redo" (fn [_] (state/redo!)))
         {preview-btn :el preview-text :text-el}
-                      (button+text "Preview" toggle-preview!)
+        (button+text "Preview" toggle-preview!)
         theme-btn     (button "Theme" (fn [_] (when on-theme-toggle (on-theme-toggle))))
         ;; data-tour selectors so the welcome tour can target each
         ;; control individually. Avoids polluting the id namespace
@@ -220,8 +220,8 @@
         ;; navbar's default slot. Reflects the loaded project filename
         ;; (without .json), or "untitled" when nothing is loaded.
         title         (u/set-text!
-                        (u/el :div {:class "toolbar-title"})
-                        (pf/project-basename @state/app-state))
+                       (u/el :div {:class "toolbar-title"})
+                       (pf/project-basename @state/app-state))
         toolbar-el  (u/el :x-navbar
                           {:class     "toolbar"
                            :variant   "default"

@@ -23,8 +23,8 @@
 (deftest manifest-url-composes
   (is (= "https://cdn.jsdelivr.net/npm/@vanelsas/baredom@2.4.0/dist/integrity.json"
          (int/manifest-url
-           "https://cdn.jsdelivr.net/npm/@vanelsas/baredom"
-           "2.4.0"))))
+          "https://cdn.jsdelivr.net/npm/@vanelsas/baredom"
+          "2.4.0"))))
 
 ;; --- parse-manifest ------------------------------------------------------
 
@@ -43,17 +43,17 @@
   (is (nil? (int/parse-manifest "{\"files\":{}}"))
       "missing required version/algorithm keys")
   (is (nil? (int/parse-manifest
-              "{\"version\":\"x\",\"algorithm\":\"sha384\",\"files\":\"not-a-map\"}"))
+             "{\"version\":\"x\",\"algorithm\":\"sha384\",\"files\":\"not-a-map\"}"))
       ":files must be an object"))
 
 (deftest parse-manifest-rejects-malformed-sri-values
   (is (nil? (int/parse-manifest
-              "{\"version\":\"x\",\"algorithm\":\"sha384\",\"files\":{\"x.js\":\"plain\"}}"))
+             "{\"version\":\"x\",\"algorithm\":\"sha384\",\"files\":{\"x.js\":\"plain\"}}"))
       "SRI values without an algorithm prefix are rejected — they'd render an unusable integrity= attribute"))
 
 (deftest parse-manifest-tolerates-extra-keys
   (let [m (int/parse-manifest
-            "{\"version\":\"x\",\"algorithm\":\"sha384\",\"files\":{},\"extraField\":42}")]
+           "{\"version\":\"x\",\"algorithm\":\"sha384\",\"files\":{},\"extraField\":42}")]
     (is (some? m)
         "manifest evolution shouldn't force a Bareforge bump — unknown top-level keys pass")))
 

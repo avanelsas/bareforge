@@ -24,7 +24,7 @@
 
 (deftest attr-diff-skips-equal
   (is (empty? (:set (r/attr-diff {"variant" "primary"}
-                                  {"variant" "primary"})))))
+                                 {"variant" "primary"})))))
 
 (deftest prop-diff-mixed
   (is (= {:set {:disabled true :loading true}
@@ -76,8 +76,8 @@
 (deftest layout-css-extra-style-after-named-fields
   (is (= "width:200px;color:red;"
          (r/layout->css {:placement   :flow
-                          :width       "200px"
-                          :extra-style "color:red"}))))
+                         :width       "200px"
+                         :extra-style "color:red"}))))
 
 (deftest layout-css-extra-style-empty-skipped
   (is (nil? (r/layout->css {:placement :flow :extra-style ""})))
@@ -124,15 +124,15 @@
 (deftest layout-css-css-vars-alone
   (is (= "--x-button-bg:#ff00aa;--x-button-fg:white;"
          (r/layout->css {:placement :flow
-                          :css-vars {"--x-button-fg" "white"
-                                     "--x-button-bg" "#ff00aa"}}))))
+                         :css-vars {"--x-button-fg" "white"
+                                    "--x-button-bg" "#ff00aa"}}))))
 
 (deftest layout-css-css-vars-skip-empty-values
   (is (= "--x-button-fg:white;"
          (r/layout->css {:placement :flow
-                          :css-vars {"--x-button-fg" "white"
-                                     "--x-button-bg" ""
-                                     "--x-button-padding" nil}}))))
+                         :css-vars {"--x-button-fg" "white"
+                                    "--x-button-bg" ""
+                                    "--x-button-padding" nil}}))))
 
 (deftest layout-css-css-vars-after-named-fields-before-extra
   (is (= "width:200px;--x-button-fg:white;color:red;"

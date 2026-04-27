@@ -1,7 +1,9 @@
-{:indents
- ;; clojure.test forms — body indented 2 spaces, not aligned under
- ;; the form name (which is what cljfmt's "function call" default
- ;; would do). Matches what every Clojure test file looks like.
+;; cljfmt config. The default :indents map covers defn / let / when /
+;; cond / doseq / etc.; we don't override it. :extra-indents merges in
+;; clojure.test forms, which 0.13's defaults don't include — without
+;; them cljfmt would align deftest bodies under the form name instead
+;; of the conventional 2-space body indent.
+{:extra-indents
  {deftest      [[:block 1]]
   testing      [[:block 1]]
   use-fixtures [[:block 1]]

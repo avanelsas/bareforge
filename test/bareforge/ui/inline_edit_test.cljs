@@ -5,7 +5,7 @@
 (deftest text-editable-mode-attr-components
   (testing "components with a 'text' augment property return :attr"
     (doseq [tag ["x-alert" "x-badge" "x-copy"
-                  "x-kinetic-typography" "x-kinetic-font"]]
+                 "x-kinetic-typography" "x-kinetic-font"]]
       (let [node {:id "n" :tag tag :attrs {} :props {} :slots {} :text nil
                   :layout {:placement :flow}}]
         (is (= :attr (ie/text-editable-mode tag node))
@@ -28,7 +28,7 @@
 (deftest text-editable-mode-nil-for-non-text-components
   (testing "containers, cards, icons, etc. return nil"
     (doseq [tag ["x-container" "x-card" "x-grid" "x-icon"
-                  "x-spinner" "x-navbar"]]
+                 "x-spinner" "x-navbar"]]
       (let [node {:id "n" :tag tag :attrs {} :props {} :slots {} :text nil
                   :layout {:placement :flow}}]
         (is (nil? (ie/text-editable-mode tag node))

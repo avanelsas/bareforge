@@ -219,7 +219,7 @@
                               (cond
                                 (.-done step) nil
                                 (clojure.string/starts-with?
-                                  (.-value step) prefix)
+                                 (.-value step) prefix)
                                 (.-value step)
                                 :else (recur))))]
             (when match (.get node-index match)))))))

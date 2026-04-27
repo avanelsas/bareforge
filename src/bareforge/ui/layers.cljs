@@ -79,7 +79,7 @@
   []
   (let [list-el (u/el :div {:class "layers-list"})
         panel   (u/el :div {:id    "bareforge-layers"
-                             :class "panel panel-layers"}
+                            :class "panel panel-layers"}
                       [(u/set-text! (u/el :div {:class "layers-label"}) "Layers")
                        list-el])]
     (render-tree! list-el

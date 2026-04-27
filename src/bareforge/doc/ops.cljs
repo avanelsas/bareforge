@@ -129,8 +129,8 @@
 
 (defn- drop-locked-id [fields]
   (vec (clojure.core/remove
-         #(and (:locked? %) (= :id (:name %)))
-         fields)))
+        #(and (:locked? %) (= :id (:name %)))
+        fields)))
 
 (defn- ensure-locked-id
   "Idempotent: guarantees exactly one locked ::id field at the head of

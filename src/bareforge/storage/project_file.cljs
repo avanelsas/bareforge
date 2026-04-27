@@ -100,66 +100,66 @@
        (set! (.-type input) "file")
        (set! (.-accept input) ".json,application/json")
        (.addEventListener input "change"
-         (fn [^js e]
-           (let [files (.. e -target -files)]
-             (if (and files (pos? (.-length files)))
-               (let [file   (.item files 0)
-                     fname  (.-name file)
-                     reader (js/FileReader.)]
-                 (cond
-                   (> (.-size file) max-file-bytes)
-                   (do (js/window.alert
-                         (str "Could not load: file is too large "
-                              "(over 5 MB). Refusing to parse."))
-                       (resolve false))
+                          (fn [^js e]
+                            (let [files (.. e -target -files)]
+                              (if (and files (pos? (.-length files)))
+                                (let [file   (.item files 0)
+                                      fname  (.-name file)
+                                      reader (js/FileReader.)]
+                                  (cond
+                                    (> (.-size file) max-file-bytes)
+                                    (do (js/window.alert
+                                         (str "Could not load: file is too large "
+                                              "(over 5 MB). Refusing to parse."))
+                                        (resolve false))
 
-                   :else
-                   (do
-                     (set! (.-onload reader)
-                       (fn [_]
-                         (let [raw         (.-result reader)
-                               parsed      (idb/deserialize raw)
-                               explanation (validate-project parsed)]
-                           (cond
-                             (nil? parsed)
-                             (do (js/window.alert
-                                  "Could not load: not a valid Bareforge project file.")
-                                 (resolve false))
+                                    :else
+                                    (do
+                                      (set! (.-onload reader)
+                                            (fn [_]
+                                              (let [raw         (.-result reader)
+                                                    parsed      (idb/deserialize raw)
+                                                    explanation (validate-project parsed)]
+                                                (cond
+                                                  (nil? parsed)
+                                                  (do (js/window.alert
+                                                       "Could not load: not a valid Bareforge project file.")
+                                                      (resolve false))
 
-                             (= :unsafe (:kind explanation))
-                             (do (js/console.error
-                                  "Project file refused: unsafe content"
-                                  (clj->js (:detail explanation)))
-                                 (js/window.alert
-                                  (str "Could not load: project file contains "
-                                       "potentially unsafe content "
-                                       "(script tags, event handlers, or "
-                                       "javascript: URLs)."))
-                                 (resolve false))
+                                                  (= :unsafe (:kind explanation))
+                                                  (do (js/console.error
+                                                       "Project file refused: unsafe content"
+                                                       (clj->js (:detail explanation)))
+                                                      (js/window.alert
+                                                       (str "Could not load: project file contains "
+                                                            "potentially unsafe content "
+                                                            "(script tags, event handlers, or "
+                                                            "javascript: URLs)."))
+                                                      (resolve false))
 
-                             explanation
-                             (do (js/console.error
-                                  "Project file failed spec validation"
-                                  (clj->js (:detail explanation)))
-                                 (js/window.alert
-                                  "Could not load: project file failed validation.")
-                                 (resolve false))
+                                                  explanation
+                                                  (do (js/console.error
+                                                       "Project file failed spec validation"
+                                                       (clj->js (:detail explanation)))
+                                                      (js/window.alert
+                                                       "Could not load: project file failed validation.")
+                                                      (resolve false))
 
-                             :else
+                                                  :else
                              ;; Defence-in-depth — even after the
                              ;; strict scanner clears the doc, run it
                              ;; through the soft sanitiser so any
                              ;; near-miss payload is neutralised.
-                             (let [safe-parsed (update parsed :document sanitize/sanitize-doc)]
-                               (apply-loaded-project! safe-parsed fname)
-                               (idb/clear-autosave!)
-                               (resolve true))))))
-                     (set! (.-onerror reader)
-                           (fn [_]
-                             (js/window.alert "Could not read file.")
-                             (resolve false)))
-                     (.readAsText reader file))))
-               (resolve false)))))
+                                                  (let [safe-parsed (update parsed :document sanitize/sanitize-doc)]
+                                                    (apply-loaded-project! safe-parsed fname)
+                                                    (idb/clear-autosave!)
+                                                    (resolve true))))))
+                                      (set! (.-onerror reader)
+                                            (fn [_]
+                                              (js/window.alert "Could not read file.")
+                                              (resolve false)))
+                                      (.readAsText reader file))))
+                                (resolve false)))))
        (.click input)))))
 
 (defn new!

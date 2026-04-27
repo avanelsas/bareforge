@@ -41,9 +41,9 @@
 (def ^:private arrow-deltas
   "Pixel vectors for each arrow key's base (1 px) step."
   {"ArrowLeft"  [-1  0]
-   "ArrowRight" [ 1  0]
-   "ArrowUp"    [ 0 -1]
-   "ArrowDown"  [ 0  1]})
+   "ArrowRight" [1  0]
+   "ArrowUp"    [0 -1]
+   "ArrowDown"  [0  1]})
 
 (def ^:const nudge-coalesce-window-ms
   "How long after a nudge a subsequent nudge on the same node still
@@ -176,7 +176,7 @@
    selection change) starts a fresh history entry."
   [dx dy]
   (let [sel-id     (canvas/canonical-node-id
-                     (get-in @state/app-state [:selection :id]))
+                    (get-in @state/app-state [:selection :id]))
         doc        (:document @state/app-state)
         node       (m/get-node doc sel-id)
         cur-x      (or (get-in node [:layout :x]) 0)
@@ -216,11 +216,11 @@
       :new      (do (.preventDefault e)
                     (when (or (not (:dirty? @state/app-state))
                               (js/window.confirm
-                                "Start a new project? Unsaved changes will be lost."))
+                               "Start a new project? Unsaved changes will be lost."))
                       (pf/new!)))
       :delete   (do (.preventDefault e)
                     (let [sel-id (canvas/canonical-node-id
-                                   (get-in @state/app-state [:selection :id]))
+                                  (get-in @state/app-state [:selection :id]))
                           doc    (:document @state/app-state)
                           doc'   (ops/remove doc sel-id)]
                       (state/commit! doc')

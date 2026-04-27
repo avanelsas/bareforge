@@ -489,26 +489,26 @@
    fields carry :computed? true when they have a :computed spec."
   [doc]
   (into []
-    (concat
-      (for [node      (m/walk-nodes doc)
-            field-def (:fields node)
-            :let [{:keys [name type default computed]} field-def]]
-        {:field      name
-         :owner-id   (:id node)
-         :owner-name (or (:name node) (:tag node))
-         :type       type
-         :default    default
-         :computed?  (some? computed)
-         :source     :field-def})
-      (for [node (m/walk-nodes doc)
-            [prop-name {:keys [field direction owner]}] (:bindings node)]
-        {:field      field
-         :owner-id   (or owner (:id node))
-         :owner-name (or (:name node) (:tag node))
-         :prop       prop-name
-         :direction  direction
-         :bound-by   (:id node)
-         :source     :binding}))))
+        (concat
+         (for [node      (m/walk-nodes doc)
+               field-def (:fields node)
+               :let [{:keys [name type default computed]} field-def]]
+           {:field      name
+            :owner-id   (:id node)
+            :owner-name (or (:name node) (:tag node))
+            :type       type
+            :default    default
+            :computed?  (some? computed)
+            :source     :field-def})
+         (for [node (m/walk-nodes doc)
+               [prop-name {:keys [field direction owner]}] (:bindings node)]
+           {:field      field
+            :owner-id   (or owner (:id node))
+            :owner-name (or (:name node) (:tag node))
+            :prop       prop-name
+            :direction  direction
+            :bound-by   (:id node)
+            :source     :binding}))))
 
 (defn- infer-direction
   "Infer binding direction from property kind and component tag."
@@ -530,9 +530,9 @@
   ([node-id prop-name field owner direction]
    (let [doc  (:document @state/app-state)
          doc' (ops/set-binding doc node-id prop-name
-                (cond-> {:field     (keyword field)
-                         :direction direction}
-                  owner (assoc :owner owner)))]
+                               (cond-> {:field     (keyword field)
+                                        :direction direction}
+                                 owner (assoc :owner owner)))]
      (state/commit! doc'))))
 
 (defn- commit-unbind! [node-id prop-name]
@@ -592,16 +592,16 @@
                   (doseq [{:keys [title pinned? fields]} sects
                           :let [matches (if (seq query)
                                           (filter #(str/includes?
-                                                     (str/lower-case (name (:field %)))
-                                                     query)
+                                                    (str/lower-case (name (:field %)))
+                                                    query)
                                                   fields)
                                           fields)]
                           :when (seq matches)]
                     (let [header (u/set-text!
-                                   (u/el :div {:class "inspector-bind-section"})
-                                   (if pinned?
-                                     (str "Record fields — " title)
-                                     title))]
+                                  (u/el :div {:class "inspector-bind-section"})
+                                  (if pinned?
+                                    (str "Record fields — " title)
+                                    title))]
                       (.appendChild body header)
                       (doseq [{:keys [field type computed?]} matches]
                         (let [compat?  (type-compatible? type prop-kind)
@@ -650,21 +650,21 @@
                            (str "↔ " owner-name "." (field-name-str (:field binding)))
                            (str "↔ " (field-name-str (:field binding))))
             field-label  (u/set-text!
-                           (u/el :span {:class "inspector-bind-field"})
-                           label-text)
+                          (u/el :span {:class "inspector-bind-field"})
+                          label-text)
             unbind-btn   (u/set-text!
-                           (u/el :x-button {:variant "ghost" :size "sm"
-                                            :class "inspector-bind-btn"})
-                           "×")]
+                          (u/el :x-button {:variant "ghost" :size "sm"
+                                           :class "inspector-bind-btn"})
+                          "×")]
         (u/on! unbind-btn :press
                (fn [_] (commit-unbind! (:id node) prop-name)))
         (.appendChild container field-label)
         (.appendChild container unbind-btn))
       (let [btn (u/set-text!
-                  (u/el :x-button {:variant "ghost" :size "sm"
-                                   :class "inspector-bind-btn"
-                                   :title "Bind to a field"})
-                  "🔗")]
+                 (u/el :x-button {:variant "ghost" :size "sm"
+                                  :class "inspector-bind-btn"
+                                  :title "Bind to a field"})
+                 "🔗")]
         (u/on! btn :press
                (fn [_]
                  (.replaceChildren container)
@@ -729,8 +729,8 @@
   (let [props (:properties meta)
         rows  (for [p props]
                 (field-row-with-binding
-                  (display-label p) (build-widget node p)
-                  node p all-fields))]
+                 (display-label p) (build-widget node p)
+                 node p all-fields))]
     (if (seq props)
       (section "Attributes" rows)
       (section "Attributes"
@@ -782,21 +782,21 @@
                          (str "↔ " owner-name "." (field-name-str bound))
                          (str "↔ " (field-name-str bound)))
             field-lbl  (u/set-text!
-                         (u/el :span {:class "inspector-bind-field"})
-                         label-text)
+                        (u/el :span {:class "inspector-bind-field"})
+                        label-text)
             unbind-btn (u/set-text!
-                         (u/el :x-button {:variant "ghost" :size "sm"
-                                          :class "inspector-bind-btn"})
-                         "×")]
+                        (u/el :x-button {:variant "ghost" :size "sm"
+                                         :class "inspector-bind-btn"})
+                        "×")]
         (u/on! unbind-btn :press
                (fn [_] (commit-text-field! (:id node) nil)))
         (.appendChild container field-lbl)
         (.appendChild container unbind-btn))
       (let [btn (u/set-text!
-                  (u/el :x-button {:variant "ghost" :size "sm"
-                                   :class "inspector-bind-btn"
-                                   :title "Bind text to a field"})
-                  "🔗")]
+                 (u/el :x-button {:variant "ghost" :size "sm"
+                                  :class "inspector-bind-btn"
+                                  :title "Bind text to a field"})
+                 "🔗")]
         (u/on! btn :press
                (fn [_]
                  (.replaceChildren container)
@@ -1098,14 +1098,14 @@
    type-appropriate empty value."
   [group-node records]
   (into {}
-    (for [fd (:fields group-node)
-          :when (not (actions/computed? fd))]
-      [(:name fd)
-       (cond
-         (= :id (:name fd)) (next-seed-id records)
-         :else              (case (:type fd)
-                              :number 0 :boolean false :keyword nil
-                              :vector [] ""))])))
+        (for [fd (:fields group-node)
+              :when (not (actions/computed? fd))]
+          [(:name fd)
+           (cond
+             (= :id (:name fd)) (next-seed-id records)
+             :else              (case (:type fd)
+                                  :number 0 :boolean false :keyword nil
+                                  :vector [] ""))])))
 
 (defn- build-seed-records-editor
   "Inline editor for a collection field's `:default` vector. Renders a
@@ -1141,8 +1141,8 @@
                 :let [fname    (cljs.core/name (:name tf))
                       wrap-el  (u/el :div {:class "inspector-seed-cell-wrap"})
                       caption  (u/set-text!
-                                 (u/el :small {:class "inspector-seed-caption"})
-                                 (field-name-str (:name tf)))
+                                (u/el :small {:class "inspector-seed-caption"})
+                                (field-name-str (:name tf)))
                       cell     (u/el :x-search-field
                                      {:class       "inspector-seed-cell"
                                       :placeholder fname
@@ -1160,9 +1160,9 @@
           (.appendChild cells-wrap wrap-el))
         (.appendChild row cells-wrap)
         (let [rm (u/set-text!
-                   (u/el :x-button {:variant "ghost" :size "sm"
-                                    :class "inspector-seed-remove"})
-                   "×")]
+                  (u/el :x-button {:variant "ghost" :size "sm"
+                                   :class "inspector-seed-remove"})
+                  "×")]
           (u/on! rm :press
                  (fn [_]
                    (let [cur (fresh-records)]
@@ -1171,8 +1171,8 @@
           (.appendChild row rm))
         (.appendChild table row)))
     (let [add-btn (u/set-text!
-                    (u/el :x-button {:variant "secondary" :size "sm"})
-                    "+ Add record")
+                   (u/el :x-button {:variant "secondary" :size "sm"})
+                   "+ Add record")
           add-wrap (u/el :div {:class "inspector-seed-add"})]
       (u/on! add-btn :press
              (fn [_]
@@ -1206,14 +1206,14 @@
                      summary (str " inspector-data-field--stacked"))
         label-el   (u/el :span {:class label-cls})
         _          (.appendChild label-el
-                     (u/set-text!
-                       (u/el :span {:class "inspector-data-field-head"})
-                       head))
+                                 (u/set-text!
+                                  (u/el :span {:class "inspector-data-field-head"})
+                                  head))
         _          (when summary
                      (.appendChild label-el
-                       (u/set-text!
-                         (u/el :span {:class "inspector-data-field-summary"})
-                         summary)))
+                                   (u/set-text!
+                                    (u/el :span {:class "inspector-data-field-summary"})
+                                    summary)))
         of-group   (:of-group fd)
         target     (when of-group
                      (actions/group-by-name (:document @state/app-state) of-group))
@@ -1221,18 +1221,18 @@
         container  (u/el :div {:class "inspector-field-def"})]
     (when target
       (let [expand-btn (u/set-text!
-                         (u/el :x-button {:variant "ghost" :size "sm"
-                                          :class "inspector-seed-toggle"})
-                         (if expanded? "▾" "▸"))]
+                        (u/el :x-button {:variant "ghost" :size "sm"
+                                         :class "inspector-seed-toggle"})
+                        (if expanded? "▾" "▸"))]
         (u/on! expand-btn :press
                (fn [_] (toggle-seeds-expanded! node fd)))
         (.appendChild header expand-btn)))
     (.appendChild header label-el)
     (when-not locked?
       (let [remove-btn (u/set-text!
-                         (u/el :x-button {:variant "ghost" :size "sm"
-                                          :class "inspector-bind-btn"})
-                         "×")]
+                        (u/el :x-button {:variant "ghost" :size "sm"
+                                         :class "inspector-bind-btn"})
+                        "×")]
         (u/on! remove-btn :press (fn [_] (commit-remove-field! (:id node) idx)))
         (.appendChild header remove-btn)))
     (.appendChild container header)
@@ -1322,36 +1322,36 @@
    at by `src-sel`'s current :of-group."
   [^js project-sel doc node ^js src-sel]
   (populate-select!
-    project-sel "— field —"
-    (when-let [sog (when-let [s (non-empty-value src-sel)]
-                     (field-of-group-name doc (keyword s) node))]
-      (for [{nm :name} (numeric-fields-of-group doc sog)]
-        {:value (cljs.core/name nm)}))))
+   project-sel "— field —"
+   (when-let [sog (when-let [s (non-empty-value src-sel)]
+                    (field-of-group-name doc (keyword s) node))]
+     (for [{nm :name} (numeric-fields-of-group doc sog)]
+       {:value (cljs.core/name nm)}))))
 
 (defn- rebuild-jt-match-options!
   "Populate `jt-match-sel` with the non-computed fields of the group
    selected in `jt-group-sel`."
   [^js jt-match-sel doc ^js jt-group-sel]
   (populate-select!
-    jt-match-sel "— match field —"
-    (when-let [gname (non-empty-value jt-group-sel)]
-      (when-let [g (actions/group-by-name doc gname)]
-        (for [{nm :name :as fd} (:fields g)
-              :when (not (actions/computed? fd))]
-          {:value (cljs.core/name nm)})))))
+   jt-match-sel "— match field —"
+   (when-let [gname (non-empty-value jt-group-sel)]
+     (when-let [g (actions/group-by-name doc gname)]
+       (for [{nm :name :as fd} (:fields g)
+             :when (not (actions/computed? fd))]
+         {:value (cljs.core/name nm)})))))
 
 (defn- rebuild-fb-match-options!
   "Populate `fb-match-sel` with the non-computed fields of the
    template group pointed at by `src-sel`'s :of-group."
   [^js fb-match-sel doc node ^js src-sel]
   (populate-select!
-    fb-match-sel "— match field —"
-    (when-let [sog (when-let [s (non-empty-value src-sel)]
-                     (field-of-group-name doc (keyword s) node))]
-      (when-let [g (actions/group-by-name doc sog)]
-        (for [{nm :name :as fd} (:fields g)
-              :when (not (actions/computed? fd))]
-          {:value (cljs.core/name nm)})))))
+   fb-match-sel "— match field —"
+   (when-let [sog (when-let [s (non-empty-value src-sel)]
+                    (field-of-group-name doc (keyword s) node))]
+     (when-let [g (actions/group-by-name doc sog)]
+       (for [{nm :name :as fd} (:fields g)
+             :when (not (actions/computed? fd))]
+         {:value (cljs.core/name nm)})))))
 
 (defn- update-form-visibility!
   "Show / hide rows based on the current computed? / type / op / src
@@ -1427,13 +1427,13 @@
                 computed? (boolean (.-checked computed-sw))]
             (if computed?
               (when-let [c (computed-map
-                             (kw-value op-sel)
-                             (kw-value src-sel)
-                             (kw-value project-sel)
-                             (non-empty-value jt-group-sel)
-                             (kw-value jt-match-sel)
-                             (kw-value fb-match-sel)
-                             (kw-value fb-search-sel))]
+                            (kw-value op-sel)
+                            (kw-value src-sel)
+                            (kw-value project-sel)
+                            (non-empty-value jt-group-sel)
+                            (kw-value jt-match-sel)
+                            (kw-value fb-match-sel)
+                            (kw-value fb-search-sel))]
                 (let [op         (:operation c)
                       src        (:source-field c)
                       ;; :filter-by always produces a vector of the
@@ -1444,12 +1444,12 @@
                       of-group   (when (= op :filter-by)
                                    (field-of-group-name doc src node))]
                   (commit-add-field! (:id node)
-                    (cond-> {:name kw :type field-type :computed c}
-                      (= op :filter-by) (assoc :of-group of-group)))
+                                     (cond-> {:name kw :type field-type :computed c}
+                                       (= op :filter-by) (assoc :of-group of-group)))
                   (u/set-attr! name-in :value "")
                   true))
               (let [default  (stored-field-default
-                               type-kw (read-event-value* default-in))
+                              type-kw (read-event-value* default-in))
                     of-group (non-empty-value of-group-sel)
                     fd       (cond-> {:name kw :type type-kw :default default}
                                (and (= type-kw :vector) of-group)
@@ -1485,10 +1485,10 @@
         fb-kind-widget (u/set-text! (u/el :span {:class "inspector-empty"})
                                     "case-insensitive contains")
         add-btn        (u/set-text!
-                         (u/el :x-button {:variant   "secondary"
-                                          :size      "sm"
-                                          :data-tour "add-field"})
-                         "Add field")
+                        (u/el :x-button {:variant   "secondary"
+                                         :size      "sm"
+                                         :data-tour "add-field"})
+                        "Add field")
         rows           {:default-row   (field-row "default" default-in)
                         :op-row        (field-row "operation" op-sel)
                         :src-row       (field-row "source field" src-sel)
@@ -1516,22 +1516,22 @@
   [{:keys [doc node other-groups type-sel of-group-sel op-sel src-sel
            jt-group-sel fb-search-sel project-sel jt-match-sel fb-match-sel]}]
   (populate-select! type-sel "— type —"
-    (for [{:keys [id label]} field-types]
-      {:value (cljs.core/name id) :label label}))
+                    (for [{:keys [id label]} field-types]
+                      {:value (cljs.core/name id) :label label}))
   (populate-select! of-group-sel "— of group —"
-    (group-option-rows other-groups))
+                    (group-option-rows other-groups))
   (populate-select! op-sel "— operation —"
-    (for [{:keys [id label]} computed-op-options]
-      {:value (cljs.core/name id) :label label}))
+                    (for [{:keys [id label]} computed-op-options]
+                      {:value (cljs.core/name id) :label label}))
   (populate-select! src-sel "— source field —"
-    (local-field-option-rows node #(not (actions/computed? %))))
+                    (local-field-option-rows node #(not (actions/computed? %))))
   (populate-select! jt-group-sel "— target group —"
-    (group-option-rows other-groups))
+                    (group-option-rows other-groups))
   (populate-select! fb-search-sel "— search field —"
-    (local-field-option-rows node
-      #(and (= :string (:type %))
-            (not (actions/computed? %))
-            (not (:locked? %)))))
+                    (local-field-option-rows node
+                                             #(and (= :string (:type %))
+                                                   (not (actions/computed? %))
+                                                   (not (:locked? %)))))
   (rebuild-project-options! project-sel doc node src-sel)
   (rebuild-jt-match-options! jt-match-sel doc jt-group-sel)
   (rebuild-fb-match-options! fb-match-sel doc node src-sel)
@@ -1549,7 +1549,7 @@
            fb-match-sel fb-search-sel name-in default-in add-btn]}]
   (let [refresh! (fn []
                    (update-form-visibility!
-                     rows type-sel computed-sw op-sel src-sel doc node))]
+                    rows type-sel computed-sw op-sel src-sel doc node))]
     (on-select-change! type-sel      (fn [_] (refresh!)))
     (on-select-change! op-sel        (fn [_] (refresh!)))
     (on-select-change! src-sel
@@ -1570,9 +1570,9 @@
     (u/on! add-btn :press
            (fn [_]
              (commit-new-field!
-               node doc name-in default-in type-sel computed-sw
-               op-sel src-sel project-sel of-group-sel
-               jt-group-sel jt-match-sel fb-match-sel fb-search-sel)))))
+              node doc name-in default-in type-sel computed-sw
+              op-sel src-sel project-sel of-group-sel
+              jt-group-sel jt-match-sel fb-match-sel fb-search-sel)))))
 
 (defn- assemble-add-field-form
   "Append the widgets in display order under a fresh form container."
@@ -1604,8 +1604,8 @@
   (when (registry/container? (:tag node))
     (let [fields     (or (:fields node) [])
           field-rows (map-indexed
-                       (fn [idx fd] (build-field-def-row node fd idx))
-                       fields)
+                      (fn [idx fd] (build-field-def-row node fd idx))
+                      fields)
           add-form   (build-add-field-form node)]
       (section "Fields"
                (remove nil?
@@ -1732,16 +1732,16 @@
                                 f        (fn [xs]
                                            (if (seq query)
                                              (filter #(str/includes?
-                                                        (str/lower-case (name (:action-name %)))
-                                                        query)
+                                                       (str/lower-case (name (:action-name %)))
+                                                       query)
                                                      xs)
                                              xs))
                                 d-match  (f declared)
                                 s-match  (f setters)]
                           :when (or (seq d-match) (seq s-match))]
                     (let [header (u/set-text!
-                                   (u/el :div {:class "inspector-bind-section"})
-                                   gname)]
+                                  (u/el :div {:class "inspector-bind-section"})
+                                  gname)]
                       (.appendChild body header)
                       (doseq [entry d-match]
                         (let [needs?   (action-needs-record? entry)
@@ -1749,16 +1749,16 @@
                               cls      (cond-> "inspector-bind-suggestion"
                                          gap? (str " inspector-bind-suggestion--dim"))
                               item     (u/set-text!
-                                         (u/el :div {:class cls
-                                                     :title (when gap?
-                                                              "needs an enclosing record ancestor")})
-                                         (name (:action-name entry)))]
+                                        (u/el :div {:class cls
+                                                    :title (when gap?
+                                                             "needs an enclosing record ancestor")})
+                                        (name (:action-name entry)))]
                           (u/on! item :click (fn [_] (on-pick (:action-ref entry))))
                           (.appendChild body item)))
                       (when (seq s-match)
                         (let [sub (u/set-text!
-                                    (u/el :div {:class "inspector-bind-subsection"})
-                                    "Setters")]
+                                   (u/el :div {:class "inspector-bind-subsection"})
+                                   "Setters")]
                           (.appendChild body sub))
                         (doseq [entry s-match]
                           (let [needs?   (action-needs-record? entry)
@@ -1766,10 +1766,10 @@
                                 cls      (cond-> "inspector-bind-suggestion inspector-bind-suggestion--setter"
                                            gap? (str " inspector-bind-suggestion--dim"))
                                 item     (u/set-text!
-                                           (u/el :div {:class cls
-                                                       :title (when gap?
-                                                                "needs an enclosing record ancestor")})
-                                           (name (:action-name entry)))]
+                                          (u/el :div {:class cls
+                                                      :title (when gap?
+                                                               "needs an enclosing record ancestor")})
+                                          (name (:action-name entry)))]
                             (u/on! item :click (fn [_] (on-pick (:action-ref entry))))
                             (.appendChild body item)))))))]
     (render! "")
@@ -1787,8 +1787,8 @@
    payload the dispatch will receive."
   [node event-name _doc all-actions tmpl-name]
   (let [existing-idx (first (keep-indexed (fn [i t]
-                                             (when (= event-name (:trigger t)) i))
-                                           (or (:events node) [])))
+                                            (when (= event-name (:trigger t)) i))
+                                          (or (:events node) [])))
         existing    (when existing-idx
                       (nth (:events node) existing-idx))
         wrap        (u/el :div {:class "inspector-event-row-wrap"})
@@ -1799,40 +1799,40 @@
     (.appendChild row label-el)
     (if existing
       (let [picked (u/set-text!
-                     (u/el :span {:class "inspector-bind-field"})
-                     (str "→ " (action-ref-label (:action-ref existing))))
+                    (u/el :span {:class "inspector-bind-field"})
+                    (str "→ " (action-ref-label (:action-ref existing))))
             unbind (u/set-text!
-                     (u/el :x-button {:variant "ghost" :size "sm"
-                                      :class "inspector-bind-btn"})
-                     "×")]
+                    (u/el :x-button {:variant "ghost" :size "sm"
+                                     :class "inspector-bind-btn"})
+                    "×")]
         (u/on! unbind :press
                (fn [_] (commit-remove-trigger! (:id node) existing-idx)))
         (.appendChild row picked)
         (.appendChild row unbind)
         (u/set-text! hint
-          (if tmpl-name
-            (str "payload: enclosing " tmpl-name)
-            "payload: none")))
+                     (if tmpl-name
+                       (str "payload: enclosing " tmpl-name)
+                       "payload: none")))
       (let [btn (u/set-text!
-                  (u/el :x-button {:variant "ghost" :size "sm"
-                                   :class "inspector-bind-btn"
-                                   :title "Pick an action"
-                                   :data-tour "add-event"})
-                  "🔗")]
+                 (u/el :x-button {:variant "ghost" :size "sm"
+                                  :class "inspector-bind-btn"
+                                  :title "Pick an action"
+                                  :data-tour "add-event"})
+                 "🔗")]
         (u/on! btn :press
                (fn [_]
                  (.replaceChildren row)
                  (.appendChild row label-el)
                  (let [pick! (fn [action-ref]
                                (commit-add-trigger! (:id node)
-                                 {:trigger event-name :action-ref action-ref}))
+                                                    {:trigger event-name :action-ref action-ref}))
                        panel (build-action-picker-panel all-actions tmpl-name pick!)]
                    (.appendChild row panel))))
         (.appendChild row btn)
         (u/set-text! hint
-          (if tmpl-name
-            (str "payload: enclosing " tmpl-name " (when action needs one)")
-            "payload: none (no template ancestor)"))))
+                     (if tmpl-name
+                       (str "payload: enclosing " tmpl-name " (when action needs one)")
+                       "payload: none (no template ancestor)"))))
     (.appendChild wrap row)
     (.appendChild wrap hint)
     wrap))
@@ -1888,9 +1888,9 @@
         label-el   (u/set-text! (u/el :span {:class "inspector-data-field"})
                                 label)
         remove-btn (u/set-text!
-                     (u/el :x-button {:variant "ghost" :size "sm"
-                                      :class "inspector-bind-btn"})
-                     "×")]
+                    (u/el :x-button {:variant "ghost" :size "sm"
+                                     :class "inspector-bind-btn"})
+                    "×")]
     (u/on! remove-btn :press (fn [_] (commit-remove-action! (:id node) idx)))
     (.appendChild row label-el)
     (.appendChild row remove-btn)
@@ -1908,13 +1908,13 @@
         target-fields (remove actions/computed? (:fields node))
         single-field? (= 1 (count target-fields))
         add-btn       (u/set-text!
-                        (u/el :x-button {:variant "secondary" :size "sm"})
-                        "Add action")
+                       (u/el :x-button {:variant "secondary" :size "sm"})
+                       "Add action")
         target-rows   (for [{nm :name} target-fields]
                         {:value (cljs.core/name nm)})]
     (populate-select! op-sel "— operation —"
-      (for [{:keys [id label]} action-operations]
-        {:value (cljs.core/name id) :label label}))
+                      (for [{:keys [id label]} action-operations]
+                        {:value (cljs.core/name id) :label label}))
     ;; Single target → no placeholder, pre-select that one option so
     ;; .-value reads the auto-pick at commit time. Multi-target →
     ;; placeholder + options, user must pick.
@@ -1934,7 +1934,7 @@
                    tgt (kw-value target-sel)]
                (when (and n (not= "" n) op tgt)
                  (commit-add-action! (:id node)
-                   {:name (keyword n) :operation op :target-field tgt})
+                                     {:name (keyword n) :operation op :target-field tgt})
                  (u/set-attr! name-in :value "")
                  (u/set-attr! op-sel :value "")
                  (when-not single-field?
@@ -1951,8 +1951,8 @@
              (seq (:fields node)))
     (let [actions-vec (or (:actions node) [])
           rows        (map-indexed
-                        (fn [idx a] (build-action-row node a idx))
-                        actions-vec)
+                       (fn [idx a] (build-action-row node a idx))
+                       actions-vec)
           add-form    (build-add-action-form node)]
       (section "Actions" (concat rows [add-form])))))
 
@@ -1985,9 +1985,9 @@
    to show in the `owner / field` label."
   [all-fields]
   (into {}
-    (for [{:keys [field owner-name source]} all-fields
-          :when (= source :field-def)]
-      [field owner-name])))
+        (for [{:keys [field owner-name source]} all-fields
+              :when (= source :field-def)]
+          [field owner-name])))
 
 (defn- data-summary-section [{:keys [node]} all-fields]
   (when-let [bindings (seq (:bindings node))]
@@ -1995,9 +1995,9 @@
           rows (for [[prop-name {:keys [field direction]}] bindings]
                  (u/el :div {:class "inspector-data-row"}
                        [(u/set-text!
-                          (u/el :span {:class "inspector-data-field"})
-                          (binding-sentence prop-name field direction
-                                            (get owner-of field)))]))]
+                         (u/el :span {:class "inspector-data-field"})
+                         (binding-sentence prop-name field direction
+                                           (get owner-of field)))]))]
       (section "Data bindings" rows))))
 
 (defn- render!

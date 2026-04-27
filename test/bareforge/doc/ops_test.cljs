@@ -110,7 +110,7 @@
   (let [d0               (empty-doc)
         {d1 :doc id :id} (ops/insert-new d0 "root" "default" 0 "x-icon")
         d2               (ops/set-inner-html d1 id
-                           "<svg><script>alert(1)</script><path d=\"M0\"/></svg>")
+                                             "<svg><script>alert(1)</script><path d=\"M0\"/></svg>")
         stored           (get-in d2 (conj (m/path-to d2 id) :inner-html))]
     (is (not (re-find #"(?i)<script" stored))
         "set-inner-html sanitises on commit so the inspector can't ship XSS")

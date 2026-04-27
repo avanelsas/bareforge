@@ -40,10 +40,10 @@
   (when (and attr-str (not (str/blank? attr-str)))
     (let [matches (re-seq #"([\w:.-]+)\s*=\s*\"([^\"]*)\"|(\w[\w:.-]*)" attr-str)]
       (into {}
-        (for [m matches]
-          (if (nth m 3)
-            [(nth m 3) true]
-            [(nth m 1) (nth m 2)]))))))
+            (for [m matches]
+              (if (nth m 3)
+                [(nth m 3) true]
+                [(nth m 1) (nth m 2)]))))))
 
 (defn- attrs->hiccup-str
   "Convert an attribute map to a hiccup props string.
@@ -119,9 +119,9 @@
    `:children` is the final result."
   [tokens]
   (:children
-    (peek (reduce apply-token
-                  [{:tag :root :children []}]
-                  tokens))))
+   (peek (reduce apply-token
+                 [{:tag :root :children []}]
+                 tokens))))
 
 (defn parse-html
   "Public: parse an HTML/SVG string into a vector of top-level
@@ -154,8 +154,8 @@
           :else
           (str pad "[:" tag (when props (str " " props))
                (str/join ""
-                 (for [child children]
-                   (str "\n" (tree->hiccup-str child (+ depth 1)))))
+                         (for [child children]
+                           (str "\n" (tree->hiccup-str child (+ depth 1)))))
                "]"))))))
 
 (defn html->hiccup-str
@@ -165,5 +165,5 @@
   ([html] (html->hiccup-str html 0))
   ([html depth]
    (str/join "\n"
-     (for [node (parse-html html)]
-       (tree->hiccup-str node depth)))))
+             (for [node (parse-html html)]
+               (tree->hiccup-str node depth)))))

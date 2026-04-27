@@ -20,8 +20,8 @@
 
 (deftest every-step-has-target-and-placement
   (testing "BareDOM's x-welcome-tour-step doesn't position the "
-           "popover when target is nil — every step needs a "
-           "target. Welcome / done anchor on the brand logo"
+    "popover when target is nil — every step needs a "
+    "target. Welcome / done anchor on the brand logo"
     (doseq [s wt/tour-steps]
       (is (string? (:target s))
           (str "step missing :target selector — " (pr-str (:title s))))
@@ -30,14 +30,14 @@
 
 (deftest welcome-and-done-anchor-on-brand
   (testing "first and last steps target the navbar brand logo so "
-           "they have a stable, always-present home base"
+    "they have a stable, always-present home base"
     (is (= "[data-tour=\"brand\"]" (:target (first wt/tour-steps))))
     (is (= "[data-tour=\"brand\"]" (:target (last wt/tour-steps))))))
 
 (deftest conceptual-steps-anchor-on-inspector-panel
   (testing "the state and interactivity steps teach the model rather "
-           "than point at a button that may not exist yet — both "
-           "anchor on the always-present inspector panel"
+    "than point at a button that may not exist yet — both "
+    "anchor on the always-present inspector panel"
     (let [step-by-title (into {} (map (juxt :title identity) wt/tour-steps))]
       (is (= "#bareforge-inspector"
              (:target (step-by-title "State: groups and fields"))))
@@ -46,8 +46,8 @@
 
 (deftest panel-targets-use-stable-ids
   (testing "panel-pointing steps use the stable ids added to "
-           "palette/layers/canvas/inspector — must stay aligned with "
-           "what the chrome actually renders"
+    "palette/layers/canvas/inspector — must stay aligned with "
+    "what the chrome actually renders"
     (let [targets (set (keep :target wt/tour-steps))]
       (is (contains? targets "#bareforge-palette"))
       (is (contains? targets "#bareforge-canvas"))
@@ -56,7 +56,7 @@
 
 (deftest toolbar-targets-use-data-tour
   (testing "toolbar buttons + brand logo use [data-tour=…] so the "
-           "welcome tour can match without claiming new ids"
+    "welcome tour can match without claiming new ids"
     (let [data-tour-targets (filter #(re-find #"\[data-tour=" %)
                                     (keep :target wt/tour-steps))
           tokens            (set (map #(second (re-find #"\[data-tour=\"([^\"]+)\"\]" %))
