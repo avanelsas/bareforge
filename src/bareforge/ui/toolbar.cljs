@@ -203,10 +203,10 @@
                              :slot      "brand"
                              :data-tour "brand"}
                             [(u/el :source
-                                   {:srcset "/assets/bareforge_darkmode.png"
+                                   {:srcset "assets/bareforge_darkmode.png"
                                     :media  "(prefers-color-scheme: dark)"})
                              (u/el :img
-                                   {:src "/assets/bareforge_lightmode.png"
+                                   {:src "assets/bareforge_lightmode.png"
                                     :alt "Bareforge"})])
         ;; The six top-level controls go into the navbar's "actions"
         ;; slot. Row order: File, Templates, ↶, ↷, │, Preview, Theme.
