@@ -26,6 +26,25 @@ reconciler.
 
 Run `release` regularly, not just at the end. Closure Advanced renames bite late.
 
+## PR readiness gate
+
+Before opening a pull request — including AI-assisted edits — every
+one of the following MUST pass locally. CI re-runs them, but a green
+CI shouldn't be the first time the maintainer sees the result.
+
+1. `clj-kondo --lint src test scripts` — **0 errors, 0 warnings**.
+   Don't open a PR with warnings; clean them or annotate with
+   `:clj-kondo/ignore` where the lint genuinely doesn't apply.
+2. `cljfmt check` — clean. Run `cljfmt fix` if drift exists.
+3. `npx shadow-cljs compile test` — `0 failures, 0 errors`.
+4. `npx shadow-cljs release app` — `0 warnings`. Closure Advanced
+   renaming bites late; this is the only signal that catches it.
+
+Skipping any of these in a PR wastes a CI run and the
+maintainer's review time. The CI workflow at
+`.github/workflows/ci.yml` enforces the same four gates;
+matching them locally first is the contract.
+
 ## Onboarding a new BareDOM component
 
 Two-step recipe:
