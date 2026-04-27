@@ -556,7 +556,7 @@
    `{:title <group-name> :pinned? bool :fields [...]}` sections.
    Record fields (fields on the enclosing template group) are pinned
    at the top. Fields are de-duplicated per group."
-  [doc all-fields tmpl-name]
+  [_doc all-fields tmpl-name]
   (let [field-defs (->> all-fields
                         (filter #(= :field-def (:source %)))
                         (distinct))
@@ -869,7 +869,7 @@
 (defn- commit-name! [node-id name]
   (state/commit! (ops/set-name (:document @state/app-state) node-id name)))
 
-(defn- header [{:keys [node meta]}]
+(defn- header [{:keys [node]}]
   (let [tag-seg (-> (:tag node)
                     (str/replace #"^x-" "")
                     (str/replace #"-" "_"))
@@ -1253,7 +1253,7 @@
 (defn- field-of-group-name
   "If the field-def is a collection pointing at a named group, return
    that group-name. Otherwise nil."
-  [doc fname group-node]
+  [_doc fname group-node]
   (when-let [fd (first (filter #(= fname (:name %)) (:fields group-node)))]
     (:of-group fd)))
 
@@ -1689,21 +1689,6 @@
 (defn- commit-remove-trigger! [node-id idx]
   (state/commit! (ops/remove-trigger (:document @state/app-state) node-id idx)))
 
-(defn- enclosing-group-name
-  "Walk from `node-id` up to the root, returning the `:name` of the
-   nearest named ancestor (inclusive of the node itself). nil when no
-   ancestor is named."
-  [doc node-id]
-  (loop [id node-id]
-    (cond
-      (nil? id) nil
-      :else
-      (let [n (m/get-node doc id)]
-        (if (and n (:name n))
-          (:name n)
-          (when-let [p (m/parent-of doc id)]
-            (recur (:parent-id p))))))))
-
 (defn- action-ref-label
   "Turn a fully qualified action-ref like :app.cart.events/add-to-cart
    into the short `group/action-name` form displayed in UI rows."
@@ -1800,7 +1785,7 @@
    currently-bound action (if any) with a ✕ to unbind, or an action
    picker button to bind. A passive hint below reports the implicit
    payload the dispatch will receive."
-  [node event-name doc all-actions tmpl-name]
+  [node event-name _doc all-actions tmpl-name]
   (let [existing-idx (first (keep-indexed (fn [i t]
                                              (when (= event-name (:trigger t)) i))
                                            (or (:events node) [])))
@@ -2041,12 +2026,12 @@
                        grp-act      (conj grp-act)
                        trg          (conj trg)
                        ds           (conj ds)))
-                   [(empty-view)])]
-    (let [^js scroll-el (or (.-parentElement host-el) host-el)
-          scroll-top (.-scrollTop scroll-el)]
-      (.replaceChildren host-el)
-      (doseq [s sections] (.appendChild host-el s))
-      (set! (.-scrollTop scroll-el) scroll-top))))
+                   [(empty-view)])
+        ^js scroll-el (or (.-parentElement host-el) host-el)
+        scroll-top    (.-scrollTop scroll-el)]
+    (.replaceChildren host-el)
+    (doseq [s sections] (.appendChild host-el s))
+    (set! (.-scrollTop scroll-el) scroll-top)))
 
 (defn create
   "Build the inspector panel. Returns the panel element ready to place

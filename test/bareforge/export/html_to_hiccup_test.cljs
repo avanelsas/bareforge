@@ -1,5 +1,6 @@
 (ns bareforge.export.html-to-hiccup-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [bareforge.export.html-to-hiccup :as h2h]))
 
 ;; --- string output (existing CLJS-source path) ----------------------------
@@ -30,26 +31,26 @@
   (let [svg "<svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M2.25 3h1.386\"/></svg>"
         result (h2h/html->hiccup-str svg)]
     (testing "produces :svg root"
-      (is (clojure.string/starts-with? result "[:svg")))
+      (is (str/starts-with? result "[:svg")))
     (testing "contains :path child"
-      (is (clojure.string/includes? result "[:path")))
+      (is (str/includes? result "[:path")))
     (testing "preserves stroke attribute"
-      (is (clojure.string/includes? result ":stroke \"currentColor\"")))
+      (is (str/includes? result ":stroke \"currentColor\"")))
     (testing "preserves d attribute"
-      (is (clojure.string/includes? result ":d \"M2.25 3h1.386\"")))))
+      (is (str/includes? result ":d \"M2.25 3h1.386\"")))))
 
 (deftest boolean-attributes
   (let [result (h2h/html->hiccup-str "<input disabled>")]
-    (is (clojure.string/includes? result ":disabled true"))))
+    (is (str/includes? result ":disabled true"))))
 
 (deftest indentation-at-depth
   (let [result (h2h/html->hiccup-str "<p>Hi</p>" 4)]
-    (is (clojure.string/starts-with? result "    [:p"))))
+    (is (str/starts-with? result "    [:p"))))
 
 (deftest multiple-root-elements
   (let [result (h2h/html->hiccup-str "<span>A</span><span>B</span>")]
-    (is (clojure.string/includes? result "[:span \"A\"]"))
-    (is (clojure.string/includes? result "[:span \"B\"]"))))
+    (is (str/includes? result "[:span \"A\"]"))
+    (is (str/includes? result "[:span \"B\"]"))))
 
 ;; --- data output (new vanilla-JS path) ------------------------------------
 

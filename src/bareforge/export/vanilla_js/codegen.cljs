@@ -457,7 +457,7 @@
    that reads the current value. Inside a template view the binding
    can resolve to a destructured record field symbol — record-bound
    reads don't need a `query`."
-  [{:keys [app-ns field->owner template-field-syms template-record-sym]} field]
+  [{:keys [app-ns field->owner template-field-syms]} field]
   (cond
     (contains? template-field-syms field)
     (cljs.core/name field)

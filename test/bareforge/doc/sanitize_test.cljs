@@ -1,5 +1,5 @@
 (ns bareforge.doc.sanitize-test
-  (:require [cljs.test :refer [deftest is testing]]
+  (:require [cljs.test :refer [deftest is]]
             [clojure.string :as str]
             [bareforge.doc.model :as m]
             [bareforge.doc.sanitize :as sn]))

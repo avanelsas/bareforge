@@ -2,7 +2,6 @@
   (:require [cljs.test :refer [deftest is testing]]
             [cljs.reader :as edn]
             [bareforge.doc.model :as m]
-            [bareforge.doc.ops :as ops]
             [bareforge.export.model :as em]))
 
 (defn- read-fixture [path]

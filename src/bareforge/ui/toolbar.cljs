@@ -177,7 +177,7 @@
    responsible for creating those panels before the toolbar and
    passing in the thunks here, so the toolbar carries no mutable
    cross-namespace coupling of its own."
-  [{:keys [on-theme-toggle on-templates-toggle on-welcome-tour] :as opts}]
+  [{:keys [on-theme-toggle on-templates-toggle] :as opts}]
   (let [file-btn      (file-menu opts)
         templates-btn (button "Templates" (fn [_] (when on-templates-toggle (on-templates-toggle))))
         undo-btn      (icon-button "↶" "Undo" (fn [_] (state/undo!)))

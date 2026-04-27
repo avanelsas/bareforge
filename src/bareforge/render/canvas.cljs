@@ -8,7 +8,8 @@
             [bareforge.doc.model :as m]
             [bareforge.meta.registry :as registry]
             [bareforge.render.reconcile :as rec]
-            [bareforge.state :as state]))
+            [bareforge.state :as state]
+            [clojure.string :as str]))
 
 ;; --- internal mutable state -----------------------------------------------
 
@@ -196,7 +197,7 @@
    up in `(:document app-state)` — a clone id isn't in the doc."
   [id]
   (when (string? id)
-    (clojure.string/replace id #"__seed\d+$" "")))
+    (str/replace id #"__seed\d+$" "")))
 
 (defn dom-for-id
   "Return the DOM element for `id` from the render index, or nil. Used

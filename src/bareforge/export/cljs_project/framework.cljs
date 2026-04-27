@@ -287,6 +287,10 @@
     (doseq [id (keys @sub-registry)]
       (notify-sub-listeners! id new-db))))
 
+;; Side-effect-only defonce: install the store watcher exactly once
+;; at namespace load. The bound value is never read; the defonce just
+;; guarantees idempotent install across hot-reloads.
+#_:clj-kondo/ignore
 (defonce ^:private watcher-installed?
   (do (add-watch store store-key on-store-change)
       true))

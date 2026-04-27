@@ -38,8 +38,7 @@
    Validation accepts any object that has a string `version`, a
    string `algorithm` (sha384 today), and a string→string `files`
    map; unknown keys are tolerated so manifest evolution doesn't
-   force a Bareforge bump."
-  (:require [clojure.string :as str]))
+   force a Bareforge bump.")
 
 ;; --- pure: URL composition ----------------------------------------------
 

@@ -1,5 +1,5 @@
 (ns bareforge.export.cljs-project.framework-test
-  (:require [cljs.test :refer [deftest is testing use-fixtures]]
+  (:require [cljs.test :refer [deftest is use-fixtures]]
             [bareforge.export.cljs-project.framework :as rf]))
 
 ;; --- fixtures: reset all registries between tests -------------------------
@@ -150,7 +150,7 @@
   (let [fx-log (atom [])]
     (rf/reg-fx :log (fn [v] (swap! fx-log conj v)))
     (rf/reg-event-fx :side-effect-only
-      (fn [db _]
+      (fn [_db _]
         {:log "fired"}))
     (rf/dispatch [:side-effect-only])
     (is (= {:count 42} @(rf/get-store)) "db unchanged")

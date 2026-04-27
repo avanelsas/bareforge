@@ -9,11 +9,9 @@
    Views use hiccup notation rendered by an included `renderer.cljs`
    (adapted from bare-demo). Each detected UI component group gets
    its own folder with db/subs/events/views files."
-  (:require [bareforge.doc.actions :as actions]
-            [bareforge.doc.model :as m]
+  (:require [bareforge.doc.model :as m]
             [bareforge.export.html-to-hiccup :as h2h]
             [bareforge.export.model :as em]
-            [bareforge.meta.registry :as reg]
             [bareforge.meta.versions :as versions]
             [bareforge.render.reconcile :as rec]
             [clojure.string :as str]
@@ -52,53 +50,19 @@
 
 ;; --- naming helpers --------------------------------------------------------
 
-(defn- tag->ns-segment
-  "Turn a BareDOM tag like \"x-navbar\" into a namespace segment like \"navbar\"."
-  [tag]
-  (str/replace tag #"^x-" ""))
-
 (defn- kebab->snake
   "Convert kebab-case to snake_case for ClojureScript file paths."
   [s]
   (str/replace s #"-" "_"))
 
-;; --- group detection -------------------------------------------------------
-
-(defn- container-node?
-  "True when a node's tag is a registered container with multi-child slots."
-  [node]
-  (reg/container? (:tag node)))
-
-(defn- has-children?
-  "True when a node has any children in any slot."
-  [node]
-  (some (fn [[_ children]] (seq children)) (:slots node)))
-
-;; --- semantic helpers: local aliases to bareforge.export.model ----------
+;; --- group detection / data collection -------------------------------------
 ;; The helpers below all lowered into `bareforge.export.model` in Phase A
 ;; of the export-plugin refactor; the aliases keep call-site churn nil.
 ;; A later phase will formalise a composed `lower-document` entry point
 ;; and rewrite generators to consume that, at which point these aliases
 ;; go away.
-(def ^:private unique-ns-name     em/unique-ns-name)
-(def ^:private name->ns-segment   em/name->ns-segment)
-
-(defn- has-data?
-  "True when a node or any of its descendants has fields, bindings, or events."
-  [node]
-  (or (seq (:fields node))
-      (seq (:bindings node))
-      (seq (:events node))
-      (some has-data?
-            (for [[_ kids] (m/slot-entries node)
-                  child kids]
-              child))))
 
 (def detect-groups em/detect-groups)
-
-;; --- binding data collection per group -------------------------------------
-
-(def ^:private collect-node-data  em/collect-node-data)
 (def ^:private collect-group-data em/collect-group-data)
 
 (defn- field-type->spec
@@ -202,45 +166,9 @@
                      (str ":style \"" (h2h/escape-cljs-str style) "\""))]
     (vec (remove nil? (concat [slot-prop] attrs prop-pairs binding-only [style-prop])))))
 
-(defn- node->hiccup-props
-  "Build the hiccup props map string for a node (no event bindings).
-   Delegates to node->prop-strings + format-props-map."
-  [node slot-name tag depth]
-  (format-props-map (node->prop-strings node slot-name) tag depth))
-
 (defn- indent [n s]
   (let [pad (apply str (repeat n " "))]
     (str pad s)))
-
-(defn- node->hiccup
-  "Convert a document node to a hiccup source string."
-  [node slot-name depth]
-  (let [tag       (str ":" (:tag node))
-        props     (node->hiccup-props node slot-name (:tag node) depth)
-        text      (when (and (:text node) (not= "" (:text node)))
-                    (str "\"" (h2h/escape-cljs-str (:text node)) "\""))
-        inner-html (:inner-html node)
-        children  (for [[sname kids] (m/slot-entries node)
-                        child kids]
-                    (node->hiccup child sname (+ depth 1)))
-        pad       (fn [s] (indent depth s))]
-    (cond
-      inner-html
-      (let [inner-hiccup (h2h/html->hiccup-str inner-html (+ depth 1))]
-        (str (pad (str "[" tag (when props (str " " props))))
-             "\n" inner-hiccup "]"))
-
-      (and (empty? children) (nil? text))
-      (pad (str "[" tag (when props (str " " props)) "]"))
-
-      (and (empty? children) text)
-      (pad (str "[" tag (when props (str " " props)) " " text "]"))
-
-      :else
-      (str (pad (str "[" tag (when props (str " " props))))
-           (when text (str "\n" (indent (+ depth 1) text)))
-           (str/join "" (map #(str "\n" %) children))
-           "]"))))
 
 ;; --- code generation: views ------------------------------------------------
 
@@ -732,28 +660,6 @@
 
 ;; --- code generation: db/subs/events ----------------------------------------
 
-(defn- instance-descendants
-  "All nodes in the subtree rooted at `node`, node first then every
-   descendant via slot children."
-  [node]
-  (tree-seq
-    (fn [n] (seq (:slots n)))
-    (fn [n] (for [[_ kids] (:slots n) c kids] c))
-    node))
-
-(defn- seed-value-for-field
-  "Value to use for `field-def` in the `idx`th instance's seed record.
-   Pulled from a descendant with matching `:text-field`; falls back to
-   a per-instance id (for `:id`) or the field-def's `:default`."
-  [instance-node field-def idx]
-  (let [fname (:name field-def)
-        match (some (fn [n] (when (= fname (:text-field n)) n))
-                    (instance-descendants instance-node))]
-    (cond
-      match              (:text match)
-      (= :id fname)      (inc idx)
-      :else              (:default field-def))))
-
 (defn- generate-db-template
   "Generate db.cljs for a template group. The file holds only spec
    definitions — one per stored (non-computed) field plus a `::record`
@@ -916,8 +822,7 @@
    the numeric field off each record, then reduce. The record keys
    are fully namespaced by the source's `:of-group` group."
   [source-field project-field doc all-groups]
-  (let [source-name  (cljs.core/name source-field)
-        project-name (cljs.core/name project-field)
+  (let [project-name (cljs.core/name project-field)
         ;; Resolve the :of-group of the source field so we can qualify
         ;; the project keyword under the record template's db ns.
         owner        (some (fn [g]
@@ -1011,7 +916,7 @@
          "                      records)))\n"
          (if as-ns
            (str "        (mapv #(rf/qualify-map % \"" as-ns "\")))))")
-           (str "        vec)))")))))
+           "        vec)))"))))
 
 (defn- join-target-subs-alias
   "Alias (e.g. `product-feed.subs`) to require for a join's target —

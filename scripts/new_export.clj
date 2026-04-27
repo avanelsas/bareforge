@@ -167,6 +167,6 @@
     (println (str "       (:require ... [bareforge.export." id-kebab ".plugin :as " id-kebab "])"))
     (println (str "       (def plugins (sort-by :order [... " id-kebab "/manifest]))"))
     (println (str "  3. Add a test at test/bareforge/export/" id-snake "_test.cljs."))
-    (println (str "  4. Run `npx shadow-cljs compile test` and confirm the new"))
-    (println (str "     plugin shows up via registry-test's manifest validation."))
+    (println "  4. Run `npx shadow-cljs compile test` and confirm the new")
+    (println "     plugin shows up via registry-test's manifest validation.")
     (println "")))
