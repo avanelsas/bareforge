@@ -11,11 +11,6 @@
 A visual landing-page builder for [BareDOM](https://github.com/avanelsas/baredom).
 This project offers a drag and drop interface to build a web component based static page and using bindings, records and events can export to a fully interactive, functional extensible codebase in either ClojureScript or JavaScript.
 
-<picture>
-  <source srcset="public/assets/bareforge_darkmode.png" media="(prefers-color-scheme: dark)">
-  <img src="public/assets/bareforge_lightmode.png" alt="Bareforge editor showing the toolbar, palette, canvas, layers panel, and inspector">
-</picture>
-
 ![CI](https://github.com/avanelsas/bareforge/actions/workflows/ci.yml/badge.svg)
 
 Bareforge is built in ClojureScript on top of BareDOM's 90 stateless web
