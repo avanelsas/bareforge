@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions or general discussion
+    url: https://github.com/avanelsas/bareforge/discussions
+    about: Ask a question, share what you're building, or discuss ideas
+      that aren't yet a bug or feature request.

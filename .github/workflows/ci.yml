@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: lint, test, release-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java (Temurin 21)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up Clojure CLI
+        uses: DeLaGuardo/setup-clojure@13.0
+        with:
+          cli: 'latest'
+          clj-kondo: 'latest'
+          cljfmt: 'latest'
+
+      - name: Cache Maven (~/.m2)
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('deps.edn') }}
+          restore-keys: ${{ runner.os }}-m2-
+
+      - name: Cache gitlibs
+        uses: actions/cache@v4
+        with:
+          path: ~/.gitlibs
+          key: ${{ runner.os }}-gitlibs-${{ hashFiles('deps.edn') }}
+          restore-keys: ${{ runner.os }}-gitlibs-
+
+      - name: Cache shadow-cljs
+        uses: actions/cache@v4
+        with:
+          path: .shadow-cljs
+          key: ${{ runner.os }}-shadow-${{ hashFiles('shadow-cljs.edn', 'deps.edn') }}
+          restore-keys: ${{ runner.os }}-shadow-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Lint (clj-kondo)
+        run: clj-kondo --lint src test scripts
+
+      - name: Format check (cljfmt)
+        run: cljfmt check
+
+      - name: Compile + run tests
+        # The :test build is wired with :autorun true so this both
+        # compiles and runs the suite. Exit code reflects test result.
+        run: npx shadow-cljs compile test
+
+      - name: Release build (zero-warning gate)
+        # CLAUDE.md mandates "must compile clean, zero warnings". Pipe
+        # the build output to a log, then fail the step if any warning
+        # count appears. The trailing `!` inverts grep's success on a
+        # found-warning into a failed step.
+        shell: bash
+        run: |
+          set -o pipefail
+          npx shadow-cljs release app 2>&1 | tee build.log
+          ! grep -E ', [1-9][0-9]* warnings?,' build.log

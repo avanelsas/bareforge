@@ -1,0 +1,584 @@
+(ns bareforge.dnd.drag
+  "Pointer-event drag-and-drop state machine. Phase 1: drag from a
+   palette item onto the canvas, using `palette/insertion-target` to
+   decide where the new node lands. Moving existing canvas nodes and
+   component-aware snap come in follow-up phases.
+
+   Design note: drag state lives in a JS object (not a second atom) so
+   the one-atom rule in CLAUDE.md stays intact. Drag is strictly
+   effectful DOM plumbing — the only point that touches `state/*` is
+   `commit-drop!` at the end."
+  (:require [bareforge.doc.model :as m]
+            [bareforge.doc.ops :as ops]
+            [bareforge.meta.placement :as placement]
+            [bareforge.meta.registry :as registry]
+            [bareforge.render.canvas :as canvas]
+            [bareforge.render.slot-strips :as slot-strips]
+            [bareforge.state :as state]
+            [bareforge.ui.palette :as palette]
+            [bareforge.util.dom :as u]))
+
+(defn classify-position
+  "Pure: given a hovered element's `{:top :height}`, the cursor's
+   `clientY`, and whether the target is a container, return one of
+   `:before`, `:after`, or `:inside`. Containers get a 25/50/25 split
+   (top quarter → :before, middle half → :inside, bottom quarter →
+   :after); leaves get a 50/50 split with no `:inside` band."
+  [{:keys [top height]} cursor-y container?]
+  (let [bottom (+ top height)
+        clamped (max top (min cursor-y bottom))
+        offset (- clamped top)
+        ratio (if (pos? height) (/ offset height) 0.5)]
+    (if container?
+      (cond
+        (< ratio 0.25) :before
+        (> ratio 0.75) :after
+        :else          :inside)
+      (if (< ratio 0.5) :before :after))))
+
+;; --- mutable drag state ---------------------------------------------------
+
+(defonce ^:private drag-state
+  #js {:phase      :idle  ;; :idle | :armed | :dragging
+       :source-tag      nil   ;; palette drag: tag name to insert
+       :source-node-id  nil   ;; canvas drag: existing node id to move
+       :start-x    0
+       :start-y    0
+       :ghost      nil
+       :target-id  nil          ;; hovered canvas node id, or nil
+       :target-el  nil          ;; the highlighted element (canvas OR layer)
+       :target-position nil     ;; :before | :after | :inside | nil
+       :slot-target-node nil    ;; hovered inspector slot row: node id
+       :slot-target-name nil    ;; hovered inspector slot row: slot name
+       :slot-target-el   nil    ;; the row element for highlight cleanup
+       :valid?     false
+       :canvas-el  nil
+       :free-drag?     false     ;; true when source is a :free node
+       :free-initial-x 0
+       :free-initial-y 0})
+
+(def ^:private move-threshold 4)
+
+(defn- phase       [] (unchecked-get drag-state "phase"))
+(defn- set-phase!  [p] (unchecked-set drag-state "phase" p))
+(defn- source-tag  [] (unchecked-get drag-state "source-tag"))
+(defn- set-source-tag! [t] (unchecked-set drag-state "source-tag" t))
+(defn- source-node-id [] (unchecked-get drag-state "source-node-id"))
+(defn- set-source-node-id! [id] (unchecked-set drag-state "source-node-id" id))
+(defn- free-drag?     [] (unchecked-get drag-state "free-drag?"))
+(defn- set-free-drag! [v] (unchecked-set drag-state "free-drag?" (boolean v)))
+(defn- start-xy!
+  [x y]
+  (unchecked-set drag-state "start-x" x)
+  (unchecked-set drag-state "start-y" y))
+(defn- start-x [] (unchecked-get drag-state "start-x"))
+(defn- start-y [] (unchecked-get drag-state "start-y"))
+
+(defn- ghost      [] (unchecked-get drag-state "ghost"))
+(defn- set-ghost! [g] (unchecked-set drag-state "ghost" g))
+(defn- target-id  [] (unchecked-get drag-state "target-id"))
+(defn- set-target-id! [id] (unchecked-set drag-state "target-id" id))
+(defn- target-el  [] (unchecked-get drag-state "target-el"))
+(defn- set-target-el! [el] (unchecked-set drag-state "target-el" el))
+(defn- target-position [] (unchecked-get drag-state "target-position"))
+(defn- set-target-position! [p] (unchecked-set drag-state "target-position" p))
+(defn- valid?     [] (unchecked-get drag-state "valid?"))
+(defn- set-valid! [v] (unchecked-set drag-state "valid?" (boolean v)))
+(defn- canvas-el  [] (unchecked-get drag-state "canvas-el"))
+(defn- slot-target-node [] (unchecked-get drag-state "slot-target-node"))
+(defn- slot-target-name [] (unchecked-get drag-state "slot-target-name"))
+(defn- slot-target-el   [] (unchecked-get drag-state "slot-target-el"))
+
+;; --- target highlight -----------------------------------------------------
+
+(def ^:private slot-target-class "bareforge-slot-target")
+(def ^:private position-classes
+  ["bareforge-drop-before" "bareforge-drop-after" "bareforge-drop-inside"])
+
+(defn- position-class [pos]
+  (case pos
+    :before "bareforge-drop-before"
+    :after  "bareforge-drop-after"
+    :inside "bareforge-drop-inside"
+    nil))
+
+(defn- clear-target-highlight! []
+  (when-let [^js el (target-el)]
+    (doseq [c position-classes]
+      (.. el -classList (remove c))))
+  (set-target-el! nil)
+  (set-target-id! nil)
+  (set-target-position! nil))
+
+(defn- set-target-highlight!
+  "Highlight `el` with a position-aware drop class. Pass nil for `el`
+   to clear. Tracks the element directly so cleanup is unambiguous
+   even when canvas + layer rows share the same data-bareforge-id."
+  [^js el new-id new-pos]
+  (when (or (not= new-id (target-id))
+            (not= new-pos (target-position))
+            (not (identical? el (target-el))))
+    (clear-target-highlight!)
+    (when (and el new-id)
+      (when-let [c (position-class new-pos)]
+        (.. el -classList (add c)))
+      (set-target-el! el))
+    (set-target-id! new-id)
+    (set-target-position! new-pos)))
+
+(defn- clear-slot-target! []
+  (when-let [^js el (slot-target-el)]
+    (.. el -classList (remove slot-target-class)))
+  (unchecked-set drag-state "slot-target-node" nil)
+  (unchecked-set drag-state "slot-target-name" nil)
+  (unchecked-set drag-state "slot-target-el"   nil))
+
+(defn- set-slot-target! [^js row-el node-id slot-name]
+  (when (or (not= node-id (slot-target-node))
+            (not= slot-name (slot-target-name)))
+    (clear-slot-target!)
+    (when row-el
+      (.. row-el -classList (add slot-target-class))
+      (unchecked-set drag-state "slot-target-node" node-id)
+      (unchecked-set drag-state "slot-target-name" slot-name)
+      (unchecked-set drag-state "slot-target-el"   row-el))))
+
+;; --- ghost element --------------------------------------------------------
+
+(defn- make-ghost [tag]
+  (let [g (u/el :div {:class "bareforge-drag-ghost"})]
+    (u/set-text! g tag)
+    g))
+
+(defn- set-ghost-valid-style! [ok?]
+  (when-let [^js g (ghost)]
+    (if ok?
+      (.. g -classList (remove "is-invalid"))
+      (.. g -classList (add    "is-invalid")))))
+
+(defn- position-ghost! [^js g ^js e]
+  (set! (.. g -style -left) (str (+ 12 (.-clientX e)) "px"))
+  (set! (.. g -style -top)  (str (+ 12 (.-clientY e)) "px")))
+
+(defn- show-ghost! [tag ^js e]
+  (when-not (ghost)
+    (let [g (make-ghost tag)]
+      (set-ghost! g)
+      (.appendChild js/document.body g)))
+  (position-ghost! (ghost) e))
+
+(defn- hide-ghost! []
+  (when-let [^js g (ghost)]
+    (when-let [^js p (.-parentNode g)]
+      (.removeChild p g)))
+  (set-ghost! nil))
+
+;; --- target resolution ----------------------------------------------------
+
+(defn- element-under-cursor [^js e]
+  (let [^js g (ghost)]
+    (when g (set! (.. g -style -display) "none"))
+    (let [under (js/document.elementFromPoint (.-clientX e) (.-clientY e))]
+      (when g (set! (.. g -style -display) ""))
+      under)))
+
+(defn- inside-canvas? [^js el]
+  (let [^js c (canvas-el)]
+    (boolean (and c el (.contains c el)))))
+
+(defn- find-slot-row
+  "Walk up from `el` to the nearest inspector slot row, or nil."
+  [^js el]
+  (when el
+    (.closest el "[data-bareforge-slot-node]")))
+
+(defn- find-layer-row
+  "Walk up from `el` to the nearest layer-tree row, or nil."
+  [^js el]
+  (when el
+    (.closest el "[data-bareforge-layer-row]")))
+
+(defn- node-position
+  "Compute the half-element drop classification for a hovered DOM
+   element backed by document node `id`. Looks up whether the node's
+   tag is a container so the rule (top half / 50/50 vs top quarter /
+   25/50/25) matches its capabilities."
+  [^js node-el id cursor-y]
+  (let [container? (let [doc (:document @state/app-state)
+                         tag (some-> (m/get-node doc id) :tag)]
+                     (boolean (and tag (registry/container? tag))))
+        ^js bcr    (.getBoundingClientRect node-el)
+        rect       {:top (.-top bcr) :height (.-height bcr)}]
+    (classify-position rect cursor-y container?)))
+
+(defn- canvas-target-el
+  "Find the element with `data-bareforge-id` that is also inside the
+   canvas host (avoids matching the layers panel row with the same id)."
+  [id]
+  (let [host (canvas-el)]
+    (when (and host id)
+      (let [^js nodes (.querySelectorAll host (str "[data-bareforge-id=\"" id "\"]"))]
+        (when (pos? (.-length nodes))
+          (.item nodes 0))))))
+
+(defn- resolve-target!
+  "Inspect the element under the cursor. Valid drop targets are:
+   (a) an inspector slot row OR a canvas slot strip (both carry
+       `data-bareforge-slot-node`; `find-slot-row` walks up to either),
+   (b) a layers-panel row (data-bareforge-layer-row),
+   (c) the canvas host and any of its descendants.
+   Everything else is invalid.
+
+   For multi-slot canvas targets, the (c) branch mounts per-slot
+   strips via `render.slot-strips` and then re-invokes itself once so
+   the freshly-appended strip becomes the under-cursor element on
+   this same pointermove — otherwise a stationary drop after strips
+   appear would commit to the default slot rather than the strip
+   under the cursor. The `re-entered?` guard bounds recursion depth
+   to one."
+  ([^js e] (resolve-target! e false))
+  ([^js e re-entered?]
+   (let [under     (element-under-cursor e)
+         slot-row  (find-slot-row under)
+         layer-row (find-layer-row under)]
+     (cond
+       slot-row
+       (let [node-id   (.getAttribute slot-row "data-bareforge-slot-node")
+             slot-name (.getAttribute slot-row "data-bareforge-slot-name")]
+         (set-valid! true)
+         (set-ghost-valid-style! true)
+         (set-target-highlight! nil nil nil)
+         (set-slot-target! slot-row node-id slot-name)
+         ;; Strips for node X are themselves slot rows; keep them
+         ;; visible while the cursor stays on them. Hide when the
+         ;; hovered row belongs to any OTHER node (an Inspector row,
+         ;; or a different canvas host).
+         (when (and (slot-strips/current-host-id)
+                    (not= node-id (slot-strips/current-host-id)))
+           (slot-strips/hide!)))
+
+       layer-row
+       (let [id  (.getAttribute layer-row "data-bareforge-id")
+             pos (node-position layer-row id (.-clientY e))]
+         (set-valid! true)
+         (set-ghost-valid-style! true)
+         (clear-slot-target!)
+         (set-target-highlight! layer-row id pos)
+         (slot-strips/hide!))
+
+       (inside-canvas? under)
+       (let [id      (canvas/element->node-id under)
+             ^js el  (canvas-target-el id)
+             pos     (when el (node-position el id (.-clientY e)))
+             doc     (:document @state/app-state)
+             tag     (some-> (m/get-node doc (canvas/canonical-node-id id)) :tag)
+             strips? (and el (= pos :inside) (slot-strips/render-strips? tag))]
+         (set-valid! true)
+         (set-ghost-valid-style! true)
+         (clear-slot-target!)
+         (if strips?
+           (do
+             ;; Strips tile the element and carry their own outline;
+             ;; suppress the usual `.bareforge-drop-inside` class that
+             ;; `set-target-highlight!` would add.
+             (set-target-highlight! nil nil nil)
+             (when (not= id (slot-strips/current-host-id))
+               (slot-strips/show-for-element! tag id el)
+               ;; After mounting, re-run once so the strip under the
+               ;; cursor is picked up via `find-slot-row` — guarantees
+               ;; a stationary drop targets the correct slot.
+               (when-not re-entered?
+                 (resolve-target! e true))))
+           (do
+             (set-target-highlight! el id pos)
+             (slot-strips/hide!))))
+
+       :else
+       (do
+         (set-valid! false)
+         (set-ghost-valid-style! false)
+         (clear-slot-target!)
+         (set-target-highlight! nil nil nil)
+         (slot-strips/hide!))))))
+
+;; --- commit drop ----------------------------------------------------------
+
+(defn- before-after-target
+  "Build a `{:parent-id :slot :index}` map for inserting `:before` or
+   `:after` an existing canvas node. Returns nil if the target is the
+   root or not found."
+  [doc target-id position]
+  (when-let [info (m/parent-of doc target-id)]
+    (case position
+      :before info
+      :after  (update info :index inc)
+      nil)))
+
+(defn- resolve-insertion-target
+  "Shared between insert (palette drop) and move (canvas drop). Reads
+   the drag-state slot/canvas target fields and returns a
+   `{:parent-id :slot :index}` map."
+  [doc]
+  (let [slot-node (slot-target-node)
+        slot-name (slot-target-name)
+        tid       (target-id)
+        pos       (target-position)]
+    (cond
+      slot-node
+      (let [node     (m/get-node doc slot-node)
+            children (get-in node [:slots slot-name] [])]
+        {:parent-id slot-node
+         :slot      slot-name
+         :index     (count children)})
+
+      ;; Canvas hover with explicit before/after position over a node
+      ;; that has a parent (i.e. not root).
+      (and tid (#{:before :after} pos))
+      (or (before-after-target doc tid pos)
+          ;; Root has no parent; fall back to inside.
+          (palette/insertion-target doc {:id tid}))
+
+      :else
+      (let [sel (when tid {:id tid})]
+        (palette/insertion-target doc sel)))))
+
+(defn- update-free-drag-position!
+  "Visual feedback during a :free drag. Uses CSS transform so we
+   never touch the document until pointerup — keeps history clean
+   and avoids a thousand-entry undo stack from a single drag."
+  [^js e]
+  (when-let [^js el (canvas/dom-for-id (source-node-id))]
+    (let [dx (- (.-clientX e) (start-x))
+          dy (- (.-clientY e) (start-y))]
+      (set! (.. el -style -transform)
+            (str "translate(" dx "px," dy "px)")))))
+
+(defn- commit-free-move!
+  "On drop, compute the new :x / :y from the cursor delta and the
+   pre-drag position, then commit in a single ops/set-layout pair.
+   The reconciler runs on rAF after commit; its apply-layout-style!
+   writes a fresh style attribute without the transform, so the
+   element lands cleanly at its new coordinates."
+  [^js e]
+  (let [src-id (source-node-id)
+        init-x (unchecked-get drag-state "free-initial-x")
+        init-y (unchecked-get drag-state "free-initial-y")
+        dx     (- (.-clientX e) (start-x))
+        dy     (- (.-clientY e) (start-y))
+        new-x  (+ init-x dx)
+        new-y  (+ init-y dy)
+        doc    (:document @state/app-state)
+        doc'   (-> doc
+                   (ops/set-layout src-id :x new-x)
+                   (ops/set-layout src-id :y new-y))]
+    (state/commit! doc')))
+
+(defn- clear-free-transform!
+  "Reset the transform of whichever element we were free-dragging.
+   Called on cancel (Escape) where no commit fires to overwrite it."
+  []
+  (when (and (free-drag?) (source-node-id))
+    (when-let [^js el (canvas/dom-for-id (source-node-id))]
+      (set! (.. el -style -transform) ""))))
+
+(defn- commit-drop! [^js _e]
+  (when (valid?)
+    (let [tag         (source-tag)
+          hint        (:hint (placement/hint-for tag))
+          background? (= :background hint)
+          doc         (:document @state/app-state)
+          base        (resolve-insertion-target doc)
+          ;; Snap order of precedence:
+          ;;   1. :background — index 0 of the cursor-targeted slot
+          ;;      plus a placement override. Painting order is set by
+          ;;      the stylesheet, not DOM document order.
+          ;;   2. :top-full-width / :bottom-full-width — apply-snap
+          ;;      redirects the insertion target to root and adds
+          ;;      a :width "100%" layout override.
+          ;;   3. Default — use the cursor-targeted slot as-is.
+          ;; Snap only fires at drop time; once placed, the node is
+          ;; a normal document node and the user can reparent,
+          ;; resize, and edit it without any snap-back.
+          snap        (when-not background?
+                        (placement/apply-snap hint doc base))
+          {:keys [parent-id slot index]}
+          (cond
+            background?         (assoc base :index 0)
+            (some? snap)        (:target snap)
+            :else               base)
+          overrides (cond-> (palette/seed-for-tag tag)
+                      background?
+                      (assoc-in [:layout :placement] :background)
+
+                      (some? snap)
+                      (update :layout merge (:layout snap)))
+          {doc' :doc id :id}
+          (ops/insert-new doc parent-id slot index tag overrides)]
+      (state/commit! doc')
+      (state/set-selection! {:id id}))))
+
+(defn- commit-move! [^js _e]
+  (when (valid?)
+    (let [src-id (source-node-id)
+          doc    (:document @state/app-state)
+          {:keys [parent-id slot index]} (resolve-insertion-target doc)]
+      ;; ops/move throws on cycles (moving a node under its own
+      ;; descendant) and on stale ids. Swallow both silently so an
+      ;; invalid drop is simply a no-op.
+      (try
+        (let [doc' (ops/move doc src-id parent-id slot index)]
+          (state/commit! doc')
+          (state/set-selection! {:id src-id}))
+        (catch :default _ nil)))))
+
+;; --- public API -----------------------------------------------------------
+
+(defn- cleanup! []
+  (hide-ghost!)
+  (clear-target-highlight!)
+  (clear-slot-target!)
+  (slot-strips/hide!)
+  (set-valid! false)
+  (set-target-position! nil)
+  (set-phase! :idle)
+  (set-source-tag! nil)
+  (set-source-node-id! nil)
+  (set-free-drag! false))
+
+(defn cancel!
+  "Abort any in-progress drag. Safe to call from :idle."
+  []
+  (clear-free-transform!)
+  (cleanup!))
+
+(defn start-from-palette!
+  "Arm a drag from a palette item. Does not yet enter :dragging — the
+   threshold check in `on-move!` handles the transition."
+  [^js e tag]
+  (when-not (= :idle (phase))
+    (cleanup!))
+  (set-source-tag! tag)
+  (set-source-node-id! nil)
+  (start-xy! (.-clientX e) (.-clientY e))
+  (set-phase! :armed))
+
+(defn start-from-canvas!
+  "Arm a drag from an existing canvas node. A release without meaningful
+   movement selects the node (canvas tap); a release past the drag
+   threshold moves the node via ops/move for flow / background
+   nodes, or updates `:layout :x / :y` for `:free` nodes."
+  [^js e node-id]
+  (when-not (= :idle (phase))
+    (cleanup!))
+  (set-source-tag! nil)
+  (set-source-node-id! node-id)
+  (let [doc  (:document @state/app-state)
+        node (m/get-node doc node-id)
+        free? (= :free (get-in node [:layout :placement]))]
+    (set-free-drag! free?)
+    (when free?
+      (unchecked-set drag-state "free-initial-x"
+                     (or (get-in node [:layout :x]) 0))
+      (unchecked-set drag-state "free-initial-y"
+                     (or (get-in node [:layout :y]) 0))))
+  (start-xy! (.-clientX e) (.-clientY e))
+  (set-phase! :armed))
+
+(defn- ghost-label
+  "Text shown on the drag ghost — tag for a palette drag, short
+   'move <tag>' for a canvas drag."
+  []
+  (or (source-tag)
+      (when-let [id (source-node-id)]
+        (let [doc (:document @state/app-state)
+              n   (m/get-node doc id)]
+          (str "move " (:tag n))))))
+
+(defn on-move! [^js e]
+  (case (phase)
+    :armed
+    (let [dx (- (.-clientX e) (start-x))
+          dy (- (.-clientY e) (start-y))]
+      (when (>= (+ (* dx dx) (* dy dy)) (* move-threshold move-threshold))
+        (set-phase! :dragging)
+        (if (free-drag?)
+          (do (set-valid! true)
+              (update-free-drag-position! e))
+          (do (show-ghost! (ghost-label) e)
+              (resolve-target! e)))))
+
+    :dragging
+    (if (free-drag?)
+      (update-free-drag-position! e)
+      (do (position-ghost! (ghost) e)
+          (resolve-target! e)))
+
+    nil))
+
+(defn on-up! [^js e]
+  (case (phase)
+    :dragging
+    (do
+      (cond
+        (free-drag?)       (commit-free-move! e)
+        (source-node-id)   (commit-move! e)
+        :else              (commit-drop! e))
+      (cleanup!))
+
+    :armed
+    (let [tag     (source-tag)
+          node-id (source-node-id)]
+      (cleanup!)
+      (cond
+        ;; Palette tap (no movement) → insert at current selection.
+        tag     (palette/insert-at-selection! tag)
+        ;; Canvas tap → select the node. Store the raw DOM id
+        ;; (which for template-instance clones carries a
+        ;; `__seed<N>` suffix) so the selection overlay can
+        ;; highlight the specific clicked element; doc-lookup
+        ;; sites (inspector, shortcuts) canonicalise on read.
+        node-id (state/set-selection! {:id node-id})))
+
+    nil))
+
+(defn on-key!
+  "Keydown handler for the drag layer. Only reacts to Escape, and
+   only while a drag is in flight (:armed or :dragging). Calls
+   `stopImmediatePropagation` so the `shortcuts.cljs` keydown
+   listener — which handles Escape as a 'deselect' action — does
+   not ALSO fire on the same event. That listener is registered in
+   bubble phase; this one uses capture (see `install-window-listeners!`)
+   so the drag layer always wins the race for a Escape-during-drag."
+  [^js e]
+  (when (and (contains? #{:armed :dragging} (phase))
+             (= "Escape" (.-key e)))
+    (.stopImmediatePropagation e)
+    (cancel!)))
+
+(defn- on-canvas-pointerdown! [^js e]
+  ;; Delegate: any pointerdown inside the canvas host starts a drag on
+  ;; the nearest bareforge-rendered ancestor. Root is not draggable.
+  ;; Preview mode disables drag entirely so native click / pointer
+  ;; events flow through to the user's own components.
+  (when (not= :preview (:mode @state/app-state))
+    (when-let [id (canvas/element->node-id (.-target e))]
+      (when (not= id "root")
+        (start-from-canvas! e id)))))
+
+(defn install-window-listeners!
+  "Install the pointermove, pointerup, pointercancel, and keydown
+   handlers on the document. Call once at application startup, passing
+   the canvas host element — only drops whose cursor is inside that
+   element are treated as valid, and pointerdowns inside it start
+   canvas drags on existing nodes."
+  [^js canvas-host]
+  (unchecked-set drag-state "canvas-el" canvas-host)
+  (.addEventListener canvas-host "pointerdown"   on-canvas-pointerdown!)
+  (.addEventListener js/document  "pointermove"   on-move!)
+  (.addEventListener js/document  "pointerup"     on-up!)
+  (.addEventListener js/document  "pointercancel" on-up!)
+  ;; Capture phase so Escape-during-drag wins the race over the
+  ;; shortcut layer's bubble-phase keydown listener.
+  (.addEventListener js/document  "keydown"       on-key! true))
+
+(defn dragging? [] (= :dragging (phase)))
