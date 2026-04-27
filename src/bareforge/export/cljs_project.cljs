@@ -1520,7 +1520,7 @@
        "  <x-theme preset=\"default\">\n"
        "    <div id=\"app\"></div>\n"
        "  </x-theme>\n"
-       "  <script src=\"/js/main.js\"></script>\n"
+       "  <script src=\"js/main.js\"></script>\n"
        "</body>\n"
        "</html>\n"))
 
