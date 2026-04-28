@@ -16,4 +16,4 @@
    Bareforge-emitted artefact: CDN URL in HTML export, vendored jar
    path in bundle export, `deps.edn` inside an exported CLJS project.
    Keep in lockstep with `deps.edn`'s BareDOM entry."
-  "2.4.0")
+  "2.4.1")
