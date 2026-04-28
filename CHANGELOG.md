@@ -10,6 +10,50 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 Nothing yet.
 
+## [0.1.1] — 2026-04-28
+
+Patch release. Bundles three user-facing fixes that landed on
+`main` after the v0.1.0 launch — the hosted-demo blank-screen
+fixes, the BareDOM patch bump — plus a few README polishes.
+
+### Fixed
+
+- **Hosted demo loads**. `public/index.html` and the toolbar
+  brand `<picture>` referenced `/js/main.js`, `/favicon.svg`,
+  `/assets/bareforge_*.png` with absolute paths. Project
+  Pages serves at a sub-path (`/<repo>/`), so those resolved
+  to the user-pages root and 404'd — leaving the demo loading
+  the HTML but never executing the JS bundle. Switched all
+  three to relative paths (matching `shadow-cljs.edn`'s
+  `:asset-path "js"` from v0.1.0). The same fix applies to
+  the `<script src>` the CLJS-project export plugin emits, so
+  user-exported CLJS projects hosted at a sub-path now also
+  serve correctly.
+- **`bareforge_darkmode.png` 404 in the deployed editor's
+  console** — same root cause as above, fixed by the toolbar
+  brand path change.
+
+### Changed
+
+- **BareDOM bumped 2.4.0 → 2.4.1** (upstream patch release,
+  no API or component-set changes). Propagates via
+  `bareforge.meta.versions/baredom-version` to all four export
+  paths.
+- **Pluggable export system** flagged in the README's Features
+  section, with the vanilla-JS export listed alongside HTML,
+  bundle, and ClojureScript (it shipped at v0.1.0 but the
+  Features list still showed three).
+- **README hero / "Why Bareforge?" section** added — a
+  centered logo at the top plus a personal motivation
+  paragraph between the intro and the Features list.
+
+### Verified
+
+- 486 tests / 1436 assertions / 0 failures / 0 errors.
+- `npx shadow-cljs release app` — 0 warnings.
+- Hosted demo at <https://avanelsas.github.io/bareforge/>
+  loads end-to-end after the deploy fires on this release.
+
 ## [0.1.0] — 2026-04-27
 
 First public release. Early-alpha by tone, fully functional by
@@ -69,5 +113,6 @@ parity across four export targets.
 - Export round-trip: every starter template exports to all four
   targets and renders in a browser.
 
-[Unreleased]: https://github.com/avanelsas/bareforge/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/avanelsas/bareforge/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/avanelsas/bareforge/releases/tag/v0.1.1
 [0.1.0]: https://github.com/avanelsas/bareforge/releases/tag/v0.1.0
