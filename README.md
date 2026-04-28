@@ -38,7 +38,7 @@ reconciler (no virtual DOM) to stay philosophically aligned with BareDOM.
   (`.json`) via File Download / File Upload
 - **Project files** are spec-validated on load — malformed payloads are
   refused rather than silently installed
-- **Three export modes**:
+- **Four export modes**:
   - **CDN export** (static snapshot) — one HTML file, loads BareDOM
     from jsDelivr at runtime (requires internet). Markup only; no
     reactive state.
@@ -51,6 +51,16 @@ reconciler (no virtual DOM) to stay philosophically aligned with BareDOM.
     declarative data-binding layer. Buttons fire actions, fields
     update state, computed subs recompute. See the
     [Recipes](#recipes) section for how to build one end-to-end.
+  - **Vanilla JavaScript export** (interactive) — a `.zip` with a
+    tiny reactive store, a hand-written reconciler, and per-group
+    view modules. Same feature parity as the ClojureScript export
+    (template groups, collection fields, the seven computed
+    operations, bindings, triggers, raw-HTML icons) — no
+    framework dependency, plain DOM + ES modules.
+- **Pluggable export system** — the four targets above are
+  built-in plugins under `src/bareforge/export/<name>/`; adding a
+  new one (React, Svelte, your in-house framework) is a manifest
+  + a single `generate` fn. See [`docs/plugins.md`](./docs/plugins.md).
 - **Undo / redo** with 100-step history, including coalesced keyboard
   nudges (hold arrow → one undo step)
 - **Preview mode** toggle — drops the editor chrome interactions so you
@@ -569,7 +579,7 @@ bareforge/
     ├── ui/                    Editor chrome (palette, layers, inspector, …)
     ├── dnd/                   Drag-drop state machine
     ├── storage/               IndexedDB autosave + project files
-    └── export/                HTML + bundle (zip) export
+    └── export/                Pluggable exports — HTML, bundle, CLJS, vanilla-JS
 ```
 
 See [`docs/architecture.md`](./docs/architecture.md) for the architecture, data model, rendering pipeline,
