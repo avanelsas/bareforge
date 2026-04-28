@@ -19,6 +19,16 @@ palette, inspector, toolbars, layers, modals — dogfooding the library
 inside a real end-user application. The canvas uses a hand-written DOM
 reconciler (no virtual DOM) to stay philosophically aligned with BareDOM.
 
+## Why Bareforge?
+
+Like most Clojure/ClojureScript developers starting out with UIs, I went through the common phases of using Reagent and Re-frame—which are great utilities in their own right. However, as my UIs became larger and more complex, bundle sizes increased, and I found myself spending too much time rebuilding generic, reusable components from scratch.
+
+I started looking for a different approach and discovered Web Components. I built a few, but didn't have the spare time to develop a comprehensive set that could be used in any project. Then AI arrived. While experimenting with Claude Code, I realised that 1 + 1 could be 3. That is how BareDOM, my first open-source project, was born.
+
+I then turned to another aspect of web development and thought about how I could make web components easier in use. I often found myself taking a Figma design and translating it into UI components and code.
+
+I wondered if I could automate some of that and with that the idea for Bareforge was born. I wanted something that would not just deliver a static page. Instead it should allow exporting a complete and interactive CLJS or JS project that can be used for further development. It is still rough around the edges but I hope it brings you joy and usefulness when designing and developing web/landing pages.
+
 ## Features
 
 - **Drag-drop canvas** with before / inside / after drop indicators
