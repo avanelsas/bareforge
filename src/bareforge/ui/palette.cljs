@@ -9,6 +9,7 @@
    `state/commit!`."
   (:require [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
+            [bareforge.meta.patterns :as patterns]
             [bareforge.meta.registry :as registry]
             [bareforge.state :as state]
             [bareforge.util.dom :as u]
@@ -152,18 +153,45 @@
       (append-to-root doc))))
 
 (defn insert-at-selection!
-  "Public tap-to-insert helper shared by the palette's armed-tap path
-   and the dnd layer. Reads the current selection from the state atom,
-   computes an insertion target, inserts, commits, and selects the new
-   node. Multi-select degrades to root-append (no single anchor)."
-  [tag]
-  (let [doc       (:document @state/app-state)
-        sel-id    (state/single-selected-id @state/app-state)
-        {:keys [parent-id slot index]} (insertion-target doc sel-id)
-        {doc' :doc new-id :id}
-        (ops/insert-new doc parent-id slot index tag (seed-for-tag tag))]
-    (state/commit! doc')
-    (state/select-one! new-id)))
+  "Public tap-to-insert helper shared by the palette's armed-tap path,
+   the dnd layer, and the M3.4 patterns flyout. Reads the current
+   selection from the state atom, computes an insertion target,
+   inserts, commits, and selects the new node. Multi-select degrades
+   to root-append (no single anchor).
+
+   The 2-arity form lets callers override the seeded attrs / props /
+   text — used by the patterns flyout to insert a pre-styled variant
+   instead of the bare default. When `overrides` is nil the seed
+   from `seed-for-tag` is used."
+  ([tag] (insert-at-selection! tag nil))
+  ([tag overrides]
+   (let [doc       (:document @state/app-state)
+         sel-id    (state/single-selected-id @state/app-state)
+         {:keys [parent-id slot index]} (insertion-target doc sel-id)
+         seed      (or overrides (seed-for-tag tag))
+         {doc' :doc new-id :id}
+         (ops/insert-new doc parent-id slot index tag seed)]
+     (state/commit! doc')
+     (state/select-one! new-id))))
+
+(defn- pattern-button
+  "Inline button inside a palette tile's pattern flyout. Click inserts
+   the pattern's pre-styled overrides via `insert-at-selection!`.
+   Pointerdown on the button stops propagation so the surrounding
+   palette tile's drag-arm doesn't engage on a pattern click."
+  [tag {:keys [label overrides]}]
+  (let [btn (u/el :div {:class "palette-pattern" :role "button"})]
+    (u/set-text! btn label)
+    (u/on! btn :pointerdown (fn [^js e] (.stopPropagation e)))
+    (u/on! btn :click
+           (fn [^js e]
+             (.stopPropagation e)
+             (insert-at-selection! tag overrides)))
+    btn))
+
+(defn- patterns-flyout [tag pats]
+  (u/el :div {:class "palette-patterns" :data-hidden ""}
+        (mapv #(pattern-button tag %) pats)))
 
 (defn- palette-item
   "Palette items have no :click handler any more — taps and drags both
@@ -173,12 +201,44 @@
    click-fallthrough race where the browser's click event could fire
    after a drag ended over another palette item.
 
+   When the tag has registered patterns (see `meta/patterns.cljs`),
+   the tile carries a `▾` caret that toggles an inline flyout of
+   pre-styled variants. Clicking a variant inserts it with its
+   overrides instead of the bare seed.
+
    `on-drag-start` is required when the drag layer is wired up — it
    must be non-nil in normal mounts."
   [{:keys [tag label]} on-drag-start]
-  (let [node (u/el :div {:class "palette-item"}
-                   [(u/set-text! (u/el :div {:class "palette-item-label"}) label)
-                    (u/set-text! (u/el :div {:class "palette-item-tag"}) tag)])]
+  (let [pats     (patterns/patterns-for tag)
+        label-el (u/set-text! (u/el :div {:class "palette-item-label"}) label)
+        tag-el   (u/set-text! (u/el :div {:class "palette-item-tag"}) tag)
+        header   (u/el :div {:class "palette-item-header"})
+        node     (u/el :div {:class "palette-item"})]
+    (.appendChild header label-el)
+    (.appendChild header tag-el)
+    (when pats
+      (let [caret  (-> (u/el :div {:class "palette-item-caret"
+                                   :title "Show patterns"
+                                   :role  "button"})
+                       (u/set-text! "▾"))
+            flyout (patterns-flyout tag pats)]
+        (.appendChild header caret)
+        (.appendChild node header)
+        (.appendChild node flyout)
+        ;; Caret swallows pointerdown so the palette tile's drag-arm
+        ;; (registered below) doesn't engage on the toggle gesture.
+        (u/on! caret :pointerdown (fn [^js e] (.stopPropagation e)))
+        (u/on! caret :click
+               (fn [^js e]
+                 (.stopPropagation e)
+                 (.preventDefault e)
+                 (if (.hasAttribute flyout "data-hidden")
+                   (do (.removeAttribute flyout "data-hidden")
+                       (.setAttribute caret "data-open" ""))
+                   (do (.setAttribute flyout "data-hidden" "")
+                       (.removeAttribute caret "data-open")))))))
+    (when (nil? pats)
+      (.appendChild node header))
     (when on-drag-start
       (u/on! node :pointerdown (fn [^js e] (on-drag-start e tag))))
     node))

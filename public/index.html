@@ -264,11 +264,49 @@
     .palette-item:active {
       background: var(--x-color-surface-active, rgba(127, 127, 127, 0.2));
     }
+    .palette-item-header {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      column-gap: 8px;
+      align-items: baseline;
+    }
     .palette-item-label { font-size: 13px; font-weight: 500; }
     .palette-item-tag {
       font-size: 11px;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+    /* Pattern caret + inline flyout (M3.4). The caret rotates when
+       open so the affordance reads as expand/collapse. */
+    .palette-item-caret {
+      font-size: 11px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      cursor: pointer;
+      padding: 0 4px;
+      user-select: none;
+      transition: transform 120ms ease;
+    }
+    .palette-item-caret[data-open] { transform: rotate(180deg); }
+    .palette-patterns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .palette-patterns[data-hidden] { display: none; }
+    .palette-pattern {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--x-color-surface, rgba(127, 127, 127, 0.1));
+      color: var(--x-color-text);
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+      cursor: pointer;
+      user-select: none;
+    }
+    .palette-pattern:hover {
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.18));
+      border-color: var(--x-color-primary);
     }
     .palette-empty {
       font-size: 12px;
