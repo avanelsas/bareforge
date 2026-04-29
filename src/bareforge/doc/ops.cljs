@@ -232,6 +232,29 @@
                  (set-prop d id k v)))
              doc
              (or prop-map {})))
+
+(defn set-attrs-many
+  "Apply `attr-map` to every id in `ids` in a single document update.
+   Foundation for multi-select inspector edit — one user input
+   becomes one commit covering N nodes. Skips ids that no longer
+   exist so an unfiltered selection vector is safe."
+  [doc ids attr-map]
+  (reduce (fn [d id]
+            (if (m/path-to d id)
+              (set-attrs d id attr-map)
+              d))
+          doc
+          (or ids [])))
+
+(defn set-props-many
+  "Counterpart of `set-attrs-many` for boolean props."
+  [doc ids prop-map]
+  (reduce (fn [d id]
+            (if (m/path-to d id)
+              (set-props d id prop-map)
+              d))
+          doc
+          (or ids [])))
 (defn set-text   [doc id t]   (assoc-in  doc (conj (at doc id) :text) t))
 
 (defn set-inner-html

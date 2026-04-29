@@ -241,6 +241,33 @@
         d3               (ops/set-props d2 id {:disabled nil})]
     (is (nil? (get-in (m/get-node d3 id) [:props :disabled])))))
 
+(deftest set-attrs-many-applies-to-each-id
+  (let [d0                 (empty-doc)
+        {d1 :doc id-a :id} (ops/insert-new d0 "root" "default" 0 "x-button")
+        {d2 :doc id-b :id} (ops/insert-new d1 "root" "default" 1 "x-button")
+        d3                 (ops/set-attrs-many d2 [id-a id-b]
+                                               {"variant" "primary"})]
+    (is (= "primary" (get-in (m/get-node d3 id-a) [:attrs "variant"])))
+    (is (= "primary" (get-in (m/get-node d3 id-b) [:attrs "variant"])))))
+
+(deftest set-attrs-many-skips-missing-ids
+  (let [d0                 (empty-doc)
+        {d1 :doc id :id}   (ops/insert-new d0 "root" "default" 0 "x-button")
+        d2                 (ops/set-attrs-many d1 [id "ghost"]
+                                               {"variant" "primary"})]
+    (is (= "primary" (get-in (m/get-node d2 id) [:attrs "variant"])))
+    (is (= d1 (ops/set-attrs-many d1 [] {"variant" "x"})))
+    (is (= d1 (ops/set-attrs-many d1 nil {"variant" "x"})))))
+
+(deftest set-props-many-applies-to-each-id
+  (let [d0                 (empty-doc)
+        {d1 :doc id-a :id} (ops/insert-new d0 "root" "default" 0 "x-button")
+        {d2 :doc id-b :id} (ops/insert-new d1 "root" "default" 1 "x-button")
+        d3                 (ops/set-props-many d2 [id-a id-b]
+                                               {:disabled true})]
+    (is (true? (get-in (m/get-node d3 id-a) [:props :disabled])))
+    (is (true? (get-in (m/get-node d3 id-b) [:props :disabled])))))
+
 (deftest move-within-same-slot
   (let [d0                     (empty-doc)
         {d1 :doc id-a :id}     (ops/insert-new d0 "root" "default" 0 "x-a")

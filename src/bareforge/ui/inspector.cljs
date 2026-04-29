@@ -93,25 +93,29 @@
 
 (defn inspector-model
   "Project app-state into the view model the inspector needs. Returns
-   nil when no meaningful selection exists OR when multiple distinct
-   nodes are selected (multi-select edits land in M2). The selection
-   id may be a template-instance clone's DOM id (`__seed<N>` suffix);
-   canonicalise before looking it up in the doc so canvas-tap on a
-   clone reveals the underlying template node.
+   nil when no meaningful selection exists. The selection id may be a
+   template-instance clone's DOM id (`__seed<N>` suffix); canonicalise
+   before looking it up in the doc so canvas-tap on a clone reveals
+   the underlying template node.
 
-   Returns `{:multi <count>}` when the canonicalised, deduped selection
-   resolves to more than one doc node — the renderer surfaces a
-   read-only summary in that case so the panel doesn't simply blank
-   out and confuse the user."
+   Single-select returns `{:node :meta}`. Multi-select (>1 distinct
+   doc nodes) returns `{:multi true :nodes [...] :tags #{...}}`; the
+   renderer uses that to show shared-attribute editors."
   [app-state]
-  (let [ids       (state/selected-ids app-state)
-        doc-ids   (->> ids (map canvas/canonical-node-id) (remove nil?) distinct)]
+  (let [ids     (state/selected-ids app-state)
+        doc-ids (->> ids (map canvas/canonical-node-id) (remove nil?) distinct)]
     (cond
       (empty? doc-ids)
       nil
 
       (> (count doc-ids) 1)
-      {:multi (count doc-ids)}
+      (let [nodes (->> doc-ids
+                       (keep #(m/get-node (:document app-state) %))
+                       vec)]
+        (when (seq nodes)
+          {:multi true
+           :nodes nodes
+           :tags  (set (map :tag nodes))}))
 
       :else
       (let [doc-id (first doc-ids)
@@ -1060,12 +1064,148 @@
           (u/el :div {:class "inspector-empty"})
           "No component selected. Click a layer or a palette item.")]))
 
-(defn- multi-view [n]
-  (u/el :div {:class "inspector-empty-state"}
-        [(u/set-text!
-          (u/el :div {:class "inspector-empty"})
-          (str n " components selected. Multi-select editing lands later — "
-               "click a single component to edit it."))]))
+;; --- multi-select shared editors (M2.3) ---------------------------------
+
+(defn shared-properties
+  "Pure: properties that exist on every tag in `tags` with the same
+   `:name` and `:kind`. Returns the descriptor from the first tag
+   (the others are equivalent on the dimensions the inspector cares
+   about). Used by the multi-select attribute section to decide
+   which rows to render."
+  [tags]
+  (let [meta-list  (mapv registry/get-meta tags)
+        first-list (-> meta-list first :properties)]
+    (if (or (empty? meta-list) (empty? first-list))
+      []
+      (filterv
+        (fn [prop]
+          (every?
+            (fn [m]
+              (some #(and (= (:name prop) (:name %))
+                          (= (:kind prop) (:kind %)))
+                    (:properties m)))
+            (rest meta-list)))
+        first-list))))
+
+(defn joint-attr-value
+  "Pure: read attribute `prop` across `nodes` and return
+   `{:value :mixed?}`. `:value` is the common value when every node
+   agrees, the first node's value otherwise. `:mixed?` is true iff
+   the values disagree."
+  [nodes prop]
+  (let [vs (mapv #(current-value % prop) nodes)]
+    {:value  (first vs)
+     :mixed? (not (apply = vs))}))
+
+(defn- multi-set-attr! [ids attr-name v]
+  (let [doc  (:document @state/app-state)
+        v    (if (or (nil? v) (= "" v)) nil v)
+        doc' (ops/set-attrs-many doc ids {attr-name v})]
+    (state/commit! doc')))
+
+(defn- multi-set-prop! [ids prop-name v]
+  (let [doc  (:document @state/app-state)
+        doc' (ops/set-props-many doc ids {(keyword prop-name) v})]
+    (state/commit! doc')))
+
+(defn- build-multi-search-field [nodes prop spec]
+  (let [{:keys [value mixed?]} (joint-attr-value nodes prop)
+        transform (:transform prop)
+        numeric?  (= "number" (:type spec))
+        el        (-> (u/el :x-search-field
+                            (cond-> {:class "inspector-field-widget"}
+                              numeric? (assoc :type "number")
+                              mixed?   (assoc :placeholder "Mixed")))
+                      (tag-widget! (:name prop) "text" transform))
+        ids       (mapv :id nodes)]
+    (when (and (not mixed?) value (not= "" value))
+      (u/set-attr! el :value value))
+    (when mixed?
+      (.. el -classList (add "is-mixed")))
+    (u/on! el :x-search-field-input
+           (fn [^js e]
+             (let [v (read-event-value e)
+                   v (if transform (transform-for-commit transform v) v)]
+               (multi-set-attr! ids (:name prop) v))))
+    el))
+
+(defn- build-multi-text-area [nodes prop]
+  (let [{:keys [value mixed?]} (joint-attr-value nodes prop)
+        el  (-> (u/el :x-text-area
+                      (cond-> {:class "inspector-field-widget"}
+                        mixed? (assoc :placeholder "Mixed")))
+                (tag-widget! (:name prop) "text"))
+        ids (mapv :id nodes)]
+    (when (and (not mixed?) value (not= "" value))
+      (u/set-attr! el :value value))
+    (when mixed?
+      (.. el -classList (add "is-mixed")))
+    (u/on! el :x-text-area-input
+           (fn [^js e]
+             (multi-set-attr! ids (:name prop) (read-event-value e))))
+    el))
+
+(defn- build-multi-enum [nodes prop]
+  (let [{:keys [value mixed?]} (joint-attr-value nodes prop)
+        sel-el  (-> (u/el :x-select {:class "inspector-field-widget"})
+                    (tag-widget! (:name prop) "text"))
+        ids     (mapv :id nodes)]
+    ;; Prepend a "—" sentinel option only in mixed mode so the user
+    ;; can see "values differ" without an explicit choice having been
+    ;; made; selecting any concrete option then commits to all.
+    (doseq [opt (cond-> (vec (:choices prop))
+                  mixed? (->> (cons "—") vec))]
+      (let [^js o (js/document.createElement "option")]
+        (.setAttribute o "value" opt)
+        (set! (.-textContent o) opt)
+        (.appendChild sel-el o)))
+    (when (and (not mixed?) value)
+      (u/set-attr! sel-el :value value))
+    (when mixed?
+      (u/set-attr! sel-el :value "—")
+      (.. sel-el -classList (add "is-mixed")))
+    (u/on! sel-el :x-select-input
+           (fn [^js e]
+             (let [v (read-event-value e)]
+               (when (not= v "—")
+                 (multi-set-attr! ids (:name prop) v)))))
+    sel-el))
+
+(defn- build-multi-boolean [nodes prop]
+  (let [vs       (mapv #(boolean (get-in % [:props (keyword (:name prop))])) nodes)
+        mixed?   (not (apply = vs))
+        value    (first vs)
+        el       (-> (u/el :x-switch (cond-> {:class "inspector-field-widget"}
+                                       value (assoc :checked "")))
+                     (tag-widget! (:name prop) "boolean"))
+        ids      (mapv :id nodes)]
+    (when mixed?
+      (.. el -classList (add "is-mixed"))
+      ;; Indeterminate-ish: render off so the first toggle force-
+      ;; sets all to true, the next toggle force-sets all to false.
+      (.removeAttribute el "checked"))
+    (u/on! el :x-switch-change
+           (fn [^js e]
+             (multi-set-prop! ids (:name prop) (boolean (read-event-value e)))))
+    el))
+
+(defn- build-multi-widget [nodes prop]
+  (let [spec (editor-spec prop)]
+    (case (:kind spec)
+      :boolean     (build-multi-boolean   nodes prop)
+      :enum        (build-multi-enum      nodes prop)
+      :string-long (build-multi-text-area nodes prop)
+      (build-multi-search-field nodes prop spec))))
+
+(defn- multi-attributes-section [{:keys [nodes tags]}]
+  (let [props (shared-properties tags)
+        body  (if (seq props)
+                (for [p props]
+                  (field-row (display-label p) (build-multi-widget nodes p)))
+                [(u/set-text! (u/el :div {:class "inspector-empty"})
+                              "No shared attributes between the selected components.")])]
+    (section (str (count nodes) " components selected — Shared attributes")
+             body)))
 
 (defn- widget-value [^js el]
   (let [v (.-value el)] (if (nil? v) "" v)))
@@ -2176,7 +2316,7 @@
   [^js host-el model]
   (let [sections (cond
                    (and model (:multi model))
-                   [(multi-view (:multi model))]
+                   [(multi-attributes-section model)]
 
                    model
                    (let [doc        (:document @state/app-state)
@@ -2237,6 +2377,16 @@
 
                      (and doc-changed? (nil? new-model))
                      (render! body nil)
+
+                     ;; Multi-select: doc changed (most likely from
+                     ;; the user editing a shared-attr field). Skip
+                     ;; the rebuild — every keystroke would otherwise
+                     ;; throw away the focused input. The committed
+                     ;; values are correct in the doc; the panel's
+                     ;; visual "Mixed" markers may lag until the user
+                     ;; re-enters multi-select, which is acceptable.
+                     (and doc-changed? (:multi new-model))
+                     nil
 
                      doc-changed?
                      (let [old-model   (inspector-model old-state)

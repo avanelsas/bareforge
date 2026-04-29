@@ -350,6 +350,14 @@
       touch-action: none;
     }
     .inspector-field-widget { width: 100%; }
+    /* Multi-select shared-attr widgets render the .is-mixed class
+       when values disagree across the selected nodes. A subtle
+       border tint plus muted text on the placeholder makes the
+       state legible without shouting at the user. */
+    .inspector-field-widget.is-mixed {
+      opacity: 0.85;
+      border-style: dashed;
+    }
     /* Compact x-color-picker for the Inspector. Halves the main
        colour-area height and tightens the strip heights + gap so a
        picker with alpha still fits where the default (alpha-less)

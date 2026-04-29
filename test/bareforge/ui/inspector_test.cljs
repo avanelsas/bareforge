@@ -1,6 +1,7 @@
 (ns bareforge.ui.inspector-test
   (:require [cljs.test :refer [deftest is testing]]
             [bareforge.doc.ops :as ops]
+            [bareforge.meta.registry :as registry]
             [bareforge.state :as state]
             [bareforge.ui.inspector :as insp]))
 
@@ -91,7 +92,7 @@
     (is (= "root"        (get-in model [:node :id])))
     (is (= "x-container" (get-in model [:node :tag])))))
 
-(deftest inspector-model-multi-select-returns-multi-marker
+(deftest inspector-model-multi-select-surfaces-nodes-and-tags
   (let [s0 (state/initial-state)
         {d1 :doc id-a :id} (ops/insert-new (:document s0) "root" "default" 0 "x-button")
         {d2 :doc id-b :id} (ops/insert-new d1 "root" "default" 1 "x-card")
@@ -99,8 +100,42 @@
                (assoc :document d2)
                (assoc :selection [id-a id-b]))
         model (insp/inspector-model s)]
-    (is (= {:multi 2} model)
-        "two distinct doc nodes selected → :multi marker, no :node payload")))
+    (is (true? (:multi model)))
+    (is (= 2 (count (:nodes model))))
+    (is (= #{"x-button" "x-card"} (:tags model)))))
+
+;; --- shared-properties + joint-attr-value (M2.3) ----------------------
+
+(deftest shared-properties-intersect-by-name-and-kind
+  (let [props (insp/shared-properties #{"x-button" "x-card"})]
+    (testing "every returned descriptor exists on both tags"
+      (doseq [p props]
+        (is (contains? #{:enum :boolean :string-short :string-long
+                         :number :url :color :date :unknown}
+                       (or (:kind p) :unknown))
+            "descriptor has a recognisable kind")))))
+
+(deftest shared-properties-empty-for-empty-tag-set
+  (is (= [] (insp/shared-properties #{}))))
+
+(deftest shared-properties-single-tag-returns-its-properties
+  (let [single (insp/shared-properties #{"x-button"})
+        all    (-> "x-button" registry/get-meta :properties)]
+    (is (= (count all) (count single))
+        "with a single tag, every property is trivially shared")))
+
+(deftest joint-attr-value-uniform
+  (let [n1 {:attrs {"variant" "primary"}}
+        n2 {:attrs {"variant" "primary"}}
+        out (insp/joint-attr-value [n1 n2] {:name "variant" :kind :enum})]
+    (is (= "primary" (:value out)))
+    (is (false? (:mixed? out)))))
+
+(deftest joint-attr-value-mixed
+  (let [n1 {:attrs {"variant" "primary"}}
+        n2 {:attrs {"variant" "ghost"}}
+        out (insp/joint-attr-value [n1 n2] {:name "variant" :kind :enum})]
+    (is (true? (:mixed? out)))))
 
 (deftest inspector-model-collapses-clones-of-one-doc-node
   (testing "two raw DOM ids that canonicalise to the same doc node still
