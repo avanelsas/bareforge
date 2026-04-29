@@ -303,11 +303,20 @@
       (refresh-list!)
       (u/set-attr! m :open "")
       (.addEventListener js/document "keydown" on-key-capture! true)
-      ;; Defer focus so x-modal's connectedCallback / focus trap has
-      ;; finished its work; otherwise our explicit focus is overwritten.
-      (js/requestAnimationFrame
-        (fn [] (when-let [^js inp (.-input modal-state)]
-                 (.focus inp)))))))
+      ;; x-modal's focus trap fires inside its own setTimeout(0) and
+      ;; targets the host x-search-field, which can't take focus
+      ;; itself (no delegatesFocus). Walk into its shadow root and
+      ;; focus the real <input part="input"> on the next animation
+      ;; frame so the user lands typing without an extra Tab. A retry
+      ;; loop covers components whose shadow root is built one frame
+      ;; later than expected.
+      (letfn [(focus-search! []
+                (when-let [^js inp (.-input modal-state)]
+                  (if-let [^js sr (.-shadowRoot inp)]
+                    (when-let [^js inner (.querySelector sr "[part=input]")]
+                      (.focus inner))
+                    (js/requestAnimationFrame focus-search!))))]
+        (js/requestAnimationFrame focus-search!)))))
 
 (defn hide! []
   (when-let [^js m (.-el modal-state)]
