@@ -179,62 +179,16 @@
       background: rgba(79, 70, 229, 0.08);
     }
     /* --- cheat sheet ----------------------------------------------- */
-    .cheat-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      background: rgba(0, 0, 0, 0.45);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-    }
-    .cheat-panel {
-      width: min(720px, 100%);
-      max-height: 80vh;
-      overflow: auto;
-      background: var(--x-color-bg, #fff);
-      color: var(--x-color-text, #111);
-      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
-      border-radius: 12px;
-      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-    }
-    .cheat-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 14px 18px;
-      border-bottom: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
-      position: sticky;
-      top: 0;
-      background: var(--x-color-bg, #fff);
-    }
-    .cheat-title {
-      font-size: 14px;
-      font-weight: 600;
-    }
-    .cheat-body {
-      padding: 16px 18px 22px;
-    }
+    /* x-modal carries its own backdrop / panel chrome; we only style
+       the row + group layout inside the modal body. Typography (kbd,
+       overline, body2, h3) inherits from the active theme. */
     .cheat-group + .cheat-group { margin-top: 18px; }
-    .cheat-group-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
-      margin-bottom: 6px;
-    }
     .cheat-row {
       display: grid;
-      grid-template-columns: 220px 1fr;
+      grid-template-columns: 240px 1fr;
       gap: 14px;
       padding: 4px 0;
-      font-size: 13px;
-    }
-    .cheat-keys {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      color: var(--x-color-primary, #4f46e5);
+      align-items: baseline;
     }
     .bareforge-marquee[data-hidden] { display: none; }
     .chrome[data-mode="preview"] .bareforge-marquee { display: none; }

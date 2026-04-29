@@ -1,27 +1,47 @@
 (ns bareforge.ui.cheat-sheet
-  "Modal that lists every keyboard shortcut and gesture, grouped by
-   category. Triggered by the `?` key (`shortcuts/dispatch` returns
+  "Modal listing every keyboard shortcut and gesture, grouped by
+   category. Triggered by `?` (`shortcuts/dispatch` returns
    `:show-shortcuts`) or programmatically via `toggle!`.
 
-   The modal pulls its content from `shortcuts/shortcut-info` — there's
-   no separately-maintained list. To add a new shortcut, add a binding
-   to `dispatch` AND a row to `shortcut-info`; a unit test asserts the
-   two surfaces stay in lockstep."
+   Built on the `x-modal` BareDOM component so theming, focus trap,
+   backdrop click, and ARIA roles come for free. All textual content
+   uses `x-typography` so type scale and palette inherit from the
+   active theme. Source of truth for shortcuts is
+   `shortcuts/shortcut-info`; this namespace is purely presentational."
   (:require [bareforge.ui.shortcuts :as sh]
             [bareforge.util.dom :as u]))
 
-(defonce ^:private modal-state #js {:el nil :open? false})
-
-(defn open?
-  "Whether the cheat-sheet modal is currently mounted and visible."
-  []
-  (.-open? modal-state))
+(defonce ^:private modal-state #js {:el nil})
 
 (defn- ^js modal-el [] (.-el modal-state))
 
+(defn open?
+  "True iff the modal is mounted and showing."
+  []
+  (when-let [m (modal-el)]
+    (.hasAttribute m "open")))
+
+(declare hide!)
+
+(defn- typography
+  "Build an `x-typography` element with `variant` and the given text."
+  [variant text]
+  (-> (u/el :x-typography {:variant variant})
+      (u/set-text! text)))
+
+(defn- row-el [{:keys [keys label]}]
+  (u/el :div {:class "cheat-row"}
+        [(typography "kbd" keys)
+         (typography "body2" label)]))
+
+(defn- group-block [[label entries]]
+  (u/el :div {:class "cheat-group"}
+        (cons (typography "overline" label)
+              (mapv row-el entries))))
+
 (defn- group-rows
   "Pure: split shortcut-info into ordered category groups. Returns
-   `[[label-string entries] …]` matching `shortcuts/category-labels`'
+   `[[label-string entries] …]` matching `category-labels`'
    ordering, dropping empty groups."
   [info categories]
   (let [by-cat (group-by :category info)]
@@ -30,84 +50,53 @@
                  (when-let [entries (seq (get by-cat k))]
                    [label (vec entries)]))))))
 
-(defn- row-el [{:keys [keys label]}]
-  (u/el :div {:class "cheat-row"}
-        [(-> (u/el :span {:class "cheat-keys"})
-             (u/set-text! keys))
-         (-> (u/el :span {:class "cheat-label"})
-             (u/set-text! label))]))
+(defn- on-key-capture!
+  "Esc closes the modal at capture phase so neither x-modal's internal
+   dismiss handler nor the document-level shortcut layer's :deselect
+   handler fire on the same keystroke. We own the close path, the
+   canvas selection stays untouched, and the keydown event ends here."
+  [^js e]
+  (when (and (open?) (= "Escape" (.-key e)))
+    (.stopImmediatePropagation e)
+    (.preventDefault e)
+    (hide!)))
 
-(defn- group-block [[label entries]]
-  (u/el :div {:class "cheat-group"}
-        (cons (-> (u/el :div {:class "cheat-group-label"})
-                  (u/set-text! label))
-              (mapv row-el entries))))
-
-(declare hide!)
-
-(defn- on-key-capture! [^js e]
-  (when (.-open? modal-state)
-    (cond
-      ;; Esc closes the modal and stops propagation so the
-      ;; shortcuts layer's :deselect handler doesn't also fire.
-      (= "Escape" (.-key e))
-      (do (.stopImmediatePropagation e)
-          (.preventDefault e)
-          (hide!))
-
-      ;; Pressing '?' a second time toggles the modal off.
-      (= "?" (.-key e))
-      (do (.stopImmediatePropagation e)
-          (.preventDefault e)
-          (hide!)))))
-
-(defn- build-overlay! []
-  (let [^js close-btn (-> (u/el :x-button
-                                {:variant "ghost" :size "sm"
-                                 :class "cheat-close"})
-                          (u/set-text! "Close"))
-        groups (group-rows sh/shortcut-info sh/category-labels)
-        body (u/el :div {:class "cheat-body"}
-                   (mapv group-block groups))
-        header (u/el :div {:class "cheat-header"}
-                     [(-> (u/el :div {:class "cheat-title"})
-                          (u/set-text! "Keyboard shortcuts & gestures"))
-                      close-btn])
-        panel (u/el :div {:class "cheat-panel"}
-                    [header body])
-        overlay (u/el :div {:class "cheat-overlay"} [panel])]
-    (u/on! close-btn :press (fn [_] (hide!)))
-    ;; Click outside the panel (on the overlay backdrop) closes too.
-    (u/on! overlay :click
-           (fn [^js e]
-             (when (= overlay (.-target e))
-               (hide!))))
-    overlay))
+(defn- build-modal! []
+  (let [groups (group-rows sh/shortcut-info sh/category-labels)
+        body   (u/el :div {:class "cheat-body"}
+                     (mapv group-block groups))
+        title  (-> (typography "h3" "Keyboard shortcuts & gestures")
+                   (u/set-attr! :slot "header"))
+        modal  (u/el :x-modal
+                     {:size  "lg"
+                      :label "Keyboard shortcuts & gestures"}
+                     [title body])]
+    ;; x-modal emits x-modal-dismiss on backdrop click and Esc. Our
+    ;; capture-phase keydown short-circuits the Esc path before
+    ;; x-modal sees it; backdrop clicks still flow through this
+    ;; handler so `hide!` keeps modal-state in sync.
+    (u/on! modal :x-modal-dismiss (fn [^js _e] (hide!)))
+    (.appendChild js/document.body modal)
+    (set! (.-el modal-state) modal)
+    modal))
 
 (defn show!
-  "Mount the modal in `document.body` and start intercepting keys."
+  "Mount (lazily) and open the modal. Idempotent."
   []
-  (when-not (.-open? modal-state)
-    (let [^js overlay (build-overlay!)]
-      (.appendChild js/document.body overlay)
-      (set! (.-el modal-state) overlay)
-      (set! (.-open? modal-state) true)
-      ;; Capture phase so Esc / '?' inside the modal beats the
-      ;; document-level shortcut handler.
+  (when-not (open?)
+    (let [m (or (modal-el) (build-modal!))]
+      (u/set-attr! m :open "")
       (.addEventListener js/document "keydown" on-key-capture! true))))
 
 (defn hide!
-  "Remove the modal and stop intercepting keys."
+  "Close the modal if open. Leaves the element mounted so a re-show
+   can flip the `open` attribute without rebuilding the tree."
   []
-  (when (.-open? modal-state)
-    (when-let [^js overlay (modal-el)]
-      (when-let [^js parent (.-parentNode overlay)]
-        (.removeChild parent overlay)))
-    (set! (.-el modal-state) nil)
-    (set! (.-open? modal-state) false)
+  (when-let [m (modal-el)]
+    (.removeAttribute m "open")
     (.removeEventListener js/document "keydown" on-key-capture! true)))
 
 (defn toggle!
   "Show the modal if hidden, hide it if shown."
   []
-  (if (.-open? modal-state) (hide!) (show!)))
+  (if (open?) (hide!) (show!)))
