@@ -9,6 +9,7 @@
    here — step 7 is selection only."
   (:require [bareforge.dnd.drag :as drag]
             [bareforge.doc.model :as m]
+            [bareforge.doc.ops :as ops]
             [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]
@@ -38,6 +39,55 @@
                                     (map-indexed vector children)))
                           (m/slot-entries node))))]
     (walk (:root doc) 0 nil nil 0)))
+
+;; --- pure: keyboard nav --------------------------------------------------
+
+(defn- index-of [v x]
+  (loop [i 0]
+    (cond
+      (>= i (count v))   -1
+      (= (nth v i) x)    i
+      :else              (recur (inc i)))))
+
+(defn nav-target
+  "Pure: given the flattened `rows` and the canonical id of the
+   currently-selected layer, return the id to select for `direction`
+   ∈ #{:prev :next :parent :first-child}. Returns nil when the move
+   isn't valid (start of list, root with no parent, leaf with no
+   children, etc.). `:first-child` consults `doc` directly because
+   the row list doesn't carry full slot data."
+  [rows current-id doc direction]
+  (let [ids (mapv :id rows)
+        idx (index-of ids current-id)]
+    (case direction
+      :prev
+      (when (pos? idx) (nth ids (dec idx)))
+
+      :next
+      (when (and (>= idx 0) (< idx (dec (count ids))))
+        (nth ids (inc idx)))
+
+      :parent
+      (some #(when (= (:id %) current-id) (:parent-id %)) rows)
+
+      :first-child
+      (when-let [node (m/get-node doc current-id)]
+        (some-> (m/slot-entries node) first second first :id)))))
+
+(defn reorder-target
+  "Pure: compute the post-removal target index for an Alt-Up / Alt-Down
+   reorder of `current-id`. Returns `{:parent-id :slot :index}` or
+   nil when the move is out of bounds (already at the edge) or when
+   the node has no parent (root)."
+  [doc current-id direction]
+  (when-let [{:keys [parent-id slot index]} (m/parent-of doc current-id)]
+    (let [siblings (get-in (m/get-node doc parent-id) [:slots slot])
+          n        (count siblings)
+          new-idx  (case direction
+                     :up   (dec index)
+                     :down (inc index))]
+      (when (and (>= new-idx 0) (<= new-idx (dec n)))
+        {:parent-id parent-id :slot slot :index new-idx}))))
 
 ;; --- effectful -----------------------------------------------------------
 
@@ -79,12 +129,65 @@
     (doseq [r rows]
       (.appendChild host-el (row-el r (contains? selected (:id r)))))))
 
+(defn- on-keydown!
+  "Tree-walk keyboard nav. Up/Down move to the previous / next visible
+   row, Left selects the parent, Right enters the first child. Alt-Up
+   and Alt-Down reorder the selection within its parent slot via
+   ops/move. Stops propagation so the document-level shortcut layer
+   doesn't also fire (e.g. an arrow key on a free-placed selection
+   wouldn't simultaneously nudge and navigate)."
+  [^js e]
+  (let [k       (.-key e)
+        meta?   (or (.-metaKey e) (.-ctrlKey e))
+        alt?    (.-altKey e)
+        nav     (cond
+                  (= k "ArrowUp")    (if alt? :reorder-up   :prev)
+                  (= k "ArrowDown")  (if alt? :reorder-down :next)
+                  (= k "ArrowLeft")  :parent
+                  (= k "ArrowRight") :first-child
+                  :else              nil)]
+    (when (and nav (not meta?))
+      (let [doc      (:document @state/app-state)
+            sel      (some-> (state/single-selected-id @state/app-state)
+                             canvas/canonical-node-id)]
+        (when sel
+          (case nav
+            :reorder-up
+            (when-let [{:keys [parent-id slot index]}
+                       (reorder-target doc sel :up)]
+              (.preventDefault e)
+              (.stopPropagation e)
+              (try
+                (let [doc' (ops/move doc sel parent-id slot index)]
+                  (state/commit! doc'))
+                (catch :default _ nil)))
+
+            :reorder-down
+            (when-let [{:keys [parent-id slot index]}
+                       (reorder-target doc sel :down)]
+              (.preventDefault e)
+              (.stopPropagation e)
+              (try
+                (let [doc' (ops/move doc sel parent-id slot index)]
+                  (state/commit! doc'))
+                (catch :default _ nil)))
+
+            ;; Plain arrow walks: select the resolved id and stop the
+            ;; event so it can't bubble up as a nudge or scroll.
+            (when-let [target (nav-target (flatten-tree doc) sel doc nav)]
+              (.preventDefault e)
+              (.stopPropagation e)
+              (state/select-one! target))))))))
+
 (defn create
   "Build the layers panel. Installs a single watcher that rebuilds the
    tree when :document or :selection changes. UI / theme / mode changes
    do not trigger a rebuild."
   []
-  (let [list-el (u/el :div {:class "layers-list"})
+  (let [;; tabindex makes the list itself a focus stop so keyboard nav
+        ;; can engage without having to click an individual row first.
+        list-el (u/el :div {:class "layers-list"
+                            :tabindex "0"})
         panel   (u/el :div {:id    "bareforge-layers"
                             :class "panel panel-layers"}
                       [(u/set-text! (u/el :div {:class "layers-label"}) "Layers")
@@ -92,6 +195,7 @@
     (render-tree! list-el
                   (:document @state/app-state)
                   (:selection @state/app-state))
+    (u/on! list-el :keydown on-keydown!)
     (add-watch state/app-state ::layers
                (fn [_ _ old-state new-state]
                  (when (or (not= (:document old-state)  (:document new-state))

@@ -76,6 +76,10 @@
                           :label "Marquee extend selection"}
 
    {:category :navigation :keys "Esc"            :label "Deselect / exit text edit"}
+   {:category :navigation :keys "Arrow keys (in Layers)"
+                          :label "Walk the document tree"}
+   {:category :navigation :keys "Alt+Up / Alt+Down (in Layers)"
+                          :label "Reorder selection within parent slot"}
 
    {:category :file       :keys "Cmd+S"          :label "Save project"}
    {:category :file       :keys "Cmd+O"          :label "Open project"}
