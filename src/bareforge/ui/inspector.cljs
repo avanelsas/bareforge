@@ -1148,26 +1148,26 @@
 (defn- build-multi-enum [nodes prop]
   (let [{:keys [value mixed?]} (joint-attr-value nodes prop)
         sel-el  (-> (u/el :x-select {:class "inspector-field-widget"})
-                    (tag-widget! (:name prop) "text"))
-        ids     (mapv :id nodes)]
-    ;; Prepend a "—" sentinel option only in mixed mode so the user
-    ;; can see "values differ" without an explicit choice having been
-    ;; made; selecting any concrete option then commits to all.
-    (doseq [opt (cond-> (vec (:choices prop))
+                    (tag-widget! (:name prop) "enum"))
+        ids     (mapv :id nodes)
+        ;; Prepend a "—" sentinel only in mixed mode so the user can
+        ;; see "values differ" without an explicit choice having been
+        ;; made; selecting a concrete option commits to all nodes.
+        opts    (cond-> (vec (:choices prop))
                   mixed? (->> (cons "—") vec))]
-      (let [^js o (js/document.createElement "option")]
-        (.setAttribute o "value" opt)
-        (set! (.-textContent o) opt)
+    (doseq [choice opts]
+      (let [o (u/el :option {:value choice})]
+        (u/set-text! o choice)
+        (when (or (and (not mixed?) (= choice value))
+                  (and mixed? (= choice "—")))
+          (u/set-attr! o :selected ""))
         (.appendChild sel-el o)))
-    (when (and (not mixed?) value)
-      (u/set-attr! sel-el :value value))
     (when mixed?
-      (u/set-attr! sel-el :value "—")
       (.. sel-el -classList (add "is-mixed")))
-    (u/on! sel-el :x-select-input
+    (u/on! sel-el :select-change
            (fn [^js e]
              (let [v (read-event-value e)]
-               (when (not= v "—")
+               (when (and v (not= v "—"))
                  (multi-set-attr! ids (:name prop) v)))))
     sel-el))
 
@@ -1186,7 +1186,7 @@
       (.removeAttribute el "checked"))
     (u/on! el :x-switch-change
            (fn [^js e]
-             (multi-set-prop! ids (:name prop) (boolean (read-event-value e)))))
+             (multi-set-prop! ids (:name prop) (read-event-checked e))))
     el))
 
 (defn- build-multi-widget [nodes prop]
