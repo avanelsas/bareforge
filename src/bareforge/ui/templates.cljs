@@ -571,35 +571,42 @@
         {d :doc}             (ops/insert-new d "root" "default" 14 "x-spacer"
                                              {:attrs {"size" "1.5rem" "axis" "vertical"}})
         ;; --- featured reveal — bento-grid with liquid-glass hero cell ---
+        ;; columns is a single integer (1–12); the grid composes its
+        ;; own track-list internally. row-height left at the "auto"
+        ;; default so cells size to content rather than padding into
+        ;; empty space behind a row-span 2 hero cell.
         {d :doc bento-id :id}
         (ops/insert-new d "root" "default" 15 "x-bento-grid"
-                        {:attrs {"columns"    "repeat(3, 1fr)"
-                                 "gap"        "lg"
-                                 "row-gap"    "lg"
-                                 "row-height" "minmax(180px, auto)"}})
-        ;; cell 1 — featured (col-span 2, row-span 2) wrapping
-        ;; an x-liquid-glass backdrop around the headline card
+                        {:attrs {"columns" "3"
+                                 "gap"     "lg"
+                                 "row-gap" "lg"}})
+        ;; cell 1 — featured (col-span 2, row-span 2) with an
+        ;; x-liquid-glass directly hosting the headline. No
+        ;; intermediate x-card: an elevated card paints a solid
+        ;; background that hides the glass effect. liquid-glass
+        ;; already pads its slotted content via [part=content].
         {d :doc feat-item :id}
         (ops/insert-new d bento-id "default" 0 "x-bento-item"
                         {:attrs {"col-span" "2" "row-span" "2"}})
         {d :doc glass-id :id}
         (ops/insert-new d feat-item "default" 0 "x-liquid-glass"
-                        {:attrs {"blobs"             "3"
-                                 "speed"             "0.6"
-                                 "amplitude"         "20"
-                                 "goo"               "0.7"
-                                 "specular"          ""
-                                 "specular-size"     "0.5"
-                                 "specular-intensity" "0.6"
-                                 "frost"             "0.3"
-                                 "tint"              "#a855f7"
-                                 "color-1"           "#f43f5e"
-                                 "color-2"           "#06b6d4"}})
-        {d :doc fc1 :id}     (ops/insert-new d glass-id "default" 0 "x-card"
-                                             {:attrs {"variant" "elevated" "padding" "lg"}})
-        {d :doc}             (add-text d fc1 "default" 0 "h3" "Reimagined editor")
-        {d :doc}             (add-text d fc1 "default" 1 "body1"
+                        {:attrs  {"blobs"             "3"
+                                  "speed"             "0.6"
+                                  "amplitude"         "20"
+                                  "goo"               "0.7"
+                                  "specular"          ""
+                                  "specular-size"     "0.5"
+                                  "specular-intensity" "0.6"
+                                  "frost"             "0.3"
+                                  "tint"              "#a855f7"
+                                  "color-1"           "#f43f5e"
+                                  "color-2"           "#06b6d4"}
+                         :layout {:extra-style "min-height: 320px;"}})
+        {d :doc}             (add-text d glass-id "default" 0 "h3" "Reimagined editor")
+        {d :doc}             (add-text d glass-id "default" 1 "body1"
                                        "Six years of feedback distilled into a tool that actually feels good to use. Multi-cursor, conflict-free, and faster than your last keyboard shortcut.")
+        {d :doc}             (add-text d glass-id "default" 2 "body2"
+                                       "Sub-second sync across machines. Typed open API. Public roadmap from day one.")
         ;; cell 2 — Live collaboration (1×1)
         {d :doc bi2 :id}
         (ops/insert-new d bento-id "default" 1 "x-bento-item"
@@ -627,29 +634,29 @@
         {d :doc}             (add-text d fc4 "default" 0 "h4" "Roadmap from day one")
         {d :doc}             (add-text d fc4 "default" 1 "body2"
                                        "Public roadmap, open RFCs, and a Discord where the team ships in real time.")
-        ;; --- mid-page ripple accent ---
+        ;; --- voices — scroll-stack testimonials ---
         {d :doc}             (ops/insert-new d "root" "default" 16 "x-spacer"
                                              {:attrs {"size" "2rem" "axis" "vertical"}})
-        {d :doc}             (ops/insert-new d "root" "default" 17 "x-ripple-effect"
-                                             {:attrs  {"intensity" "0.4"
-                                                       "duration"  "1500"
-                                                       "frequency" "3"}
-                                              :layout {:extra-style "height: 4rem;"}})
-        {d :doc}             (ops/insert-new d "root" "default" 18 "x-spacer"
-                                             {:attrs {"size" "2rem" "axis" "vertical"}})
-        ;; --- voices — scroll-stack testimonials ---
-        {d :doc}             (add-text+align d "root" "default" 19 "overline"
+        {d :doc}             (add-text+align d "root" "default" 17 "overline"
                                              "VOICES" "center")
-        {d :doc}             (add-text+align d "root" "default" 20 "h2"
+        {d :doc}             (add-text+align d "root" "default" 18 "h2"
                                              "Early users on what's coming" "center")
-        {d :doc}             (ops/insert-new d "root" "default" 21 "x-spacer"
+        {d :doc}             (ops/insert-new d "root" "default" 19 "x-spacer"
                                              {:attrs {"size" "1rem" "axis" "vertical"}})
+        ;; x-scroll-stack uses a sticky-positioned inner container at
+        ;; height:100dvh and stacks its slotted children as the host
+        ;; scrolls past. The host needs height greater than the
+        ;; viewport for the sticky-stack effect to play out — without
+        ;; a height the cards just render statically. 250vh gives one
+        ;; and a half viewports of scroll-stacking room for three
+        ;; cards.
         {d :doc stack-id :id}
-        (ops/insert-new d "root" "default" 22 "x-scroll-stack"
-                        {:attrs {"peek"            "0.12"
-                                 "rotation"        "3"
-                                 "scroll-distance" "100"
-                                 "align"           "center"}})
+        (ops/insert-new d "root" "default" 20 "x-scroll-stack"
+                        {:attrs  {"peek"            "0.12"
+                                  "rotation"        "3"
+                                  "scroll-distance" "100"
+                                  "align"           "center"}
+                         :layout {:extra-style "height: 250vh;"}})
         ;; testimonial 1
         {d :doc t1 :id}      (ops/insert-new d stack-id "default" 0 "x-card"
                                              {:attrs {"variant" "elevated" "padding" "lg"}})
@@ -678,21 +685,21 @@
         {d :doc}             (add-text d t3 "default" 2 "caption"
                                        "Sara K., Indie dev")
         ;; --- divider into the closing CTA ---
-        {d :doc}             (ops/insert-new d "root" "default" 23 "x-spacer"
+        {d :doc}             (ops/insert-new d "root" "default" 21 "x-spacer"
                                              {:attrs {"size" "3rem" "axis" "vertical"}})
-        {d :doc}             (ops/insert-new d "root" "default" 24 "x-organic-divider"
+        {d :doc}             (ops/insert-new d "root" "default" 22 "x-organic-divider"
                                              {:attrs {"shape"     "blob-edge"
                                                       "animation" "drift"
                                                       "height"    "3rem"}})
         ;; --- closing CTA ---
-        {d :doc}             (add-text+align d "root" "default" 25 "h2"
+        {d :doc}             (add-text+align d "root" "default" 23 "h2"
                                              "Be there from day one" "center")
-        {d :doc}             (add-text+align d "root" "default" 26 "body1"
+        {d :doc}             (add-text+align d "root" "default" 24 "body1"
                                              "Drop your email and we'll send you the launch link the moment doors open."
                                              "center")
-        {d :doc}             (ops/insert-new d "root" "default" 27 "x-spacer"
+        {d :doc}             (ops/insert-new d "root" "default" 25 "x-spacer"
                                              {:attrs {"size" "1rem" "axis" "vertical"}})
-        {d :doc cta2-id :id} (ops/insert-new d "root" "default" 28 "x-grid"
+        {d :doc cta2-id :id} (ops/insert-new d "root" "default" 26 "x-grid"
                                              {:attrs {"columns" "repeat(1, 1fr)"
                                                       "justify-items" "center"}})
         {d :doc}             (ops/insert-new d cta2-id "default" 0 "x-particle-button"

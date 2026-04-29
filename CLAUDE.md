@@ -45,6 +45,15 @@ maintainer's review time. The CI workflow at
 `.github/workflows/ci.yml` enforces the same four gates;
 matching them locally first is the contract.
 
+**AI assistants: ALWAYS ask for explicit permission before
+opening a pull request.** Even when the four gates above are
+green and the work looks ready, do not run `gh pr create`
+without the maintainer's go-ahead. PR creation is a public,
+shared-state action (notifies reviewers, kicks CI, lands in the
+PR list); the maintainer wants the final call on timing, title,
+and body. Push the feature branch if needed, summarise the
+gate results, and wait for a "yes" before opening the PR.
+
 ## Onboarding a new BareDOM component
 
 Two-step recipe:
