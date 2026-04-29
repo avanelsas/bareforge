@@ -478,18 +478,35 @@
 
 (defn- kinetic-showcase []
   (let [d (m/empty-document)
-        ;; animated background blob — sets the kinetic tone
-        {d :doc}             (ops/insert-new d "root" "default" 0 "x-gaussian-blur"
+        ;; --- background layers ---
+        ;; metaball cursor — fluid blobs follow the pointer. NOT
+        ;; :placement :background: that route stamps z-index:0 on
+        ;; the host (per the canvas-host stylesheet rule), which
+        ;; means content (z-index:1) paints over the cursor blobs.
+        ;; Instead use position:fixed at z-index:9999 with
+        ;; pointer-events:none so the blobs always render above
+        ;; everything while clicks fall through to content beneath.
+        ;; Fixed positioning is also what a cursor-following effect
+        ;; wants — relative to the viewport, not to a parent.
+        {d :doc}             (ops/insert-new d "root" "default" 0 "x-metaball-cursor"
+                                             {:attrs  {"blob-count" "5"
+                                                       "blob-size"  "60"
+                                                       "blur"       "20"
+                                                       "noise"      ""
+                                                       "palette"    "#f43f5e,#a855f7,#06b6d4"}
+                                              :layout {:extra-style
+                                                       "position: fixed; inset: 0; width: 100%; height: 100%; z-index: 9999; pointer-events: none;"}})
+        {d :doc}             (ops/insert-new d "root" "default" 1 "x-gaussian-blur"
                                              {:attrs  {"colors"    "#f43f5e,#a855f7,#06b6d4"
                                                        "blur"      "100"
-                                                       "speed"     "5"
-                                                       "count"     "4"
+                                                       "speed"     "3"
+                                                       "count"     "3"
                                                        "size"      "45"
-                                                       "opacity"   "0.65"
+                                                       "opacity"   "0.35"
                                                        "animation" "float"}
                                               :layout {:placement :background}})
-        ;; navbar
-        {d :doc nav-id :id}  (ops/insert-new d "root" "default" 1 "x-navbar")
+        ;; --- navbar ---
+        {d :doc nav-id :id}  (ops/insert-new d "root" "default" 2 "x-navbar")
         {d :doc}             (add-text d nav-id "brand" 0 "h5" "Pulse")
         {d :doc}             (ops/insert-new d nav-id "end" 0 "x-button"
                                              {:text "Story" :attrs {"variant" "ghost"}})
@@ -499,23 +516,24 @@
                                              {:text "Reserve"
                                               :attrs {"variant" "primary" "size" "sm"
                                                       "mode" "dust"}})
-        ;; hero — kinetic headline
-        {d :doc}             (ops/insert-new d "root" "default" 2 "x-spacer"
+        ;; --- hero — kinetic-typography headline (kept) ---
+        {d :doc}             (ops/insert-new d "root" "default" 4 "x-spacer"
                                              {:attrs {"size" "3rem" "axis" "vertical"}})
-        {d :doc}             (ops/insert-new d "root" "default" 3 "x-badge"
-                                             {:text "Launching October 12"
+        {d :doc}             (ops/insert-new d "root" "default" 5 "x-badge"
+                                             {:text "Launching January 15, 2027"
                                               :attrs {"variant" "info" "pill" ""}})
-        {d :doc}             (ops/insert-new d "root" "default" 4 "x-kinetic-typography"
+        {d :doc}             (ops/insert-new d "root" "default" 6 "x-kinetic-typography"
                                              {:attrs {"text"      "Something extraordinary is coming"
                                                       "preset"    "wave"
-                                                      "animation" "scroll"}})
-        {d :doc}             (add-text+align d "root" "default" 5 "body1"
+                                                      "animation" "scroll"
+                                                      "font-size" "2rem"}})
+        {d :doc}             (add-text+align d "root" "default" 7 "body1"
                                              "Six years of work, one launch event. Reserve your seat or watch the teaser to see what we've been building."
                                              "center")
-        {d :doc}             (ops/insert-new d "root" "default" 6 "x-spacer"
+        {d :doc}             (ops/insert-new d "root" "default" 8 "x-spacer"
                                              {:attrs {"size" "1rem" "axis" "vertical"}})
         ;; CTA pair — burst + dust particle buttons
-        {d :doc cta-id :id}  (ops/insert-new d "root" "default" 7 "x-grid"
+        {d :doc cta-id :id}  (ops/insert-new d "root" "default" 9 "x-grid"
                                              {:attrs {"columns" "repeat(2, 1fr)"
                                                       "gap"     "md"
                                                       "row-gap" "md"}})
@@ -527,58 +545,203 @@
                                              {:text "Watch the teaser"
                                               :attrs {"variant" "secondary" "size" "lg"
                                                       "mode" "dust"}})
-        ;; animated divider into the "what's launching" section
-        {d :doc}             (ops/insert-new d "root" "default" 8 "x-spacer"
+        ;; --- divider + kinetic-font reveal-section header ---
+        {d :doc}             (ops/insert-new d "root" "default" 10 "x-spacer"
                                              {:attrs {"size" "3rem" "axis" "vertical"}})
-        {d :doc}             (ops/insert-new d "root" "default" 9 "x-organic-divider"
+        {d :doc}             (ops/insert-new d "root" "default" 11 "x-organic-divider"
                                              {:attrs {"shape"     "wave"
                                                       "animation" "drift"
                                                       "height"    "3rem"}})
-        {d :doc}             (add-text+align d "root" "default" 10 "overline"
+        {d :doc}             (add-text+align d "root" "default" 12 "overline"
                                              "WHAT'S LAUNCHING" "center")
-        {d :doc}             (add-text+align d "root" "default" 11 "h2"
-                                             "Three things we couldn't wait to share" "center")
-        {d :doc}             (ops/insert-new d "root" "default" 12 "x-spacer"
-                                             {:attrs {"size" "1.5rem" "axis" "vertical"}})
-        ;; three teaser cards — structural contrast against the kinetic chaos
-        {d :doc reveal-id :id} (ops/insert-new d "root" "default" 13 "x-grid"
-                                               {:attrs {"columns" "repeat(3, 1fr)"
-                                                        "gap"     "lg"
-                                                        "row-gap" "lg"}})
-        {d :doc rc1 :id}     (ops/insert-new d reveal-id "default" 0 "x-card"
-                                             {:attrs {"variant" "elevated" "padding" "lg"}})
-        {d :doc}             (add-text d rc1 "default" 0 "h4" "Reimagined editor")
-        {d :doc}             (add-text d rc1 "default" 1 "body2"
-                                       "Six years of feedback distilled into a tool that actually feels good to use.")
-        {d :doc rc2 :id}     (ops/insert-new d reveal-id "default" 1 "x-card"
-                                             {:attrs {"variant" "elevated" "padding" "lg"}})
-        {d :doc}             (add-text d rc2 "default" 0 "h4" "Live collaboration")
-        {d :doc}             (add-text d rc2 "default" 1 "body2"
-                                       "Multiple cursors, sub-second sync, and conflict-free history out of the box.")
-        {d :doc rc3 :id}     (ops/insert-new d reveal-id "default" 2 "x-card"
-                                             {:attrs {"variant" "elevated" "padding" "lg"}})
-        {d :doc}             (add-text d rc3 "default" 0 "h4" "Open API")
-        {d :doc}             (add-text d rc3 "default" 1 "body2"
-                                       "Every action exposed as a typed endpoint. Build on top from day one.")
-        ;; another animated divider into the closing CTA
+        ;; physics-driven, per-character header. Pairs with the
+        ;; scroll-driven kinetic-typography hero so designers see
+        ;; both flavours of kinetic text on the same page.
+        {d :doc}             (ops/insert-new d "root" "default" 13 "x-kinetic-font"
+                                             {:attrs  {"text"      "Three things we couldn't wait to share"
+                                                       "trigger"   "both"
+                                                       "mode"      "wave"
+                                                       "per-char"  ""
+                                                       "mass"      "1"
+                                                       "tension"   "180"
+                                                       "friction"  "12"
+                                                       "intensity" "0.7"}
+                                              :layout {:extra-style "font-size: 3rem; text-align: center;"}})
         {d :doc}             (ops/insert-new d "root" "default" 14 "x-spacer"
+                                             {:attrs {"size" "1.5rem" "axis" "vertical"}})
+        ;; --- featured reveal — bento-grid with liquid-glass hero cell ---
+        ;; columns is a single integer (1–12); the grid composes its
+        ;; own track-list internally. row-height left at the "auto"
+        ;; default so cells size to content rather than padding into
+        ;; empty space behind a row-span 2 hero cell.
+        {d :doc bento-id :id}
+        (ops/insert-new d "root" "default" 15 "x-bento-grid"
+                        {:attrs {"columns" "3"
+                                 "gap"     "lg"
+                                 "row-gap" "lg"}})
+        ;; cell 1 — featured (col-span 2, row-span 2) with an
+        ;; x-liquid-glass directly hosting the headline. No
+        ;; intermediate x-card: an elevated card paints a solid
+        ;; background that hides the glass effect. liquid-glass
+        ;; already pads its slotted content via [part=content].
+        {d :doc feat-item :id}
+        (ops/insert-new d bento-id "default" 0 "x-bento-item"
+                        {:attrs {"col-span" "2" "row-span" "2"}})
+        {d :doc glass-id :id}
+        (ops/insert-new d feat-item "default" 0 "x-liquid-glass"
+                        {:attrs  {"blobs"             "3"
+                                  "speed"             "0.6"
+                                  "amplitude"         "20"
+                                  "goo"               "0.7"
+                                  "specular"          ""
+                                  "specular-size"     "0.5"
+                                  "specular-intensity" "0.6"
+                                  "frost"             "0.3"
+                                  "tint"              "#a855f7"
+                                  "color-1"           "#f43f5e"
+                                  "color-2"           "#06b6d4"}
+                         :layout {:extra-style "min-height: 320px;"}})
+        {d :doc}             (add-text d glass-id "default" 0 "h3" "Reimagined editor")
+        {d :doc}             (add-text d glass-id "default" 1 "body1"
+                                       "Six years of feedback distilled into a tool that actually feels good to use. Multi-cursor, conflict-free, and faster than your last keyboard shortcut.")
+        {d :doc}             (add-text d glass-id "default" 2 "body2"
+                                       "Sub-second sync across machines. Typed open API. Public roadmap from day one.")
+        ;; cell 2 — Live collaboration (1×1)
+        {d :doc bi2 :id}
+        (ops/insert-new d bento-id "default" 1 "x-bento-item"
+                        {:attrs {"col-span" "1" "row-span" "1"}})
+        ;; bento + testimonial cells use x-soft-body in place of
+        ;; x-card so the entire reveal section reads as physically
+        ;; deformable. x-soft-body provides the same surface +
+        ;; padding role as x-card (filled background, border, shadow)
+        ;; while morphing its outline on hover/touch via SVG path
+        ;; deformation. Tuned with mid-range stiffness/damping so the
+        ;; effect is felt without being distracting at rest.
+        {d :doc fc2 :id}     (ops/insert-new d bi2 "default" 0 "x-soft-body"
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
+        {d :doc}             (add-text d fc2 "default" 0 "h4" "Live collaboration")
+        {d :doc}             (add-text d fc2 "default" 1 "body2"
+                                       "Multiple cursors, sub-second sync, and conflict-free history out of the box.")
+        ;; cell 3 — Open API (1×1)
+        {d :doc bi3 :id}
+        (ops/insert-new d bento-id "default" 2 "x-bento-item"
+                        {:attrs {"col-span" "1" "row-span" "1"}})
+        {d :doc fc3 :id}     (ops/insert-new d bi3 "default" 0 "x-soft-body"
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
+        {d :doc}             (add-text d fc3 "default" 0 "h4" "Open API")
+        {d :doc}             (add-text d fc3 "default" 1 "body2"
+                                       "Every action exposed as a typed endpoint. Build on top from day one.")
+        ;; cell 4 — full-width closing strip (col-span 3, row-span 1)
+        {d :doc bi4 :id}
+        (ops/insert-new d bento-id "default" 3 "x-bento-item"
+                        {:attrs {"col-span" "3" "row-span" "1"}})
+        {d :doc fc4 :id}     (ops/insert-new d bi4 "default" 0 "x-soft-body"
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
+        {d :doc}             (add-text d fc4 "default" 0 "h4" "Roadmap from day one")
+        {d :doc}             (add-text d fc4 "default" 1 "body2"
+                                       "Public roadmap, open RFCs, and a Discord where the team ships in real time.")
+        ;; --- voices — scroll-stack testimonials ---
+        {d :doc}             (ops/insert-new d "root" "default" 16 "x-spacer"
+                                             {:attrs {"size" "2rem" "axis" "vertical"}})
+        {d :doc}             (add-text+align d "root" "default" 17 "overline"
+                                             "VOICES" "center")
+        {d :doc}             (add-text+align d "root" "default" 18 "h2"
+                                             "Early users on what's coming" "center")
+        {d :doc}             (ops/insert-new d "root" "default" 19 "x-spacer"
+                                             {:attrs {"size" "1rem" "axis" "vertical"}})
+        ;; A plain x-grid here instead of x-scroll-stack. Every
+        ;; scroll-driven BareDOM component (x-scroll-stack /
+        ;; -parallax / -story / -timeline) listens to window scroll
+        ;; events; inside Bareforge's editor canvas-host (its own
+        ;; overflow:auto scrollport) those events never fire, so a
+        ;; scroll-driven section reads as static during editing.
+        ;; The x-soft-body cards still react to hover/pointer, so the
+        ;; section stays kinetic without depending on scroll.
+        {d :doc stack-id :id}
+        (ops/insert-new d "root" "default" 20 "x-grid"
+                        {:attrs {"columns" "repeat(3, 1fr)"
+                                 "gap"     "lg"
+                                 "row-gap" "lg"}})
+        ;; testimonial 1
+        {d :doc t1 :id}      (ops/insert-new d stack-id "default" 0 "x-soft-body"
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
+        {d :doc}             (add-text d t1 "default" 0 "blockquote"
+                                       "I haven't been this excited about a tool launch in years. The editor genuinely feels like it was made by someone who ships every day.")
+        {d :doc}             (ops/insert-new d t1 "default" 1 "x-avatar"
+                                             {:attrs {"initials" "MA" "size" "lg"}})
+        {d :doc}             (add-text d t1 "default" 2 "caption"
+                                       "Mira A., Staff engineer at Lattice")
+        ;; testimonial 2
+        {d :doc t2 :id}      (ops/insert-new d stack-id "default" 1 "x-soft-body"
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
+        {d :doc}             (add-text d t2 "default" 0 "blockquote"
+                                       "Live collab that actually works on a slow connection. Our remote team got back two hours of merge-conflict pain a week.")
+        {d :doc}             (ops/insert-new d t2 "default" 1 "x-avatar"
+                                             {:attrs {"initials" "RD" "size" "lg"}})
+        {d :doc}             (add-text d t2 "default" 2 "caption"
+                                       "Rohan D., Tech lead at Nimbus")
+        ;; testimonial 3
+        {d :doc t3 :id}      (ops/insert-new d stack-id "default" 2 "x-soft-body"
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
+        {d :doc}             (add-text d t3 "default" 0 "blockquote"
+                                       "The open API meant I had a Slack integration running on day two. No SDK, no boilerplate — just a typed endpoint and I was off.")
+        {d :doc}             (ops/insert-new d t3 "default" 1 "x-avatar"
+                                             {:attrs {"initials" "SK" "size" "lg"}})
+        {d :doc}             (add-text d t3 "default" 2 "caption"
+                                       "Sara K., Indie dev")
+        ;; --- divider into the closing CTA ---
+        {d :doc}             (ops/insert-new d "root" "default" 21 "x-spacer"
                                              {:attrs {"size" "3rem" "axis" "vertical"}})
-        {d :doc}             (ops/insert-new d "root" "default" 15 "x-organic-divider"
+        {d :doc}             (ops/insert-new d "root" "default" 22 "x-organic-divider"
                                              {:attrs {"shape"     "blob-edge"
                                                       "animation" "drift"
                                                       "height"    "3rem"}})
-        ;; closing CTA
-        {d :doc}             (add-text+align d "root" "default" 16 "h2"
+        ;; --- closing CTA ---
+        {d :doc}             (add-text+align d "root" "default" 23 "h2"
                                              "Be there from day one" "center")
-        {d :doc}             (add-text+align d "root" "default" 17 "body1"
+        {d :doc}             (add-text+align d "root" "default" 24 "body1"
                                              "Drop your email and we'll send you the launch link the moment doors open."
                                              "center")
-        {d :doc}             (ops/insert-new d "root" "default" 18 "x-spacer"
+        {d :doc}             (ops/insert-new d "root" "default" 25 "x-spacer"
                                              {:attrs {"size" "1rem" "axis" "vertical"}})
-        {d :doc cta2-id :id} (ops/insert-new d "root" "default" 19 "x-grid"
+        {d :doc cta2-id :id} (ops/insert-new d "root" "default" 26 "x-grid"
                                              {:attrs {"columns" "repeat(1, 1fr)"
                                                       "justify-items" "center"}})
-        {d :doc}             (ops/insert-new d cta2-id "default" 0 "x-particle-button"
+        ;; Wrap the closing CTA in x-ripple-effect so clicks on the
+        ;; button kick off a goo-style ripple that distorts the
+        ;; surrounding shadow DOM. Stacks naturally with the
+        ;; particle-button's own burst — particles fly outward while
+        ;; the ripple radiates from the click point.
+        {d :doc ripple-id :id}
+        (ops/insert-new d cta2-id "default" 0 "x-ripple-effect"
+                        {:attrs {"intensity" "0.5"
+                                 "duration"  "1500"
+                                 "frequency" "3"}})
+        {d :doc}             (ops/insert-new d ripple-id "default" 0 "x-particle-button"
                                              {:text "Notify me on launch"
                                               :attrs {"variant" "primary" "size" "lg"
                                                       "mode" "burst"}})]
