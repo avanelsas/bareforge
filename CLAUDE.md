@@ -54,6 +54,29 @@ PR list); the maintainer wants the final call on timing, title,
 and body. Push the feature branch if needed, summarise the
 gate results, and wait for a "yes" before opening the PR.
 
+## After a PR is merged
+
+Once a pull request is squash-merged, the feature branch can be
+deleted — but only after `main` has been pulled (or the squash
+commit has been independently verified on `origin/main`). The
+order matters:
+
+1. Confirm the squash commit is on `origin/main` (`git fetch
+   origin && git log origin/main` — the squash message ends
+   with `(#<pr-number>)`).
+2. Delete the feature branch locally with `git branch -D
+   feature/<name>`. `-D` is required because git compares
+   commit hashes; the squash creates a new commit on `main`
+   that doesn't share history with the feature branch even
+   though the changes are identical, so `-d` will refuse.
+3. Delete the feature branch on the remote (`git push origin
+   --delete feature/<name>`).
+
+Skipping step 1 risks losing in-flight work if the merge was
+never completed or got reverted. Don't pre-emptively delete
+branches just because a PR exists — only after the merge is
+visible on `origin/main`.
+
 ## Onboarding a new BareDOM component
 
 Two-step recipe:
