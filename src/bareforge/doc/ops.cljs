@@ -92,6 +92,105 @@
     (update-in removed (slot-vec-path pt new-slot)
                (fnil vec-insert []) new-idx node)))
 
+(defn- assign-fresh-ids
+  "Pure: walk `node` and its slots subtree, assigning a fresh id to
+   every node. Returns `[renamed-node next-id-counter]`. Used by
+   `duplicate` to clone a subtree without violating the document's
+   id-uniqueness invariant — every id in the cloned subtree comes
+   from the same `(ids/gen)` stream as a fresh insertion would."
+  [node next-id]
+  (let [[new-id next1] (ids/gen next-id)
+        with-id        (assoc node :id new-id)]
+    (if-let [slots (:slots node)]
+      (let [[new-slots final-id]
+            (reduce-kv
+             (fn [[acc nid] slot-name children]
+               (let [[chs nid'] (reduce
+                                 (fn [[chs cnid] child]
+                                   (let [[c' cnid'] (assign-fresh-ids child cnid)]
+                                     [(conj chs c') cnid']))
+                                 [[] nid]
+                                 children)]
+                 [(assoc acc slot-name chs) nid']))
+             [{} next1]
+             slots)]
+        [(assoc with-id :slots new-slots) final-id])
+      [with-id next1])))
+
+(defn duplicate
+  "Insert a deep clone of `id` (the entire subtree, every descendant
+   re-ided) as the next sibling. Root cannot be duplicated. Throws
+   when `id` is missing or refers to root. Returns
+   `{:doc :id}` with the top-level clone's new id."
+  [doc id]
+  (let [info (m/parent-of doc id)]
+    (when (nil? info)
+      (throw (ex-info "duplicate: cannot duplicate root or missing node"
+                      {:id id})))
+    (let [node            (m/get-node doc id)
+          [renamed next1] (assign-fresh-ids node (:next-id doc 0))
+          {:keys [parent-id slot index]} info
+          parent-path     (m/path-to doc parent-id)]
+      {:doc (-> doc
+                (assoc :next-id next1)
+                (update-in (slot-vec-path parent-path slot)
+                           (fnil vec-insert []) (inc index) renamed))
+       :id  (:id renamed)})))
+
+(defn duplicate-many
+  "Duplicate every id in `ids`, in input order. Returns
+   `{:doc :ids}` where `:ids` is a vector of the new top-level clone
+   ids in the same order — the natural new selection after a
+   multi-duplicate. Ids that no longer exist (or refer to root) are
+   silently skipped so the op is safe to feed an unfiltered selection
+   vector."
+  [doc ids]
+  (reduce (fn [{:keys [doc ids] :as acc} id]
+            (let [info (m/parent-of doc id)]
+              (if (nil? info)
+                acc
+                (let [{doc' :doc new-id :id} (duplicate doc id)]
+                  {:doc doc' :ids (conj ids new-id)}))))
+          {:doc doc :ids []}
+          ids))
+
+(defn wrap-many
+  "Wrap a set of sibling nodes in a fresh `tag` node, inserted at the
+   position of the lowest-indexed sibling. The selected ids must
+   share a parent and slot — otherwise the op is a no-op. Original
+   document order is preserved inside the wrapper's `default` slot.
+   Returns `{:doc :id}` where `:id` is the new wrapper's id, or nil
+   when the op was a no-op."
+  [doc ids tag]
+  (let [infos (->> ids
+                   (keep (fn [id]
+                           (when-let [i (m/parent-of doc id)]
+                             (assoc i :child-id id))))
+                   vec)]
+    (cond
+      (empty? infos)
+      {:doc doc :id nil}
+
+      (not= (count infos) (count ids))
+      ;; At least one id was missing or referred to root; refuse to
+      ;; wrap a partial set rather than silently dropping nodes.
+      {:doc doc :id nil}
+
+      (not (apply = (map (juxt :parent-id :slot) infos)))
+      {:doc doc :id nil}
+
+      :else
+      (let [{:keys [parent-id slot]} (first infos)
+            ordered     (sort-by :index infos)
+            insert-idx  (:index (first ordered))
+            {doc' :doc wrap-id :id}
+            (insert-new doc parent-id slot insert-idx tag)
+            wrapped (reduce (fn [d [i {child-id :child-id}]]
+                              (move d child-id wrap-id "default" i))
+                            doc'
+                            (map-indexed vector ordered))]
+        {:doc wrapped :id wrap-id}))))
+
 (defn- at [doc id]
   (or (m/path-to doc id)
       (throw (ex-info "node not found" {:id id}))))

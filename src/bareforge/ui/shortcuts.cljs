@@ -74,9 +74,10 @@
 
 (defn dispatch
   "Project a key event into an action. Simple actions return a
-   keyword (`:undo` `:redo` `:delete` `:deselect` `:exit-text-edit`
-   `:save` `:open` `:new` `:noop`); parameterized actions return a
-   vector (`[:nudge dx dy]`). Takes a map shape:
+   keyword (`:undo` `:redo` `:delete` `:duplicate` `:wrap-in-prompt`
+   `:deselect` `:exit-text-edit` `:save` `:open` `:new` `:noop`);
+   parameterized actions return a vector (`[:nudge dx dy]`,
+   `[:wrap-in tag]`). Takes a map shape:
      {:key :meta? :shift? :tag-name :content-editable? :has-selection?
       :selection-id :placement :text-editing-id}
 
@@ -92,7 +93,9 @@
 
    Cmd+S / Cmd+O / Cmd+N map to project-file save / open / new so
    the File menu in the toolbar is an affordance, not the only
-   path to these actions."
+   path to these actions. Cmd+D duplicates the current selection;
+   Cmd+G wraps it in an x-container, with Cmd+Shift+G prompting
+   for a wrapper tag from a small whitelist."
   [{:keys [key meta? shift? has-selection? selection-id placement
            text-editing-id]
     :as event}]
@@ -112,6 +115,24 @@
 
       (and meta? (= "n" key) (not shift?) (not editable?))
       :new
+
+      (and meta? (= "d" key) (not shift?)
+           has-selection?
+           (not editable?))
+      :duplicate
+
+      ;; Cmd-Shift-G first so the more-specific binding wins over Cmd-G.
+      (and meta? (or (= "G" key) (and shift? (= "g" key)))
+           has-selection?
+           (not= "root" selection-id)
+           (not editable?))
+      :wrap-in-prompt
+
+      (and meta? (= "g" key) (not shift?)
+           has-selection?
+           (not= "root" selection-id)
+           (not editable?))
+      [:wrap-in "x-container"]
 
       (and (contains? #{"Delete" "Backspace"} key)
            has-selection?
@@ -202,14 +223,66 @@
                  :last-ms    now-ms
                  :past-count (count (get-in @state/app-state [:history :past]))})))
 
+(def ^:private wrap-tag-whitelist
+  "Tags accepted by Cmd-Shift-G's prompt as a wrapper. Kept tight on
+   purpose: container components that have a `:default` slot accepting
+   multiple children. Adding a new tag here requires it to be a real
+   container in the registry, otherwise wrap-many's reparent step
+   would fail."
+  #{"x-container" "x-grid" "x-card" "x-flex"})
+
+(defn- selected-doc-ids
+  "Read the current selection, canonicalise each id, dedupe, and drop
+   `\"root\"`. Used by every multi-id action (delete / duplicate /
+   wrap) so they all see the same logical id set."
+  []
+  (->> (state/selected-ids @state/app-state)
+       (map canvas/canonical-node-id)
+       distinct
+       (remove #{"root"})
+       (remove nil?)
+       vec))
+
+(defn- duplicate! []
+  (let [ids (selected-doc-ids)]
+    (when (seq ids)
+      (let [doc (:document @state/app-state)
+            {doc' :doc new-ids :ids} (ops/duplicate-many doc ids)]
+        (state/commit! doc')
+        (state/set-selection! new-ids)))))
+
+(defn- wrap-in! [tag]
+  (let [ids (selected-doc-ids)]
+    (when (and (contains? wrap-tag-whitelist tag) (seq ids))
+      (let [doc (:document @state/app-state)
+            {doc' :doc wrap-id :id} (ops/wrap-many doc ids tag)]
+        (when wrap-id
+          (state/commit! doc')
+          (state/select-one! wrap-id))))))
+
+(defn- prompt-wrap-tag
+  "Prompt the user for a wrapper tag, restricted to `wrap-tag-whitelist`.
+   Returns the chosen tag string, or nil when the user cancels or
+   types something off-list."
+  []
+  (let [input (js/window.prompt
+                "Wrap selection in: x-container, x-grid, x-card, x-flex"
+                "x-container")]
+    (when (and (string? input)
+               (contains? wrap-tag-whitelist input))
+      input)))
+
 (defn- perform! [action ^js e]
   (cond
     (vector? action)
     (let [[op & args] action]
       (case op
-        :nudge (let [[dx dy] args]
-                 (.preventDefault e)
-                 (nudge! dx dy))))
+        :nudge   (let [[dx dy] args]
+                   (.preventDefault e)
+                   (nudge! dx dy))
+        :wrap-in (let [[tag] args]
+                   (.preventDefault e)
+                   (wrap-in! tag))))
 
     :else
     (case action
@@ -223,15 +296,15 @@
                                "Start a new project? Unsaved changes will be lost."))
                       (pf/new!)))
       :delete   (do (.preventDefault e)
-                    (let [doc-ids (->> (state/selected-ids @state/app-state)
-                                       (map canvas/canonical-node-id)
-                                       distinct
-                                       (remove #{"root"})
-                                       vec)
+                    (let [doc-ids (selected-doc-ids)
                           doc     (:document @state/app-state)
                           doc'    (ops/remove-many doc doc-ids)]
                       (state/commit! doc')
                       (state/select-clear!)))
+      :duplicate (do (.preventDefault e) (duplicate!))
+      :wrap-in-prompt (do (.preventDefault e)
+                          (when-let [tag (prompt-wrap-tag)]
+                            (wrap-in! tag)))
       :exit-text-edit (do (.preventDefault e) (inline-edit/teardown!))
       :deselect (do (.preventDefault e) (state/select-clear!))
       nil)))

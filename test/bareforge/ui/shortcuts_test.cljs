@@ -219,6 +219,65 @@
     (is (= :noop
            (k/dispatch (assoc free-selected :key "ArrowLeft" :meta? true))))))
 
+;; --- duplicate ----------------------------------------------------------
+
+(def ^:private with-selection
+  (assoc base
+         :has-selection? true
+         :selection-id   "n_3"))
+
+(deftest dispatch-cmd-d-duplicates
+  (is (= :duplicate
+         (k/dispatch (assoc with-selection :key "d" :meta? true)))))
+
+(deftest dispatch-cmd-d-noop-without-selection
+  (is (= :noop
+         (k/dispatch (assoc base :key "d" :meta? true)))))
+
+(deftest dispatch-cmd-d-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "d" :meta? true
+                                           :tag-name "INPUT")))))
+
+(deftest dispatch-cmd-shift-d-is-noop
+  (testing "Cmd+Shift+D is reserved (browser bookmark variants);
+            we only bind plain Cmd+D"
+    (is (= :noop
+           (k/dispatch (assoc with-selection :key "d" :meta? true :shift? true))))))
+
+;; --- wrap-in ------------------------------------------------------------
+
+(deftest dispatch-cmd-g-wraps-in-x-container
+  (is (= [:wrap-in "x-container"]
+         (k/dispatch (assoc with-selection :key "g" :meta? true)))))
+
+(deftest dispatch-cmd-g-noop-without-selection
+  (is (= :noop
+         (k/dispatch (assoc base :key "g" :meta? true)))))
+
+(deftest dispatch-cmd-g-noop-on-root
+  (testing "wrapping root makes no sense — handled by the dispatch
+            guard, mirroring the :delete pattern"
+    (is (= :noop
+           (k/dispatch (assoc with-selection :key "g" :meta? true
+                                             :selection-id "root"))))))
+
+(deftest dispatch-cmd-g-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "g" :meta? true
+                                           :tag-name "X-SEARCH-FIELD")))))
+
+(deftest dispatch-cmd-shift-g-prompts
+  (is (= :wrap-in-prompt
+         (k/dispatch (assoc with-selection :key "g" :meta? true :shift? true))))
+  (is (= :wrap-in-prompt
+         (k/dispatch (assoc with-selection :key "G" :meta? true :shift? true)))))
+
+(deftest dispatch-cmd-shift-g-noop-on-root
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "g" :meta? true :shift? true
+                                           :selection-id "root")))))
+
 ;; --- coalesce? -----------------------------------------------------------
 
 (def ^:private last-rec
