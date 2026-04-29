@@ -319,12 +319,17 @@
       numeric?
       (attach-scrub-meta!
         {:read-fn   (fn []
-                      (let [doc (:document @state/app-state)
-                            n   (m/get-node doc node-id)
-                            raw (current-value n prop)]
-                        (when (and raw (not= "" raw))
-                          (let [n (js/parseFloat raw)]
-                            (when-not (js/isNaN n) n)))))
+                      ;; Empty / non-numeric attr starts the drag at 0
+                      ;; so unset fields are still scrubbable from
+                      ;; nothing — otherwise the gesture would silently
+                      ;; do nothing on a fresh component.
+                      (let [doc    (:document @state/app-state)
+                            n      (m/get-node doc node-id)
+                            raw    (current-value n prop)
+                            parsed (when (and raw (not= "" raw))
+                                     (let [p (js/parseFloat raw)]
+                                       (when-not (js/isNaN p) p)))]
+                        (or parsed 0)))
          :commit-fn! (fn [new-val first?]
                        (let [doc  (:document @state/app-state)
                              doc' (ops/set-attr doc node-id attr-name (str new-val))]
@@ -446,14 +451,18 @@
     (attach-scrub-meta!
       el
       {:read-fn    (fn []
+                     ;; Default to 0 when the field is empty so the
+                     ;; gesture engages immediately — useful when
+                     ;; placement is being changed to :free and the
+                     ;; user wants to scrub the new coord into shape.
                      (let [doc (:document @state/app-state)
-                           n   (get-in (m/get-node doc node-id)
+                           v   (get-in (m/get-node doc node-id)
                                        [:layout layout-key])]
                        (cond
-                         (number? n) n
-                         (string? n) (let [parsed (js/parseFloat n)]
-                                       (when-not (js/isNaN parsed) parsed))
-                         :else       nil)))
+                         (number? v) v
+                         (string? v) (let [parsed (js/parseFloat v)]
+                                       (if (js/isNaN parsed) 0 parsed))
+                         :else       0)))
        :commit-fn! (fn [new-val first?]
                      (let [doc  (:document @state/app-state)
                            doc' (ops/set-layout doc node-id layout-key new-val)]
