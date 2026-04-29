@@ -479,26 +479,19 @@
 (defn- kinetic-showcase []
   (let [d (m/empty-document)
         ;; --- background layers (placement :background) ---
-        ;; metaball cursor — fluid blobs follow the pointer
+        ;; metaball cursor — fluid blobs follow the pointer.
+        ;; Paired with gaussian-blur for ambient colour. x-soft-body
+        ;; isn't a backdrop component (its SVG path paints a solid
+        ;; rounded-rect that covers anything beneath it); it lives
+        ;; on the bento + testimonial cards instead.
         {d :doc}             (ops/insert-new d "root" "default" 0 "x-metaball-cursor"
                                              {:attrs  {"blob-count" "5"
                                                        "blob-size"  "60"
                                                        "blur"       "20"
                                                        "noise"      ""
-                                                       "noise-scale" "0.8"
-                                                       "noise-speed" "0.4"
                                                        "palette"    "#f43f5e,#a855f7,#06b6d4"}
                                               :layout {:placement :background}})
-        ;; soft-body — squishy physics blobs in the backdrop
-        {d :doc}             (ops/insert-new d "root" "default" 1 "x-soft-body"
-                                             {:attrs  {"stiffness"   "0.4"
-                                                       "damping"     "0.6"
-                                                       "intensity"   "0.5"
-                                                       "radius"      "120"
-                                                       "grab-radius" "180"}
-                                              :layout {:placement :background}})
-        ;; gaussian blur — toned down so the metaball + soft-body get room
-        {d :doc}             (ops/insert-new d "root" "default" 2 "x-gaussian-blur"
+        {d :doc}             (ops/insert-new d "root" "default" 1 "x-gaussian-blur"
                                              {:attrs  {"colors"    "#f43f5e,#a855f7,#06b6d4"
                                                        "blur"      "100"
                                                        "speed"     "3"
@@ -508,7 +501,7 @@
                                                        "animation" "float"}
                                               :layout {:placement :background}})
         ;; --- navbar ---
-        {d :doc nav-id :id}  (ops/insert-new d "root" "default" 3 "x-navbar")
+        {d :doc nav-id :id}  (ops/insert-new d "root" "default" 2 "x-navbar")
         {d :doc}             (add-text d nav-id "brand" 0 "h5" "Pulse")
         {d :doc}             (ops/insert-new d nav-id "end" 0 "x-button"
                                              {:text "Story" :attrs {"variant" "ghost"}})
@@ -527,7 +520,8 @@
         {d :doc}             (ops/insert-new d "root" "default" 6 "x-kinetic-typography"
                                              {:attrs {"text"      "Something extraordinary is coming"
                                                       "preset"    "wave"
-                                                      "animation" "scroll"}})
+                                                      "animation" "scroll"
+                                                      "font-size" "3rem"}})
         {d :doc}             (add-text+align d "root" "default" 7 "body1"
                                              "Six years of work, one launch event. Reserve your seat or watch the teaser to see what we've been building."
                                              "center")
