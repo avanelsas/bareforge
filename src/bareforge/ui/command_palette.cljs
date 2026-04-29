@@ -140,7 +140,7 @@
   []
   (let [cmds (vec (all-commands))]
     [(into-array
-       (map-indexed ->item cmds))
+      (map-indexed ->item cmds))
      (into {}
            (map-indexed (fn [i c] [(str "cmd-" i) (:run! c)]))
            cmds)]))
@@ -154,7 +154,7 @@
       ;; Defer to next microtask so the palette finishes its own
       ;; close-on-select work before we mutate state / focus.
       (js/queueMicrotask
-        (fn [] (try (f) (catch :default _ nil)))))))
+       (fn [] (try (f) (catch :default _ nil)))))))
 
 (defn- build-modal! []
   (let [el (u/el :x-command-palette

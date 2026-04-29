@@ -214,7 +214,7 @@
             (if-let [^js sr (.-shadowRoot host)]
               (when-let [^js inner (.querySelector sr "[part=input]")]
                 (when-not (.querySelector sr
-                            (str "datalist[id='" datalist-id "']"))
+                                          (str "datalist[id='" datalist-id "']"))
                   (when-let [^js src (js/document.getElementById datalist-id)]
                     (.appendChild sr (.cloneNode src true))))
                 (.setAttribute inner "list" datalist-id))
@@ -393,25 +393,25 @@
     (cond-> el
       numeric?
       (attach-scrub-meta!
-        {:read-fn   (fn []
+       {:read-fn   (fn []
                       ;; Empty / non-numeric attr starts the drag at 0
                       ;; so unset fields are still scrubbable from
                       ;; nothing — otherwise the gesture would silently
                       ;; do nothing on a fresh component.
-                      (let [doc    (:document @state/app-state)
-                            n      (m/get-node doc node-id)
-                            raw    (current-value n prop)
-                            parsed (when (and raw (not= "" raw))
-                                     (let [p (js/parseFloat raw)]
-                                       (when-not (js/isNaN p) p)))]
-                        (or parsed 0)))
-         :commit-fn! (fn [new-val first?]
-                       (let [doc  (:document @state/app-state)
-                             doc' (ops/set-attr doc node-id attr-name (str new-val))]
-                         (if first?
-                           (state/commit! doc')
-                           (state/commit-coalesced! doc'))))
-         :step       1}))))
+                     (let [doc    (:document @state/app-state)
+                           n      (m/get-node doc node-id)
+                           raw    (current-value n prop)
+                           parsed (when (and raw (not= "" raw))
+                                    (let [p (js/parseFloat raw)]
+                                      (when-not (js/isNaN p) p)))]
+                       (or parsed 0)))
+        :commit-fn! (fn [new-val first?]
+                      (let [doc  (:document @state/app-state)
+                            doc' (ops/set-attr doc node-id attr-name (str new-val))]
+                        (if first?
+                          (state/commit! doc')
+                          (state/commit-coalesced! doc'))))
+        :step       1}))))
 
 (defn- build-widget [node prop]
   (let [spec (editor-spec prop)]
@@ -526,27 +526,27 @@
              (let [v (read-event-value e)]
                (commit-with! ops/set-layout node-id layout-key (parse-length-value v)))))
     (attach-scrub-meta!
-      el
-      {:read-fn    (fn []
+     el
+     {:read-fn    (fn []
                      ;; Default to 0 when the field is empty so the
                      ;; gesture engages immediately — useful when
                      ;; placement is being changed to :free and the
                      ;; user wants to scrub the new coord into shape.
-                     (let [doc (:document @state/app-state)
-                           v   (get-in (m/get-node doc node-id)
-                                       [:layout layout-key])]
-                       (cond
-                         (number? v) v
-                         (string? v) (let [parsed (js/parseFloat v)]
-                                       (if (js/isNaN parsed) 0 parsed))
-                         :else       0)))
-       :commit-fn! (fn [new-val first?]
-                     (let [doc  (:document @state/app-state)
-                           doc' (ops/set-layout doc node-id layout-key new-val)]
-                       (if first?
-                         (state/commit! doc')
-                         (state/commit-coalesced! doc'))))
-       :step       1})))
+                    (let [doc (:document @state/app-state)
+                          v   (get-in (m/get-node doc node-id)
+                                      [:layout layout-key])]
+                      (cond
+                        (number? v) v
+                        (string? v) (let [parsed (js/parseFloat v)]
+                                      (if (js/isNaN parsed) 0 parsed))
+                        :else       0)))
+      :commit-fn! (fn [new-val first?]
+                    (let [doc  (:document @state/app-state)
+                          doc' (ops/set-layout doc node-id layout-key new-val)]
+                      (if first?
+                        (state/commit! doc')
+                        (state/commit-coalesced! doc'))))
+      :step       1})))
 
 (defn- build-layout-textarea
   "Multi-line editor for the free-form `:extra-style` layout field.
@@ -1151,14 +1151,14 @@
     (if (or (empty? meta-list) (empty? first-list))
       []
       (filterv
-        (fn [prop]
-          (every?
-            (fn [m]
-              (some #(and (= (:name prop) (:name %))
-                          (= (:kind prop) (:kind %)))
-                    (:properties m)))
-            (rest meta-list)))
-        first-list))))
+       (fn [prop]
+         (every?
+          (fn [m]
+            (some #(and (= (:name prop) (:name %))
+                        (= (:kind prop) (:kind %)))
+                  (:properties m)))
+          (rest meta-list)))
+       first-list))))
 
 (defn joint-attr-value
   "Pure: read attribute `prop` across `nodes` and return

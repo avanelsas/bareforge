@@ -67,19 +67,19 @@
    {:category :editing    :keys "Arrow keys"     :label "Nudge by 1px (free placement)"}
    {:category :editing    :keys "Shift+Arrow"    :label "Nudge by 10px (free placement)"}
    {:category :editing    :keys "Drag numeric label"
-                          :label "Scrub numeric value (Shift × 10)"}
+    :label "Scrub numeric value (Shift × 10)"}
 
    {:category :selection  :keys "Click"          :label "Select node"}
    {:category :selection  :keys "Shift-click"    :label "Toggle node in multi-selection"}
    {:category :selection  :keys "Drag empty canvas" :label "Marquee select"}
    {:category :selection  :keys "Shift+drag empty canvas"
-                          :label "Marquee extend selection"}
+    :label "Marquee extend selection"}
 
    {:category :navigation :keys "Esc"            :label "Deselect / exit text edit"}
    {:category :navigation :keys "Arrow keys (in Layers)"
-                          :label "Walk the document tree"}
+    :label "Walk the document tree"}
    {:category :navigation :keys "Alt+Up / Alt+Down (in Layers)"
-                          :label "Reorder selection within parent slot"}
+    :label "Reorder selection within parent slot"}
 
    {:category :file       :keys "Cmd+S"          :label "Save project"}
    {:category :file       :keys "Cmd+O"          :label "Open project"}
@@ -285,7 +285,7 @@
    selection change) starts a fresh history entry."
   [dx dy]
   (let [sel-id     (canvas/canonical-node-id
-                     (state/single-selected-id @state/app-state))
+                    (state/single-selected-id @state/app-state))
         doc        (:document @state/app-state)
         node       (m/get-node doc sel-id)
         cur-x      (or (get-in node [:layout :x]) 0)
@@ -349,9 +349,9 @@
     (when-let [n (and (not= "root" id)
                       (m/get-node (:document @state/app-state) id))]
       (state/set-clipboard-attrs!
-        {:source-tag (:tag n)
-         :attrs      (or (:attrs n) {})
-         :props      (or (:props n) {})}))))
+       {:source-tag (:tag n)
+        :attrs      (or (:attrs n) {})
+        :props      (or (:props n) {})}))))
 
 (defn paste-attrs! []
   (when-let [{:keys [attrs props]} (state/clipboard-attrs @state/app-state)]
@@ -359,24 +359,24 @@
       (when (seq target-ids)
         (let [doc  (:document @state/app-state)
               doc' (reduce
-                     (fn [d id]
-                       (let [tag    (some-> (m/get-node d id) :tag)
-                             ok     (when tag (supported-attr-names tag))]
-                         (if (and tag (seq ok))
-                           (let [attrs* (select-keys attrs ok)
+                    (fn [d id]
+                      (let [tag    (some-> (m/get-node d id) :tag)
+                            ok     (when tag (supported-attr-names tag))]
+                        (if (and tag (seq ok))
+                          (let [attrs* (select-keys attrs ok)
                                  ;; Boolean :props are keyed by keyword;
                                  ;; cross-reference against the string
                                  ;; supported-attrs set via `name`.
-                                 props* (into {}
-                                          (filter (fn [[k _]]
-                                                    (contains? ok (name k)))
-                                                  props))]
-                             (-> d
-                                 (ops/set-attrs id attrs*)
-                                 (ops/set-props id props*)))
-                           d)))
-                     doc
-                     target-ids)]
+                                props* (into {}
+                                             (filter (fn [[k _]]
+                                                       (contains? ok (name k)))
+                                                     props))]
+                            (-> d
+                                (ops/set-attrs id attrs*)
+                                (ops/set-props id props*)))
+                          d)))
+                    doc
+                    target-ids)]
           (when (not= doc doc')
             (state/commit! doc')))))))
 
@@ -395,8 +395,8 @@
    types something off-list."
   []
   (let [input (js/window.prompt
-                "Wrap selection in: x-container, x-grid, x-card, x-navbar"
-                "x-container")]
+               "Wrap selection in: x-container, x-grid, x-card, x-navbar"
+               "x-container")]
     (when (and (string? input)
                (contains? wrap-tag-whitelist input))
       input)))

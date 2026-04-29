@@ -65,7 +65,7 @@
         {d1 :doc id :id}   (ops/insert-new d0 "root" "default" 0 "x-button")
         ;; Removing a parent cascades — descendants in the same set
         ;; are no-ops on subsequent passes.
-        {d2 :doc inner :id}(ops/insert-new d1 id "default" 0 "x-inner")
+        {d2 :doc inner :id} (ops/insert-new d1 id "default" 0 "x-inner")
         d3                 (ops/remove-many d2 [id inner "ghost"])]
     (is (empty? (get-in d3 [:root :slots "default"])))))
 
@@ -204,7 +204,7 @@
   (let [d0                (empty-doc)
         {d1 :doc id :id}  (ops/insert-new d0 "root" "default" 0 "x-button")
         d2                (ops/set-attrs d1 id {"variant" "primary"
-                                                 "label"   "Click"})
+                                                "label"   "Click"})
         node              (m/get-node d2 id)]
     (is (= "primary" (get-in node [:attrs "variant"])))
     (is (= "Click"   (get-in node [:attrs "label"])))))

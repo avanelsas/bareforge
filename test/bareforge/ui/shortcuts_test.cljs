@@ -237,7 +237,7 @@
 (deftest dispatch-cmd-d-ignored-in-editable
   (is (= :noop
          (k/dispatch (assoc with-selection :key "d" :meta? true
-                                           :tag-name "INPUT")))))
+                            :tag-name "INPUT")))))
 
 (deftest dispatch-cmd-shift-d-is-noop
   (testing "Cmd+Shift+D is reserved (browser bookmark variants);
@@ -260,12 +260,12 @@
             guard, mirroring the :delete pattern"
     (is (= :noop
            (k/dispatch (assoc with-selection :key "g" :meta? true
-                                             :selection-id "root"))))))
+                              :selection-id "root"))))))
 
 (deftest dispatch-cmd-g-ignored-in-editable
   (is (= :noop
          (k/dispatch (assoc with-selection :key "g" :meta? true
-                                           :tag-name "X-SEARCH-FIELD")))))
+                            :tag-name "X-SEARCH-FIELD")))))
 
 (deftest dispatch-cmd-shift-g-prompts
   (is (= :wrap-in-prompt
@@ -276,7 +276,7 @@
 (deftest dispatch-cmd-shift-g-noop-on-root
   (is (= :noop
          (k/dispatch (assoc with-selection :key "g" :meta? true :shift? true
-                                           :selection-id "root")))))
+                            :selection-id "root")))))
 
 ;; --- copy / paste attrs -------------------------------------------------
 
@@ -287,7 +287,7 @@
 (deftest dispatch-cmd-opt-c-noop-on-root
   (is (= :noop
          (k/dispatch (assoc with-selection :key "c" :meta? true :alt? true
-                                           :selection-id "root")))))
+                            :selection-id "root")))))
 
 (deftest dispatch-cmd-opt-c-noop-without-selection
   (is (= :noop
@@ -310,12 +310,12 @@
 (deftest dispatch-cmd-opt-c-ignored-in-editable
   (is (= :noop
          (k/dispatch (assoc with-selection :key "c" :meta? true :alt? true
-                                           :tag-name "INPUT")))))
+                            :tag-name "INPUT")))))
 
 (deftest dispatch-cmd-opt-v-ignored-in-editable
   (is (= :noop
          (k/dispatch (assoc with-selection :key "v" :meta? true :alt? true
-                                           :tag-name "X-TEXT-FIELD")))))
+                            :tag-name "X-TEXT-FIELD")))))
 
 (deftest dispatch-cmd-opt-c-matches-macos-modified-key
   (testing "On macOS US layout Option+C produces 'ç', so dispatch must
