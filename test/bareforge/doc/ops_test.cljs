@@ -51,6 +51,36 @@
 (deftest remove-missing-throws
   (is (thrown? js/Error (ops/remove (empty-doc) "nope"))))
 
+(deftest remove-many-removes-each-id
+  (let [d0                    (empty-doc)
+        {d1 :doc id-a :id}    (ops/insert-new d0 "root" "default" 0 "x-a")
+        {d2 :doc id-b :id}    (ops/insert-new d1 "root" "default" 1 "x-b")
+        {d3 :doc id-c :id}    (ops/insert-new d2 "root" "default" 2 "x-c")
+        d4                    (ops/remove-many d3 [id-a id-c])]
+    (is (= [id-b] (mapv :id (get-in d4 [:root :slots "default"])))
+        "removed first and last; middle survives")))
+
+(deftest remove-many-tolerates-missing-or-already-removed
+  (let [d0                 (empty-doc)
+        {d1 :doc id :id}   (ops/insert-new d0 "root" "default" 0 "x-button")
+        ;; Removing a parent cascades — descendants in the same set
+        ;; are no-ops on subsequent passes.
+        {d2 :doc inner :id}(ops/insert-new d1 id "default" 0 "x-inner")
+        d3                 (ops/remove-many d2 [id inner "ghost"])]
+    (is (empty? (get-in d3 [:root :slots "default"])))))
+
+(deftest remove-many-skips-root
+  (let [d0 (empty-doc)
+        d1 (ops/remove-many d0 ["root" "ghost"])]
+    (is (= d0 d1)
+        "root is silently skipped — no throw, document unchanged")))
+
+(deftest remove-many-empty-coll-is-no-op
+  (let [d0                  (empty-doc)
+        {d1 :doc}           (ops/insert-new d0 "root" "default" 0 "x-button")]
+    (is (= d1 (ops/remove-many d1 [])))
+    (is (= d1 (ops/remove-many d1 nil)))))
+
 (deftest move-within-same-slot
   (let [d0                     (empty-doc)
         {d1 :doc id-a :id}     (ops/insert-new d0 "root" "default" 0 "x-a")

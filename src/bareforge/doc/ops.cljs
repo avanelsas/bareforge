@@ -56,6 +56,22 @@
             slot-path* (vec (butlast node-path))]
         (update-in doc slot-path* vec-remove idx)))))
 
+(defn remove-many
+  "Remove every id in `ids` (and their subtrees). Idempotent against
+   ids that disappear partway through (e.g. removing a parent
+   cascades-remove its descendants — a later id in the same set just
+   becomes a no-op). Skips root and skips already-missing paths so
+   the op is safe to feed an unfiltered selection vector."
+  [doc ids]
+  (reduce (fn [d id]
+            (let [p (m/path-to d id)]
+              (cond
+                (nil? p)         d
+                (= p [:root])    d
+                :else            (remove d id))))
+          doc
+          ids))
+
 (defn move
   "Move an existing node to a new parent/slot/idx. Moving a node under its
    own subtree is an error. Note: when moving within the same slot, the

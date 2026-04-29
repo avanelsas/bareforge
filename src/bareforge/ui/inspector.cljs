@@ -93,17 +93,32 @@
 
 (defn inspector-model
   "Project app-state into the view model the inspector needs. Returns
-   nil when no meaningful selection exists. The selection id may be
-   a template-instance clone's DOM id (`__seed<N>` suffix); canonicalise
-   before looking it up in the doc so canvas-tap on a clone reveals
-   the underlying template node."
+   nil when no meaningful selection exists OR when multiple distinct
+   nodes are selected (multi-select edits land in M2). The selection
+   id may be a template-instance clone's DOM id (`__seed<N>` suffix);
+   canonicalise before looking it up in the doc so canvas-tap on a
+   clone reveals the underlying template node.
+
+   Returns `{:multi <count>}` when the canonicalised, deduped selection
+   resolves to more than one doc node — the renderer surfaces a
+   read-only summary in that case so the panel doesn't simply blank
+   out and confuse the user."
   [app-state]
-  (let [sel-id (get-in app-state [:selection :id])
-        doc-id (canvas/canonical-node-id sel-id)
-        node   (when doc-id (m/get-node (:document app-state) doc-id))]
-    (when node
-      {:node node
-       :meta (registry/get-meta (:tag node))})))
+  (let [ids       (state/selected-ids app-state)
+        doc-ids   (->> ids (map canvas/canonical-node-id) (remove nil?) distinct)]
+    (cond
+      (empty? doc-ids)
+      nil
+
+      (> (count doc-ids) 1)
+      {:multi (count doc-ids)}
+
+      :else
+      (let [doc-id (first doc-ids)
+            node   (m/get-node (:document app-state) doc-id)]
+        (when node
+          {:node node
+           :meta (registry/get-meta (:tag node))})))))
 
 ;; --- effectful: editor widgets -------------------------------------------
 
@@ -894,6 +909,13 @@
         [(u/set-text!
           (u/el :div {:class "inspector-empty"})
           "No component selected. Click a layer or a palette item.")]))
+
+(defn- multi-view [n]
+  (u/el :div {:class "inspector-empty-state"}
+        [(u/set-text!
+          (u/el :div {:class "inspector-empty"})
+          (str n " components selected. Multi-select editing lands later — "
+               "click a single component to edit it."))]))
 
 (defn- widget-value [^js el]
   (let [v (.-value el)] (if (nil? v) "" v)))
@@ -2002,7 +2024,11 @@
 
 (defn- render!
   [^js host-el model]
-  (let [sections (if model
+  (let [sections (cond
+                   (and model (:multi model))
+                   [(multi-view (:multi model))]
+
+                   model
                    (let [doc        (:document @state/app-state)
                          all-fields (collect-all-fields doc)
                          t          (text-section model)

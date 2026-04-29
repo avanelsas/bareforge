@@ -111,6 +111,20 @@
       overflow: auto;
       position: relative;
     }
+    /* In edit mode, suppress native text selection inside the canvas:
+       Shift-click and marquee-drag would otherwise paint a browser
+       text-selection band over the rendered preview, fighting our own
+       multi-select. Inline text editing has its own textarea overlay,
+       which we re-enable below. Preview mode leaves selection untouched
+       so users can interact with their built page normally. */
+    .chrome[data-mode="edit"] .canvas-host {
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .bareforge-inline-edit {
+      user-select: text;
+      -webkit-user-select: text;
+    }
     .bareforge-selection-overlay {
       position: absolute;
       pointer-events: none;
@@ -157,6 +171,15 @@
     .bareforge-selection-handle[data-handle="s"]  { bottom: -5px; left: 50%;     margin-left: -5px; cursor: s-resize; }
     .bareforge-selection-handle[data-handle="sw"] { bottom: -5px; left: -5px;    cursor: sw-resize; }
     .bareforge-selection-handle[data-handle="w"]  { top: 50%;     left: -5px;    margin-top: -5px;  cursor: w-resize; }
+    .bareforge-marquee {
+      position: absolute;
+      pointer-events: none;
+      z-index: 99;
+      border: 1px dashed var(--x-color-primary, #4f46e5);
+      background: rgba(79, 70, 229, 0.08);
+    }
+    .bareforge-marquee[data-hidden] { display: none; }
+    .chrome[data-mode="preview"] .bareforge-marquee { display: none; }
     .bareforge-inline-edit {
       position: absolute;
       z-index: 101;

@@ -78,14 +78,14 @@
         {d1 :doc id-a :id}    (ops/insert-new d0 "root" "default" 0 "x-a")
         {d2 :doc}             (ops/insert-new d1 "root" "default" 1 "x-b")]
     (is (= {:parent-id "root" :slot "default" :index 1}
-           (p/insertion-target d2 {:id id-a}))
+           (p/insertion-target d2 id-a))
         "selecting x-a should cause the next insert to land at index 1")))
 
 (deftest insertion-target-with-root-selected-appends-inside-root
   (let [d0 (m/empty-document)
         {d1 :doc} (ops/insert-new d0 "root" "default" 0 "x-a")]
     (is (= {:parent-id "root" :slot "default" :index 1}
-           (p/insertion-target d1 {:id "root"}))
+           (p/insertion-target d1 "root"))
         "root is a container, so clicks with root selected append inside it")))
 
 (deftest insertion-target-container-selected-goes-inside
@@ -93,16 +93,16 @@
     (let [d0                    (m/empty-document)
           {d1 :doc id-nav :id}  (ops/insert-new d0 "root" "default" 0 "x-navbar")]
       (is (= {:parent-id id-nav :slot "default" :index 0}
-             (p/insertion-target d1 {:id id-nav})))))
+             (p/insertion-target d1 id-nav)))))
   (testing "selecting an x-card appends inside its default slot"
     (let [d0                   (m/empty-document)
           {d1 :doc id-card :id} (ops/insert-new d0 "root" "default" 0 "x-card")
           {d2 :doc}             (ops/insert-new d1 id-card "default" 0 "x-typography")]
       (is (= {:parent-id id-card :slot "default" :index 1}
-             (p/insertion-target d2 {:id id-card})))))
+             (p/insertion-target d2 id-card)))))
   (testing "selecting a leaf like x-button inserts as a sibling after"
     (let [d0                   (m/empty-document)
           {d1 :doc}             (ops/insert-new d0 "root" "default" 0 "x-card")
           {d2 :doc id-btn :id}  (ops/insert-new d1 "root" "default" 1 "x-button")]
       (is (= {:parent-id "root" :slot "default" :index 2}
-             (p/insertion-target d2 {:id id-btn}))))))
+             (p/insertion-target d2 id-btn))))))

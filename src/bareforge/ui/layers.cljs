@@ -49,7 +49,11 @@
                    :style  (str "padding-left:" (+ 8 (* depth 14)) "px")}
                   [(u/set-text! (u/el :span {:class "layers-row-label"}) label)
                    (u/set-text! (u/el :span {:class "layers-row-tag"})   tag)])]
-    (u/on! row :click (fn [_] (state/set-selection! {:id id})))
+    (u/on! row :click
+           (fn [^js e]
+             (if (.-shiftKey e)
+               (state/select-toggle! id)
+               (state/select-one! id))))
     ;; Layer rows are also drag sources — pointerdown starts a
     ;; canvas-existing drag for the row's node so the user can
     ;; reposition deep in the tree without needing the canvas hit.
@@ -61,16 +65,19 @@
 
 (defn- render-tree! [^js host-el doc selection]
   (let [rows        (flatten-tree doc)
-        ;; Selection stores the raw DOM id so the canvas overlay can
+        ;; Selection stores raw DOM ids so the canvas overlay can
         ;; highlight the specific clicked clone; template-instance
         ;; clones carry a `__seed<N>` suffix. Layer rows key by the
-        ;; canonical doc id (no suffix), so canonicalise here before
-        ;; comparing — otherwise clicking a product card or any of
-        ;; its descendants shows no highlight in the layers panel.
-        selected-id (canvas/canonical-node-id (:id selection))]
+        ;; canonical doc id (no suffix), so canonicalise the entire
+        ;; selection vector and dedupe before deciding which rows to
+        ;; mark — otherwise clicking a product card (or any of its
+        ;; descendants) shows no highlight in the layers panel.
+        selected    (into #{}
+                          (comp (map canvas/canonical-node-id) (remove nil?))
+                          selection)]
     (.replaceChildren host-el)
     (doseq [r rows]
-      (.appendChild host-el (row-el r (= (:id r) selected-id))))))
+      (.appendChild host-el (row-el r (contains? selected (:id r)))))))
 
 (defn create
   "Build the layers panel. Installs a single watcher that rebuilds the

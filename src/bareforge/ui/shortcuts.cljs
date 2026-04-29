@@ -149,15 +149,19 @@
         ;; template-instance previews). Canonicalise before every
         ;; doc-side lookup so keyboard ops address the template
         ;; node the user intends, not a synthetic clone id.
-        sel-id (get-in @state/app-state [:selection :id])
-        doc-id (canvas/canonical-node-id sel-id)
-        node   (when doc-id (m/get-node (:document @state/app-state) doc-id))]
+        ;; Multi-select degrades placement-aware shortcuts (nudge,
+        ;; selection-id-aware delete) to no-op via single-selected-id
+        ;; → nil; has-selection? still reflects the broader vector.
+        single  (state/single-selected-id @state/app-state)
+        doc-id  (canvas/canonical-node-id single)
+        node    (when doc-id (m/get-node (:document @state/app-state) doc-id))
+        any-sel? (seq (state/selected-ids @state/app-state))]
     {:key               (.-key e)
      :meta?             (or (.-metaKey e) (.-ctrlKey e))
      :shift?            (.-shiftKey e)
      :tag-name          (some-> t .-tagName)
      :content-editable? (and t (.-isContentEditable t))
-     :has-selection?    (some? sel-id)
+     :has-selection?    (boolean any-sel?)
      :selection-id      doc-id
      :placement         (get-in node [:layout :placement])
      :text-editing-id   (get-in @state/app-state [:ui :text-editing-id])}))
@@ -176,7 +180,7 @@
    selection change) starts a fresh history entry."
   [dx dy]
   (let [sel-id     (canvas/canonical-node-id
-                    (get-in @state/app-state [:selection :id]))
+                     (state/single-selected-id @state/app-state))
         doc        (:document @state/app-state)
         node       (m/get-node doc sel-id)
         cur-x      (or (get-in node [:layout :x]) 0)
@@ -219,14 +223,17 @@
                                "Start a new project? Unsaved changes will be lost."))
                       (pf/new!)))
       :delete   (do (.preventDefault e)
-                    (let [sel-id (canvas/canonical-node-id
-                                  (get-in @state/app-state [:selection :id]))
-                          doc    (:document @state/app-state)
-                          doc'   (ops/remove doc sel-id)]
+                    (let [doc-ids (->> (state/selected-ids @state/app-state)
+                                       (map canvas/canonical-node-id)
+                                       distinct
+                                       (remove #{"root"})
+                                       vec)
+                          doc     (:document @state/app-state)
+                          doc'    (ops/remove-many doc doc-ids)]
                       (state/commit! doc')
-                      (state/set-selection! nil)))
+                      (state/select-clear!)))
       :exit-text-edit (do (.preventDefault e) (inline-edit/teardown!))
-      :deselect (do (.preventDefault e) (state/set-selection! nil))
+      :deselect (do (.preventDefault e) (state/select-clear!))
       nil)))
 
 (defn- on-keydown! [^js e]

@@ -65,7 +65,7 @@
   (is (nil? (insp/inspector-model (state/initial-state)))))
 
 (deftest inspector-model-nil-for-missing-id
-  (let [s (assoc (state/initial-state) :selection {:id "does-not-exist"})]
+  (let [s (assoc (state/initial-state) :selection ["does-not-exist"])]
     (is (nil? (insp/inspector-model s)))))
 
 (deftest inspector-model-returns-node-and-meta
@@ -73,7 +73,7 @@
         {d1 :doc id :id} (ops/insert-new (:document s0) "root" "default" 0 "x-button")
         s1 (-> s0
                (assoc :document d1)
-               (assoc :selection {:id id}))
+               (assoc :selection [id]))
         model (insp/inspector-model s1)]
     (is (some? model))
     (is (= id             (get-in model [:node :id])))
@@ -85,8 +85,33 @@
                 (get-in model [:meta :properties]))))))
 
 (deftest inspector-model-works-for-root
-  (let [s (assoc (state/initial-state) :selection {:id "root"})
+  (let [s (assoc (state/initial-state) :selection ["root"])
         model (insp/inspector-model s)]
     (is (some? model))
     (is (= "root"        (get-in model [:node :id])))
     (is (= "x-container" (get-in model [:node :tag])))))
+
+(deftest inspector-model-multi-select-returns-multi-marker
+  (let [s0 (state/initial-state)
+        {d1 :doc id-a :id} (ops/insert-new (:document s0) "root" "default" 0 "x-button")
+        {d2 :doc id-b :id} (ops/insert-new d1 "root" "default" 1 "x-card")
+        s  (-> s0
+               (assoc :document d2)
+               (assoc :selection [id-a id-b]))
+        model (insp/inspector-model s)]
+    (is (= {:multi 2} model)
+        "two distinct doc nodes selected → :multi marker, no :node payload")))
+
+(deftest inspector-model-collapses-clones-of-one-doc-node
+  (testing "two raw DOM ids that canonicalise to the same doc node still
+            count as a single selection — clone-aware overlays don't
+            confuse the inspector."
+    (let [s0 (state/initial-state)
+          {d1 :doc id :id} (ops/insert-new (:document s0) "root" "default" 0 "x-button")
+          s  (-> s0
+                 (assoc :document d1)
+                 (assoc :selection [id (str id "__seed1")]))
+          model (insp/inspector-model s)]
+      (is (some? model))
+      (is (nil? (:multi model)))
+      (is (= id (get-in model [:node :id]))))))

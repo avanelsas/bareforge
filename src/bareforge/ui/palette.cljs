@@ -132,10 +132,10 @@
      append inside that slot.
    - Else if a non-container node is selected, insert as a sibling
      immediately after it (same parent, same slot, index + 1).
-   - Else append to root's default slot."
-  [doc selection]
-  (let [sel-id    (:id selection)
-        sel-node  (when sel-id (m/get-node doc sel-id))
+   - Else append to root's default slot. Pass nil for `sel-id` when
+     no single anchor exists (no selection or multi-select)."
+  [doc sel-id]
+  (let [sel-node  (when sel-id (m/get-node doc sel-id))
         container (some-> sel-node :tag container-slot)]
     (cond
       (and sel-node container)
@@ -155,15 +155,15 @@
   "Public tap-to-insert helper shared by the palette's armed-tap path
    and the dnd layer. Reads the current selection from the state atom,
    computes an insertion target, inserts, commits, and selects the new
-   node."
+   node. Multi-select degrades to root-append (no single anchor)."
   [tag]
   (let [doc       (:document @state/app-state)
-        selection (:selection @state/app-state)
-        {:keys [parent-id slot index]} (insertion-target doc selection)
+        sel-id    (state/single-selected-id @state/app-state)
+        {:keys [parent-id slot index]} (insertion-target doc sel-id)
         {doc' :doc new-id :id}
         (ops/insert-new doc parent-id slot index tag (seed-for-tag tag))]
     (state/commit! doc')
-    (state/set-selection! {:id new-id})))
+    (state/select-one! new-id)))
 
 (defn- palette-item
   "Palette items have no :click handler any more — taps and drags both
