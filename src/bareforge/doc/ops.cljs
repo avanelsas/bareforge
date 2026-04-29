@@ -208,6 +208,30 @@
 (defn unset-attr [doc id k]   (update-in doc (conj (at doc id) :attrs) dissoc k))
 (defn set-prop   [doc id k v] (assoc-in  doc (conj (at doc id) :props k) v))
 (defn unset-prop [doc id k]   (update-in doc (conj (at doc id) :props) dissoc k))
+
+(defn set-attrs
+  "Apply a map of attribute name → value to one node in a single
+   update. Nil values dispatch to `unset-attr` so blanket-pasting a
+   sparse clipboard clears any keys that were absent on the source.
+   Used by attribute paste; safe to call with an empty map (no-op)."
+  [doc id attr-map]
+  (reduce-kv (fn [d k v]
+               (if (nil? v)
+                 (unset-attr d id k)
+                 (set-attr d id k v)))
+             doc
+             (or attr-map {})))
+
+(defn set-props
+  "Counterpart to `set-attrs` for boolean / JS-side properties stored
+   under `:props`. Keys are keywords. Nil values unset."
+  [doc id prop-map]
+  (reduce-kv (fn [d k v]
+               (if (nil? v)
+                 (unset-prop d id k)
+                 (set-prop d id k v)))
+             doc
+             (or prop-map {})))
 (defn set-text   [doc id t]   (assoc-in  doc (conj (at doc id) :text) t))
 
 (defn set-inner-html

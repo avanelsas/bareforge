@@ -203,3 +203,20 @@
   (is (= [] (:selection @state/app-state))
       "toggling the last id clears the selection")
   (state/reset-state!))
+
+;; --- attribute clipboard --------------------------------------------------
+
+(deftest clipboard-attrs-defaults-nil
+  (is (nil? (state/clipboard-attrs (fresh)))))
+
+(deftest set-clipboard-attrs-roundtrip
+  (state/reset-state!)
+  (let [entry {:source-tag "x-button"
+               :attrs {"variant" "primary"}
+               :props {:disabled true}}]
+    (state/set-clipboard-attrs! entry)
+    (is (= entry (state/clipboard-attrs @state/app-state))))
+  (state/set-clipboard-attrs! nil)
+  (is (nil? (state/clipboard-attrs @state/app-state))
+      "nil clears the clipboard")
+  (state/reset-state!))

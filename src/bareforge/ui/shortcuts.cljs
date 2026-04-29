@@ -5,6 +5,7 @@
    real listener to `state/*` calls."
   (:require [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
+            [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]
             [bareforge.storage.project-file :as pf]
@@ -75,11 +76,11 @@
 (defn dispatch
   "Project a key event into an action. Simple actions return a
    keyword (`:undo` `:redo` `:delete` `:duplicate` `:wrap-in-prompt`
-   `:deselect` `:exit-text-edit` `:save` `:open` `:new` `:noop`);
-   parameterized actions return a vector (`[:nudge dx dy]`,
-   `[:wrap-in tag]`). Takes a map shape:
-     {:key :meta? :shift? :tag-name :content-editable? :has-selection?
-      :selection-id :placement :text-editing-id}
+   `:copy-attrs` `:paste-attrs` `:deselect` `:exit-text-edit` `:save`
+   `:open` `:new` `:noop`); parameterized actions return a vector
+   (`[:nudge dx dy]`, `[:wrap-in tag]`). Takes a map shape:
+     {:key :meta? :alt? :shift? :tag-name :content-editable?
+      :has-selection? :selection-id :placement :text-editing-id}
 
    Arrow keys nudge the selected node's `:layout :x / :y` by 1 px
    (or 10 px with Shift), but only when the selection has `:free`
@@ -96,7 +97,7 @@
    path to these actions. Cmd+D duplicates the current selection;
    Cmd+G wraps it in an x-container, with Cmd+Shift+G prompting
    for a wrapper tag from a small whitelist."
-  [{:keys [key meta? shift? has-selection? selection-id placement
+  [{:keys [key meta? alt? shift? has-selection? selection-id placement
            text-editing-id]
     :as event}]
   (let [editable? (editable-target? event)]
@@ -116,7 +117,18 @@
       (and meta? (= "n" key) (not shift?) (not editable?))
       :new
 
-      (and meta? (= "d" key) (not shift?)
+      (and meta? alt? (= "c" key) (not shift?)
+           has-selection?
+           (not= "root" selection-id)
+           (not editable?))
+      :copy-attrs
+
+      (and meta? alt? (= "v" key) (not shift?)
+           has-selection?
+           (not editable?))
+      :paste-attrs
+
+      (and meta? (= "d" key) (not shift?) (not alt?)
            has-selection?
            (not editable?))
       :duplicate
@@ -179,6 +191,7 @@
         any-sel? (seq (state/selected-ids @state/app-state))]
     {:key               (.-key e)
      :meta?             (or (.-metaKey e) (.-ctrlKey e))
+     :alt?              (.-altKey e)
      :shift?            (.-shiftKey e)
      :tag-name          (some-> t .-tagName)
      :content-editable? (and t (.-isContentEditable t))
@@ -251,6 +264,51 @@
         (state/commit! doc')
         (state/set-selection! new-ids)))))
 
+(defn- supported-attr-names
+  "Set of attribute names the registry advertises for `tag`. Used to
+   filter pasted attrs/props to keys the target tag actually accepts —
+   pasting an x-button's `variant` onto an x-card should silently
+   drop, not stamp an unknown attribute."
+  [tag]
+  (set (map :name (:properties (registry/get-meta tag)))))
+
+(defn- copy-attrs! []
+  (when-let [id (some-> (state/single-selected-id @state/app-state)
+                        canvas/canonical-node-id)]
+    (when-let [n (and (not= "root" id)
+                      (m/get-node (:document @state/app-state) id))]
+      (state/set-clipboard-attrs!
+        {:source-tag (:tag n)
+         :attrs      (or (:attrs n) {})
+         :props      (or (:props n) {})}))))
+
+(defn- paste-attrs! []
+  (when-let [{:keys [attrs props]} (state/clipboard-attrs @state/app-state)]
+    (let [target-ids (selected-doc-ids)]
+      (when (seq target-ids)
+        (let [doc  (:document @state/app-state)
+              doc' (reduce
+                     (fn [d id]
+                       (let [tag    (some-> (m/get-node d id) :tag)
+                             ok     (when tag (supported-attr-names tag))]
+                         (if (and tag (seq ok))
+                           (let [attrs* (select-keys attrs ok)
+                                 ;; Boolean :props are keyed by keyword;
+                                 ;; cross-reference against the string
+                                 ;; supported-attrs set via `name`.
+                                 props* (into {}
+                                          (filter (fn [[k _]]
+                                                    (contains? ok (name k)))
+                                                  props))]
+                             (-> d
+                                 (ops/set-attrs id attrs*)
+                                 (ops/set-props id props*)))
+                           d)))
+                     doc
+                     target-ids)]
+          (when (not= doc doc')
+            (state/commit! doc')))))))
+
 (defn- wrap-in! [tag]
   (let [ids (selected-doc-ids)]
     (when (and (contains? wrap-tag-whitelist tag) (seq ids))
@@ -305,6 +363,8 @@
       :wrap-in-prompt (do (.preventDefault e)
                           (when-let [tag (prompt-wrap-tag)]
                             (wrap-in! tag)))
+      :copy-attrs  (do (.preventDefault e) (copy-attrs!))
+      :paste-attrs (do (.preventDefault e) (paste-attrs!))
       :exit-text-edit (do (.preventDefault e) (inline-edit/teardown!))
       :deselect (do (.preventDefault e) (state/select-clear!))
       nil)))

@@ -278,6 +278,45 @@
          (k/dispatch (assoc with-selection :key "g" :meta? true :shift? true
                                            :selection-id "root")))))
 
+;; --- copy / paste attrs -------------------------------------------------
+
+(deftest dispatch-cmd-opt-c-copies-attrs
+  (is (= :copy-attrs
+         (k/dispatch (assoc with-selection :key "c" :meta? true :alt? true)))))
+
+(deftest dispatch-cmd-opt-c-noop-on-root
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "c" :meta? true :alt? true
+                                           :selection-id "root")))))
+
+(deftest dispatch-cmd-opt-c-noop-without-selection
+  (is (= :noop
+         (k/dispatch (assoc base :key "c" :meta? true :alt? true)))))
+
+(deftest dispatch-plain-cmd-c-is-noop
+  (testing "plain Cmd-C still falls through to the browser's native copy
+            so users can copy text from inspector inputs / layers panel"
+    (is (= :noop
+           (k/dispatch (assoc with-selection :key "c" :meta? true))))))
+
+(deftest dispatch-cmd-opt-v-pastes-attrs
+  (is (= :paste-attrs
+         (k/dispatch (assoc with-selection :key "v" :meta? true :alt? true)))))
+
+(deftest dispatch-cmd-opt-v-noop-without-selection
+  (is (= :noop
+         (k/dispatch (assoc base :key "v" :meta? true :alt? true)))))
+
+(deftest dispatch-cmd-opt-c-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "c" :meta? true :alt? true
+                                           :tag-name "INPUT")))))
+
+(deftest dispatch-cmd-opt-v-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "v" :meta? true :alt? true
+                                           :tag-name "X-TEXT-FIELD")))))
+
 ;; --- coalesce? -----------------------------------------------------------
 
 (def ^:private last-rec

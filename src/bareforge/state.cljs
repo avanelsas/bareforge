@@ -172,6 +172,24 @@
                (vec (clojure.core/remove #(= id %) ids))
                (conj (vec ids) id))))))
 
+;; --- attribute clipboard ------------------------------------------------
+
+(defn clipboard-attrs
+  "Pure: read the in-memory attribute clipboard, or nil when nothing
+   has been copied. Shape:
+     `{:source-tag <tag> :attrs {<name> <v>} :props {<keyword> <v>}}`."
+  [state]
+  (get-in state [:ui :clipboard :attrs]))
+
+(defn set-clipboard-attrs!
+  "Replace the attribute clipboard with `entry`, or clear when nil.
+   Lives under `:ui` so it bypasses history — copy/paste is a workflow
+   gesture, not a document edit."
+  [entry]
+  (if (nil? entry)
+    (swap! app-state update-in [:ui :clipboard] dissoc :attrs)
+    (swap! app-state assoc-in  [:ui :clipboard :attrs] entry)))
+
 (defn set-mode! [mode]
   (swap! app-state assoc :mode mode))
 

@@ -198,6 +198,49 @@
     (is (nil? wrap))
     (is (= d0 doc'))))
 
+;; --- set-attrs / set-props ----------------------------------------------
+
+(deftest set-attrs-applies-each-pair
+  (let [d0                (empty-doc)
+        {d1 :doc id :id}  (ops/insert-new d0 "root" "default" 0 "x-button")
+        d2                (ops/set-attrs d1 id {"variant" "primary"
+                                                 "label"   "Click"})
+        node              (m/get-node d2 id)]
+    (is (= "primary" (get-in node [:attrs "variant"])))
+    (is (= "Click"   (get-in node [:attrs "label"])))))
+
+(deftest set-attrs-nil-value-unsets
+  (let [d0               (empty-doc)
+        {d1 :doc id :id} (ops/insert-new d0 "root" "default" 0 "x-button")
+        d2               (ops/set-attr d1 id "variant" "primary")
+        d3               (ops/set-attrs d2 id {"variant" nil
+                                               "label"   "Click"})
+        node             (m/get-node d3 id)]
+    (is (nil? (get-in node [:attrs "variant"]))
+        "nil values dispatch to unset-attr")
+    (is (= "Click" (get-in node [:attrs "label"])))))
+
+(deftest set-attrs-empty-and-nil-noop
+  (let [d0               (empty-doc)
+        {d1 :doc id :id} (ops/insert-new d0 "root" "default" 0 "x-button")]
+    (is (= d1 (ops/set-attrs d1 id {})))
+    (is (= d1 (ops/set-attrs d1 id nil)))))
+
+(deftest set-props-applies-each-pair-keyword-keys
+  (let [d0               (empty-doc)
+        {d1 :doc id :id} (ops/insert-new d0 "root" "default" 0 "x-button")
+        d2               (ops/set-props d1 id {:disabled true :loading false})
+        node             (m/get-node d2 id)]
+    (is (true?  (get-in node [:props :disabled])))
+    (is (false? (get-in node [:props :loading])))))
+
+(deftest set-props-nil-value-unsets
+  (let [d0               (empty-doc)
+        {d1 :doc id :id} (ops/insert-new d0 "root" "default" 0 "x-button")
+        d2               (ops/set-prop d1 id :disabled true)
+        d3               (ops/set-props d2 id {:disabled nil})]
+    (is (nil? (get-in (m/get-node d3 id) [:props :disabled])))))
+
 (deftest move-within-same-slot
   (let [d0                     (empty-doc)
         {d1 :doc id-a :id}     (ops/insert-new d0 "root" "default" 0 "x-a")
