@@ -81,6 +81,7 @@
    {:category :file       :keys "Cmd+O"          :label "Open project"}
    {:category :file       :keys "Cmd+N"          :label "New project"}
 
+   {:category :view       :keys "Cmd+K"          :label "Open command palette"}
    {:category :view       :keys "?"              :label "Show this cheat sheet"}])
 
 (def category-labels
@@ -177,6 +178,10 @@
            (not meta?)
            (not editable?))
       :show-shortcuts
+
+      (and meta? (= "k" key) (not shift?) (not alt?)
+           (not editable?))
+      :show-command-palette
 
       (and meta? alt? c-letter? (not shift?)
            has-selection?
@@ -318,7 +323,7 @@
        (remove nil?)
        vec))
 
-(defn- duplicate! []
+(defn duplicate! []
   (let [ids (selected-doc-ids)]
     (when (seq ids)
       (let [doc (:document @state/app-state)
@@ -334,7 +339,7 @@
   [tag]
   (set (map :name (:properties (registry/get-meta tag)))))
 
-(defn- copy-attrs! []
+(defn copy-attrs! []
   (when-let [id (some-> (state/single-selected-id @state/app-state)
                         canvas/canonical-node-id)]
     (when-let [n (and (not= "root" id)
@@ -344,7 +349,7 @@
          :attrs      (or (:attrs n) {})
          :props      (or (:props n) {})}))))
 
-(defn- paste-attrs! []
+(defn paste-attrs! []
   (when-let [{:keys [attrs props]} (state/clipboard-attrs @state/app-state)]
     (let [target-ids (selected-doc-ids)]
       (when (seq target-ids)
@@ -371,7 +376,7 @@
           (when (not= doc doc')
             (state/commit! doc')))))))
 
-(defn- wrap-in! [tag]
+(defn wrap-in! [tag]
   (let [ids (selected-doc-ids)]
     (when (and (contains? wrap-tag-whitelist tag) (seq ids))
       (let [doc (:document @state/app-state)
@@ -393,6 +398,7 @@
       input)))
 
 (defonce ^:private show-shortcuts-fn (atom (constantly nil)))
+(defonce ^:private show-command-palette-fn (atom (constantly nil)))
 
 (defn set-show-shortcuts!
   "Register the function called when `dispatch` returns :show-shortcuts.
@@ -402,6 +408,17 @@
    via this atom."
   [f]
   (reset! show-shortcuts-fn f))
+
+(defn set-show-command-palette!
+  "Register the function called when `dispatch` returns
+   :show-command-palette. Same callback indirection as
+   `set-show-shortcuts!` to keep the namespace graph acyclic — the
+   command palette consumes shortcuts' public action helpers
+   (duplicate!, wrap-in!, copy-attrs!, paste-attrs!) plus
+   shortcut-info and category-labels, so the show callback flows
+   in the opposite direction."
+  [f]
+  (reset! show-command-palette-fn f))
 
 (defn- perform! [action ^js e]
   (cond
@@ -438,7 +455,8 @@
                             (wrap-in! tag)))
       :copy-attrs  (do (.preventDefault e) (copy-attrs!))
       :paste-attrs (do (.preventDefault e) (paste-attrs!))
-      :show-shortcuts (do (.preventDefault e) (@show-shortcuts-fn))
+      :show-shortcuts       (do (.preventDefault e) (@show-shortcuts-fn))
+      :show-command-palette (do (.preventDefault e) (@show-command-palette-fn))
       :exit-text-edit (do (.preventDefault e) (inline-edit/teardown!))
       :deselect (do (.preventDefault e) (state/select-clear!))
       nil)))

@@ -346,6 +346,18 @@
   (is (= :noop
          (k/dispatch (assoc base :key "?" :meta? true)))))
 
+(deftest dispatch-cmd-k-shows-command-palette
+  (is (= :show-command-palette
+         (k/dispatch (assoc base :key "k" :meta? true)))))
+
+(deftest dispatch-cmd-k-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc base :key "k" :meta? true :tag-name "INPUT")))))
+
+(deftest dispatch-cmd-shift-k-is-noop
+  (is (= :noop
+         (k/dispatch (assoc base :key "k" :meta? true :shift? true)))))
+
 ;; --- shortcut-info coverage --------------------------------------------
 
 (deftest shortcut-info-has-known-categories

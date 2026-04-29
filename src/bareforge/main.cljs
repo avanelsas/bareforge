@@ -5,6 +5,7 @@
             [bareforge.storage.indexeddb :as idb]
             [bareforge.ui.app :as app]
             [bareforge.ui.cheat-sheet :as cheat-sheet]
+            [bareforge.ui.command-palette :as command-palette]
             [bareforge.ui.inspector :as inspector]
             [bareforge.ui.shortcuts :as shortcuts]
             [bareforge.ui.welcome-tour :as welcome-tour]
@@ -30,6 +31,7 @@
   (baredom/register!)
   (inspector/install-token-datalists!)
   (shortcuts/set-show-shortcuts! cheat-sheet/toggle!)
+  (shortcuts/set-show-command-palette! command-palette/toggle!)
   (app/mount! (u/by-id "app"))
   (-> (idb/restore!)
       (.then (fn [restored?]
