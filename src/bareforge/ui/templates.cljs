@@ -619,9 +619,11 @@
         ;; deformation. Tuned with mid-range stiffness/damping so the
         ;; effect is felt without being distracting at rest.
         {d :doc fc2 :id}     (ops/insert-new d bi2 "default" 0 "x-soft-body"
-                                             {:attrs {"stiffness" "0.5"
-                                                      "damping"   "0.7"
-                                                      "intensity" "0.5"}})
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
         {d :doc}             (add-text d fc2 "default" 0 "h4" "Live collaboration")
         {d :doc}             (add-text d fc2 "default" 1 "body2"
                                        "Multiple cursors, sub-second sync, and conflict-free history out of the box.")
@@ -630,9 +632,11 @@
         (ops/insert-new d bento-id "default" 2 "x-bento-item"
                         {:attrs {"col-span" "1" "row-span" "1"}})
         {d :doc fc3 :id}     (ops/insert-new d bi3 "default" 0 "x-soft-body"
-                                             {:attrs {"stiffness" "0.5"
-                                                      "damping"   "0.7"
-                                                      "intensity" "0.5"}})
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
         {d :doc}             (add-text d fc3 "default" 0 "h4" "Open API")
         {d :doc}             (add-text d fc3 "default" 1 "body2"
                                        "Every action exposed as a typed endpoint. Build on top from day one.")
@@ -641,9 +645,11 @@
         (ops/insert-new d bento-id "default" 3 "x-bento-item"
                         {:attrs {"col-span" "3" "row-span" "1"}})
         {d :doc fc4 :id}     (ops/insert-new d bi4 "default" 0 "x-soft-body"
-                                             {:attrs {"stiffness" "0.5"
-                                                      "damping"   "0.7"
-                                                      "intensity" "0.5"}})
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
         {d :doc}             (add-text d fc4 "default" 0 "h4" "Roadmap from day one")
         {d :doc}             (add-text d fc4 "default" 1 "body2"
                                        "Public roadmap, open RFCs, and a Discord where the team ships in real time.")
@@ -656,33 +662,26 @@
                                              "Early users on what's coming" "center")
         {d :doc}             (ops/insert-new d "root" "default" 19 "x-spacer"
                                              {:attrs {"size" "1rem" "axis" "vertical"}})
-        ;; x-scroll-stack stacks its slotted children as the host
-        ;; element scrolls past the viewport. The component sets its
-        ;; OWN host height in connectedCallback (vh + n*scroll-
-        ;; distance) so we don't need to. Two attribute corrections
-        ;; vs. an earlier draft: peek is in PIXELS (default 6, not a
-        ;; fraction) and scroll-distance is the per-card scroll-room
-        ;; in pixels (default 150). The earlier "0.12" / "100" values
-        ;; produced an effectively static stack.
-        ;;
-        ;; Note: x-scroll-stack listens to window scroll events.
-        ;; Inside Bareforge's editor canvas-host (which has its own
-        ;; overflow:auto scrollport), the stacking animation will
-        ;; only animate when the page itself scrolls — which is the
-        ;; case in every exported artefact (HTML / bundle / CLJS /
-        ;; vanilla-JS) but not necessarily in the in-editor preview
-        ;; if the canvas-host is the scrollport.
+        ;; A plain x-grid here instead of x-scroll-stack. Every
+        ;; scroll-driven BareDOM component (x-scroll-stack /
+        ;; -parallax / -story / -timeline) listens to window scroll
+        ;; events; inside Bareforge's editor canvas-host (its own
+        ;; overflow:auto scrollport) those events never fire, so a
+        ;; scroll-driven section reads as static during editing.
+        ;; The x-soft-body cards still react to hover/pointer, so the
+        ;; section stays kinetic without depending on scroll.
         {d :doc stack-id :id}
-        (ops/insert-new d "root" "default" 20 "x-scroll-stack"
-                        {:attrs {"peek"            "20"
-                                 "rotation"        "3"
-                                 "scroll-distance" "300"
-                                 "align"           "center"}})
+        (ops/insert-new d "root" "default" 20 "x-grid"
+                        {:attrs {"columns" "repeat(3, 1fr)"
+                                 "gap"     "lg"
+                                 "row-gap" "lg"}})
         ;; testimonial 1
         {d :doc t1 :id}      (ops/insert-new d stack-id "default" 0 "x-soft-body"
-                                             {:attrs {"stiffness" "0.5"
-                                                      "damping"   "0.7"
-                                                      "intensity" "0.5"}})
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
         {d :doc}             (add-text d t1 "default" 0 "blockquote"
                                        "I haven't been this excited about a tool launch in years. The editor genuinely feels like it was made by someone who ships every day.")
         {d :doc}             (ops/insert-new d t1 "default" 1 "x-avatar"
@@ -691,9 +690,11 @@
                                        "Mira A., Staff engineer at Lattice")
         ;; testimonial 2
         {d :doc t2 :id}      (ops/insert-new d stack-id "default" 1 "x-soft-body"
-                                             {:attrs {"stiffness" "0.5"
-                                                      "damping"   "0.7"
-                                                      "intensity" "0.5"}})
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
         {d :doc}             (add-text d t2 "default" 0 "blockquote"
                                        "Live collab that actually works on a slow connection. Our remote team got back two hours of merge-conflict pain a week.")
         {d :doc}             (ops/insert-new d t2 "default" 1 "x-avatar"
@@ -702,9 +703,11 @@
                                        "Rohan D., Tech lead at Nimbus")
         ;; testimonial 3
         {d :doc t3 :id}      (ops/insert-new d stack-id "default" 2 "x-soft-body"
-                                             {:attrs {"stiffness" "0.5"
-                                                      "damping"   "0.7"
-                                                      "intensity" "0.5"}})
+                                             {:attrs {"stiffness"   "60"
+                                                      "damping"     "5"
+                                                      "intensity"   "4"
+                                                      "grab-radius" "250"
+                                                      "radius"      "40"}})
         {d :doc}             (add-text d t3 "default" 0 "blockquote"
                                        "The open API meant I had a Slack integration running on day two. No SDK, no boilerplate — just a typed endpoint and I was off.")
         {d :doc}             (ops/insert-new d t3 "default" 1 "x-avatar"
