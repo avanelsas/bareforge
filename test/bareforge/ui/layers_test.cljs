@@ -61,39 +61,42 @@
         {d5 :doc id-b :id} (ops/insert-new d4 "root" "default" 2 "x-b")]
     {:doc d5 :ids {:a id-a :p id-p :c id-c :d id-d :b id-b}}))
 
-(deftest nav-target-prev-and-next
-  (let [{:keys [doc ids]} (sample-doc)
-        rows (vec (layers/flatten-tree doc))]
-    ;; depth-first order is root, a, p, c, d, b
-    (is (= "root"  (layers/nav-target rows (:a ids) doc :prev)))
-    (is (= (:a ids) (layers/nav-target rows (:p ids) doc :prev)))
-    (is (= (:p ids) (layers/nav-target rows (:c ids) doc :prev)))
-    (is (= (:c ids) (layers/nav-target rows (:d ids) doc :prev)))
-    (is (= (:d ids) (layers/nav-target rows (:b ids) doc :prev)))
-    (is (nil?       (layers/nav-target rows "root"   doc :prev))
-        "prev at the top of the list returns nil")
+(deftest nav-target-prev-and-next-walks-siblings
+  (let [{:keys [doc ids]} (sample-doc)]
+    (testing "Up/Down stay within the same parent slot"
+      (is (= (:a ids) (layers/nav-target (:p ids) doc :prev))
+          "p (idx 1 of root/default) → a (idx 0)")
+      (is (= (:p ids) (layers/nav-target (:b ids) doc :prev))
+          "b (idx 2 of root/default) → p (idx 1)")
+      (is (= (:c ids) (layers/nav-target (:d ids) doc :prev))
+          "d → c inside the card's default slot")
 
-    (is (= (:a ids) (layers/nav-target rows "root"   doc :next)))
-    (is (= (:p ids) (layers/nav-target rows (:a ids) doc :next)))
-    (is (= (:c ids) (layers/nav-target rows (:p ids) doc :next)))
-    (is (= (:b ids) (layers/nav-target rows (:d ids) doc :next)))
-    (is (nil?       (layers/nav-target rows (:b ids) doc :next))
-        "next at the end of the list returns nil")))
+      (is (= (:p ids) (layers/nav-target (:a ids) doc :next)))
+      (is (= (:b ids) (layers/nav-target (:p ids) doc :next)))
+      (is (= (:d ids) (layers/nav-target (:c ids) doc :next))))
+
+    (testing "edges of a slot return nil — Down on a parent does NOT
+              step into its children (that's what Right is for)"
+      (is (nil? (layers/nav-target (:a ids) doc :prev)))
+      (is (nil? (layers/nav-target (:b ids) doc :next)))
+      (is (nil? (layers/nav-target (:c ids) doc :prev)))
+      (is (nil? (layers/nav-target (:d ids) doc :next)))
+      (is (nil? (layers/nav-target "root"   doc :prev))
+          "root has no siblings")
+      (is (nil? (layers/nav-target "root"   doc :next))))))
 
 (deftest nav-target-parent
-  (let [{:keys [doc ids]} (sample-doc)
-        rows (vec (layers/flatten-tree doc))]
-    (is (nil?       (layers/nav-target rows "root"   doc :parent)))
-    (is (= "root"   (layers/nav-target rows (:a ids) doc :parent)))
-    (is (= (:p ids) (layers/nav-target rows (:c ids) doc :parent)))
-    (is (= (:p ids) (layers/nav-target rows (:d ids) doc :parent)))))
+  (let [{:keys [doc ids]} (sample-doc)]
+    (is (nil?       (layers/nav-target "root"   doc :parent)))
+    (is (= "root"   (layers/nav-target (:a ids) doc :parent)))
+    (is (= (:p ids) (layers/nav-target (:c ids) doc :parent)))
+    (is (= (:p ids) (layers/nav-target (:d ids) doc :parent)))))
 
 (deftest nav-target-first-child
-  (let [{:keys [doc ids]} (sample-doc)
-        rows (vec (layers/flatten-tree doc))]
-    (is (= (:a ids) (layers/nav-target rows "root"   doc :first-child)))
-    (is (= (:c ids) (layers/nav-target rows (:p ids) doc :first-child)))
-    (is (nil?       (layers/nav-target rows (:a ids) doc :first-child))
+  (let [{:keys [doc ids]} (sample-doc)]
+    (is (= (:a ids) (layers/nav-target "root"   doc :first-child)))
+    (is (= (:c ids) (layers/nav-target (:p ids) doc :first-child)))
+    (is (nil?       (layers/nav-target (:a ids) doc :first-child))
         "leaf returns nil")))
 
 (deftest reorder-target-up

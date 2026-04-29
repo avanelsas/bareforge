@@ -42,37 +42,35 @@
 
 ;; --- pure: keyboard nav --------------------------------------------------
 
-(defn- index-of [v x]
-  (loop [i 0]
-    (cond
-      (>= i (count v))   -1
-      (= (nth v i) x)    i
-      :else              (recur (inc i)))))
-
 (defn nav-target
-  "Pure: given the flattened `rows` and the canonical id of the
-   currently-selected layer, return the id to select for `direction`
-   ∈ #{:prev :next :parent :first-child}. Returns nil when the move
-   isn't valid (start of list, root with no parent, leaf with no
-   children, etc.). `:first-child` consults `doc` directly because
-   the row list doesn't carry full slot data."
-  [rows current-id doc direction]
-  (let [ids (mapv :id rows)
-        idx (index-of ids current-id)]
-    (case direction
-      :prev
-      (when (pos? idx) (nth ids (dec idx)))
+  "Pure: given the canonical id of the currently-selected layer,
+   return the id to select for `direction` ∈ #{:prev :next :parent
+   :first-child}. Up / Down walk siblings within the same parent
+   slot — the natural tree-nav gesture, distinct from depth-first
+   list traversal — so stepping into the children is reserved for
+   ArrowRight. Returns nil when the move isn't valid (already at
+   the edge of a slot, root with no parent, leaf with no children)."
+  [current-id doc direction]
+  (case direction
+    :prev
+    (when-let [{:keys [parent-id slot index]} (m/parent-of doc current-id)]
+      (when (pos? index)
+        (let [siblings (get-in (m/get-node doc parent-id) [:slots slot])]
+          (:id (nth siblings (dec index))))))
 
-      :next
-      (when (and (>= idx 0) (< idx (dec (count ids))))
-        (nth ids (inc idx)))
+    :next
+    (when-let [{:keys [parent-id slot index]} (m/parent-of doc current-id)]
+      (let [siblings (get-in (m/get-node doc parent-id) [:slots slot])
+            n        (count siblings)]
+        (when (< index (dec n))
+          (:id (nth siblings (inc index))))))
 
-      :parent
-      (some #(when (= (:id %) current-id) (:parent-id %)) rows)
+    :parent
+    (:parent-id (m/parent-of doc current-id))
 
-      :first-child
-      (when-let [node (m/get-node doc current-id)]
-        (some-> (m/slot-entries node) first second first :id)))))
+    :first-child
+    (when-let [node (m/get-node doc current-id)]
+      (some-> (m/slot-entries node) first second first :id))))
 
 (defn reorder-target
   "Pure: compute the post-removal target index for an Alt-Up / Alt-Down
@@ -174,7 +172,7 @@
 
             ;; Plain arrow walks: select the resolved id and stop the
             ;; event so it can't bubble up as a nudge or scroll.
-            (when-let [target (nav-target (flatten-tree doc) sel doc nav)]
+            (when-let [target (nav-target sel doc nav)]
               (.preventDefault e)
               (.stopPropagation e)
               (state/select-one! target))))))))
