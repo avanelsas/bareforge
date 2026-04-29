@@ -478,19 +478,24 @@
 
 (defn- kinetic-showcase []
   (let [d (m/empty-document)
-        ;; --- background layers (placement :background) ---
-        ;; metaball cursor — fluid blobs follow the pointer.
-        ;; Paired with gaussian-blur for ambient colour. x-soft-body
-        ;; isn't a backdrop component (its SVG path paints a solid
-        ;; rounded-rect that covers anything beneath it); it lives
-        ;; on the bento + testimonial cards instead.
+        ;; --- background layers ---
+        ;; metaball cursor — fluid blobs follow the pointer. NOT
+        ;; :placement :background: that route stamps z-index:0 on
+        ;; the host (per the canvas-host stylesheet rule), which
+        ;; means content (z-index:1) paints over the cursor blobs.
+        ;; Instead use position:fixed at z-index:9999 with
+        ;; pointer-events:none so the blobs always render above
+        ;; everything while clicks fall through to content beneath.
+        ;; Fixed positioning is also what a cursor-following effect
+        ;; wants — relative to the viewport, not to a parent.
         {d :doc}             (ops/insert-new d "root" "default" 0 "x-metaball-cursor"
                                              {:attrs  {"blob-count" "5"
                                                        "blob-size"  "60"
                                                        "blur"       "20"
                                                        "noise"      ""
                                                        "palette"    "#f43f5e,#a855f7,#06b6d4"}
-                                              :layout {:placement :background}})
+                                              :layout {:extra-style
+                                                       "position: fixed; inset: 0; width: 100%; height: 100%; z-index: 9999; pointer-events: none;"}})
         {d :doc}             (ops/insert-new d "root" "default" 1 "x-gaussian-blur"
                                              {:attrs  {"colors"    "#f43f5e,#a855f7,#06b6d4"
                                                        "blur"      "100"
