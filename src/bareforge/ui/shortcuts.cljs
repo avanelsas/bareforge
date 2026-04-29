@@ -46,6 +46,51 @@
    "ArrowUp"    [0 -1]
    "ArrowDown"  [0  1]})
 
+(def shortcut-info
+  "Display data for the cheat sheet. Order = display order within
+   each category. The keyboard bindings here MUST stay in lockstep
+   with `dispatch` — both surfaces evolve together when a shortcut is
+   added or moved. The companion test in `shortcuts_test` re-derives
+   the binding-string set and asserts coverage so a one-sided edit is
+   caught at compile time.
+
+   Categories are rendered as separate groups in the cheat sheet:
+   `:editing` `:selection` `:navigation` `:file` `:view`."
+  [{:category :editing    :keys "Cmd+Z"          :label "Undo"}
+   {:category :editing    :keys "Cmd+Shift+Z"    :label "Redo"}
+   {:category :editing    :keys "Delete / Backspace" :label "Delete selection"}
+   {:category :editing    :keys "Cmd+D"          :label "Duplicate selection"}
+   {:category :editing    :keys "Cmd+G"          :label "Wrap selection in x-container"}
+   {:category :editing    :keys "Cmd+Shift+G"    :label "Wrap selection in… (prompt)"}
+   {:category :editing    :keys "Cmd+Opt+C"      :label "Copy attributes from selection"}
+   {:category :editing    :keys "Cmd+Opt+V"      :label "Paste attributes onto selection"}
+   {:category :editing    :keys "Arrow keys"     :label "Nudge by 1px (free placement)"}
+   {:category :editing    :keys "Shift+Arrow"    :label "Nudge by 10px (free placement)"}
+   {:category :editing    :keys "Drag numeric label"
+                          :label "Scrub numeric value (Shift × 10)"}
+
+   {:category :selection  :keys "Click"          :label "Select node"}
+   {:category :selection  :keys "Shift-click"    :label "Toggle node in multi-selection"}
+   {:category :selection  :keys "Drag empty canvas" :label "Marquee select"}
+   {:category :selection  :keys "Shift+drag empty canvas"
+                          :label "Marquee extend selection"}
+
+   {:category :navigation :keys "Esc"            :label "Deselect / exit text edit"}
+
+   {:category :file       :keys "Cmd+S"          :label "Save project"}
+   {:category :file       :keys "Cmd+O"          :label "Open project"}
+   {:category :file       :keys "Cmd+N"          :label "New project"}
+
+   {:category :view       :keys "?"              :label "Show this cheat sheet"}])
+
+(def category-labels
+  "Human labels and ordering for the cheat sheet category groups."
+  [[:editing    "Editing"]
+   [:selection  "Selection"]
+   [:navigation "Navigation"]
+   [:file       "File"]
+   [:view       "View"]])
+
 (def ^:const nudge-coalesce-window-ms
   "How long after a nudge a subsequent nudge on the same node still
    merges into the same undo entry. Picked so that 'hold the arrow
@@ -123,6 +168,15 @@
 
       (and meta? (= "n" key) (not shift?) (not editable?))
       :new
+
+      ;; '?' on US layouts is Shift+/ — match the resolved key directly.
+      ;; Cheat sheet binding sits outside the meta? group so it works
+      ;; without the Cmd modifier; editable-target? still gates it so
+      ;; typing '?' into an inspector input doesn't open the modal.
+      (and (= "?" key)
+           (not meta?)
+           (not editable?))
+      :show-shortcuts
 
       (and meta? alt? c-letter? (not shift?)
            has-selection?
@@ -338,6 +392,17 @@
                (contains? wrap-tag-whitelist input))
       input)))
 
+(defonce ^:private show-shortcuts-fn (atom (constantly nil)))
+
+(defn set-show-shortcuts!
+  "Register the function called when `dispatch` returns :show-shortcuts.
+   Wired from main/init to avoid a circular `shortcuts ↔ cheat-sheet`
+   require — the cheat sheet itself requires shortcuts for the static
+   `shortcut-info` data, so the action callback flows the other way
+   via this atom."
+  [f]
+  (reset! show-shortcuts-fn f))
+
 (defn- perform! [action ^js e]
   (cond
     (vector? action)
@@ -373,6 +438,7 @@
                             (wrap-in! tag)))
       :copy-attrs  (do (.preventDefault e) (copy-attrs!))
       :paste-attrs (do (.preventDefault e) (paste-attrs!))
+      :show-shortcuts (do (.preventDefault e) (@show-shortcuts-fn))
       :exit-text-edit (do (.preventDefault e) (inline-edit/teardown!))
       :deselect (do (.preventDefault e) (state/select-clear!))
       nil)))

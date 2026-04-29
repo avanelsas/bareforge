@@ -331,6 +331,34 @@
                               :key "√" :code "KeyV"
                               :meta? true :alt? true))))))
 
+;; --- cheat sheet --------------------------------------------------------
+
+(deftest dispatch-question-mark-shows-shortcuts
+  (is (= :show-shortcuts
+         (k/dispatch (assoc base :key "?")))))
+
+(deftest dispatch-question-mark-ignored-in-editable
+  (testing "typing '?' into an inspector input shouldn't open the cheat sheet"
+    (is (= :noop
+           (k/dispatch (assoc base :key "?" :tag-name "X-SEARCH-FIELD"))))))
+
+(deftest dispatch-question-mark-ignored-with-meta
+  (is (= :noop
+         (k/dispatch (assoc base :key "?" :meta? true)))))
+
+;; --- shortcut-info coverage --------------------------------------------
+
+(deftest shortcut-info-has-known-categories
+  (let [valid (set (map first k/category-labels))]
+    (doseq [{:keys [category]} k/shortcut-info]
+      (is (contains? valid category)
+          (str "shortcut-info entry uses unknown category " category)))))
+
+(deftest shortcut-info-non-empty
+  (is (pos? (count k/shortcut-info)))
+  (is (every? :keys  k/shortcut-info))
+  (is (every? :label k/shortcut-info)))
+
 ;; --- coalesce? -----------------------------------------------------------
 
 (def ^:private last-rec
