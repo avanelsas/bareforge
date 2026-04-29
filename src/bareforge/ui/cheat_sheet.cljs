@@ -61,6 +61,15 @@
     (.preventDefault e)
     (hide!)))
 
+(defn- ^js theme-host
+  "Find the chrome's `<x-theme>` element so the modal mounts inside
+   it and inherits the active preset's CSS custom properties.
+   Falling back to `document.body` keeps the modal usable even if
+   the index.html shape changes."
+  []
+  (or (some-> (js/document.getElementById "app") .-parentNode)
+      js/document.body))
+
 (defn- build-modal! []
   (let [groups (group-rows sh/shortcut-info sh/category-labels)
         body   (u/el :div {:class "cheat-body"}
@@ -76,7 +85,7 @@
     ;; x-modal sees it; backdrop clicks still flow through this
     ;; handler so `hide!` keeps modal-state in sync.
     (u/on! modal :x-modal-dismiss (fn [^js _e] (hide!)))
-    (.appendChild js/document.body modal)
+    (.appendChild (theme-host) modal)
     (set! (.-el modal-state) modal)
     modal))
 
