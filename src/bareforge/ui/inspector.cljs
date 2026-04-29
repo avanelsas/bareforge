@@ -2418,6 +2418,8 @@
                        grp-act      (conj grp-act)
                        trg          (conj trg)
                        ds           (conj ds)))
+
+                   :else
                    [(empty-view)])
         ^js scroll-el (or (.-parentElement host-el) host-el)
         scroll-top    (.-scrollTop scroll-el)]
