@@ -13,6 +13,7 @@
   (:require [bareforge.doc.actions :as actions]
             [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
+            [bareforge.meta.design-tokens :as tokens]
             [bareforge.meta.events :as meta-events]
             [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
@@ -93,17 +94,36 @@
 
 (defn inspector-model
   "Project app-state into the view model the inspector needs. Returns
-   nil when no meaningful selection exists. The selection id may be
-   a template-instance clone's DOM id (`__seed<N>` suffix); canonicalise
+   nil when no meaningful selection exists. The selection id may be a
+   template-instance clone's DOM id (`__seed<N>` suffix); canonicalise
    before looking it up in the doc so canvas-tap on a clone reveals
-   the underlying template node."
+   the underlying template node.
+
+   Single-select returns `{:node :meta}`. Multi-select (>1 distinct
+   doc nodes) returns `{:multi true :nodes [...] :tags #{...}}`; the
+   renderer uses that to show shared-attribute editors."
   [app-state]
-  (let [sel-id (get-in app-state [:selection :id])
-        doc-id (canvas/canonical-node-id sel-id)
-        node   (when doc-id (m/get-node (:document app-state) doc-id))]
-    (when node
-      {:node node
-       :meta (registry/get-meta (:tag node))})))
+  (let [ids     (state/selected-ids app-state)
+        doc-ids (->> ids (map canvas/canonical-node-id) (remove nil?) distinct)]
+    (cond
+      (empty? doc-ids)
+      nil
+
+      (> (count doc-ids) 1)
+      (let [nodes (->> doc-ids
+                       (keep #(m/get-node (:document app-state) %))
+                       vec)]
+        (when (seq nodes)
+          {:multi true
+           :nodes nodes
+           :tags  (set (map :tag nodes))}))
+
+      :else
+      (let [doc-id (first doc-ids)
+            node   (m/get-node (:document app-state) doc-id)]
+        (when node
+          {:node node
+           :meta (registry/get-meta (:tag node))})))))
 
 ;; --- effectful: editor widgets -------------------------------------------
 
@@ -137,6 +157,164 @@
 (defn- read-event-value ^js [^js e]
   (or (some-> e .-detail (.-value))
       (some-> e .-target .-value)))
+
+;; --- CSS-var autocomplete (M2.4) ----------------------------------------
+
+(def ^:private color-datalist-id  "bareforge-tokens-color")
+(def ^:private length-datalist-id "bareforge-tokens-length")
+
+(defn- ^js build-token-datalist!
+  "Build a `<datalist>` element populated with `var(--x-…)` options
+   for every token entry. Called once at install time per category."
+  [^js doc id entries]
+  (let [^js dl (.createElement doc "datalist")]
+    (.setAttribute dl "id" id)
+    (doseq [{:keys [name]} entries]
+      (let [^js o (.createElement doc "option")]
+        (.setAttribute o "value" (tokens/var-of name))
+        (.appendChild dl o)))
+    dl))
+
+(defn install-token-datalists!
+  "Mount one shared `<datalist>` per token category at the top of the
+   document body. Inspector widgets reference these via `list=` so
+   typing `var(` in a colour or length field surfaces native browser
+   autocomplete with theme tokens. Idempotent — calling twice replaces
+   the existing datalists rather than duplicating them."
+  []
+  (let [^js doc js/document
+        ^js body (.-body doc)]
+    (doseq [id [color-datalist-id length-datalist-id]]
+      (when-let [^js prev (.getElementById doc id)]
+        (.removeChild (.-parentNode prev) prev)))
+    (.appendChild body (build-token-datalist! doc color-datalist-id
+                                              (tokens/tokens-for :color)))
+    (.appendChild body (build-token-datalist! doc length-datalist-id
+                                              (tokens/tokens-for :length)))))
+
+(defn- attach-datalist-to-shadow-input!
+  "BareDOM's `x-search-field` wraps a real `<input part=\"input\">` in
+   its open shadow root. Two things are needed for native datalist
+   autocomplete to work in that setup:
+
+   1. `list=` has to be on the actual `<input>`, not the custom-element
+      host (BareDOM doesn't observe / forward `list`).
+   2. The referenced `<datalist>` has to live in the same tree as the
+      input. The HTML spec scopes the `list` lookup to the input's
+      containing root, so a body-level datalist is invisible to an
+      input inside a shadow root.
+
+   We clone the global datalist (mounted by `install-token-datalists!`)
+   into the field's shadow root on the next animation frame, and set
+   `list=` on the inner input. Idempotent — the clone only happens
+   when the shadow root doesn't already carry a datalist with the
+   target id."
+  [^js host datalist-id]
+  (letfn [(try-attach! []
+            (if-let [^js sr (.-shadowRoot host)]
+              (when-let [^js inner (.querySelector sr "[part=input]")]
+                (when-not (.querySelector sr
+                                          (str "datalist[id='" datalist-id "']"))
+                  (when-let [^js src (js/document.getElementById datalist-id)]
+                    (.appendChild sr (.cloneNode src true))))
+                (.setAttribute inner "list" datalist-id))
+              (js/requestAnimationFrame try-attach!)))]
+    (js/requestAnimationFrame try-attach!)))
+
+;; --- numeric drag (M2.1) -----------------------------------------------
+
+(defn- ^js attach-scrub-meta!
+  "Stash a scrub spec on a widget element. `field-row` reads it back
+   to wire a horizontal-drag scrubber on the row's label. Spec map:
+   `{:read-fn :commit-fn! :step}`. Returns the element for thread-
+   friendly use in builder pipelines."
+  [^js el spec]
+  (set! (.-bareforgeScrub el) spec)
+  el)
+
+(defn- read-scrub-meta [^js el]
+  (when el (.-bareforgeScrub el)))
+
+(defonce ^:private scrub-state
+  ;; One global drag-in-flight tracker is enough — only one inspector
+  ;; row can be scrubbed at a time, and a label captures the pointer
+  ;; so other handlers don't compete.
+  #js {:active? false
+       :start-x 0
+       :start-val 0
+       :first? true
+       :pointer-id nil
+       :label nil
+       :input nil
+       :commit-fn nil
+       :step 1})
+
+(defn- on-scrub-move! [^js e]
+  (when (.-active? scrub-state)
+    (.preventDefault e)
+    (let [dx        (- (.-clientX e) (.-start-x scrub-state))
+          step-px   (.-step scrub-state)
+          mult      (if (.-shiftKey e) 10 1)
+          start-val (.-start-val scrub-state)
+          new-val   (+ start-val (* dx step-px mult))
+          ;; Snap to an integer when the step is integer-valued; for
+          ;; sub-unit steps fall through with the raw float.
+          rounded   (if (zero? (mod step-px 1))
+                      (js/Math.round new-val)
+                      new-val)
+          ^js input (.-input scrub-state)
+          first?    (.-first? scrub-state)
+          commit-fn (.-commit-fn scrub-state)]
+      (commit-fn rounded first?)
+      (when input (u/set-attr! input :value (str rounded)))
+      (when first? (set! (.-first? scrub-state) false)))))
+
+(defn- end-scrub! []
+  (let [^js label (.-label scrub-state)
+        pid       (.-pointer-id scrub-state)]
+    (when (and label pid)
+      (try (.releasePointerCapture label pid) (catch :default _ nil)))
+    (set! (.-active? scrub-state) false)
+    (set! (.-label scrub-state) nil)
+    (set! (.-input scrub-state) nil)
+    (set! (.-commit-fn scrub-state) nil)
+    (set! (.-pointer-id scrub-state) nil)
+    (.removeEventListener js/window "pointermove" on-scrub-move!)
+    (.removeEventListener js/window "pointerup"   end-scrub!)
+    (.removeEventListener js/window "pointercancel" end-scrub!)))
+
+(defn- pointer-scrub!
+  "Wire pointerdown on `label-el` so a horizontal drag scrubs the
+   numeric value of `input-el`. `read-fn` returns the current numeric
+   value (nil to suppress the gesture). `commit-fn!` is called as
+   `(new-val first?)`; the first call pushes a fresh history entry
+   via `state/commit!`, every later call uses `state/commit-coalesced!`
+   so the whole drag undoes as a single step. Shift multiplies the
+   step by 10."
+  [^js label-el ^js input-el read-fn commit-fn! step]
+  (.. label-el -classList (add "is-scrubbable"))
+  (u/on! label-el :pointerdown
+         (fn [^js e]
+           (let [v (read-fn)]
+             (when (number? v)
+               (.preventDefault e)
+               (try (.setPointerCapture label-el (.-pointerId e))
+                    (catch :default _ nil))
+               (set! (.-active? scrub-state)    true)
+               (set! (.-start-x scrub-state)    (.-clientX e))
+               (set! (.-start-val scrub-state)  v)
+               (set! (.-first? scrub-state)     true)
+               (set! (.-pointer-id scrub-state) (.-pointerId e))
+               (set! (.-label scrub-state)      label-el)
+               (set! (.-input scrub-state)      input-el)
+               (set! (.-commit-fn scrub-state)  commit-fn!)
+               (set! (.-step scrub-state)       (or step 1))
+               ;; Window-level move/up means the drag survives the
+               ;; pointer leaving the label, which is the natural
+               ;; gesture (drag continues until release).
+               (.addEventListener js/window "pointermove"   on-scrub-move!)
+               (.addEventListener js/window "pointerup"     end-scrub!)
+               (.addEventListener js/window "pointercancel" end-scrub!))))))
 
 (defn- read-event-checked ^js [^js e]
   (let [d (.-detail e)]
@@ -191,18 +369,49 @@
 
 (defn- build-search-field [node prop spec]
   (let [transform (:transform prop)
+        numeric?  (= "number" (:type spec))
+        ;; Surface BareDOM theme tokens via a native datalist when the
+        ;; field is colour-shaped. The list attribute has to be on the
+        ;; shadow inner `<input>`, not the custom-element host — see
+        ;; `attach-datalist-to-shadow-input!`.
+        color?    (= :color (:kind prop))
         el        (-> (u/el :x-search-field
                             (cond-> {:class "inspector-field-widget"}
-                              (= "number" (:type spec)) (assoc :type "number")))
+                              numeric? (assoc :type "number")))
                       (tag-widget! (:name prop) "text" transform))
-        current   (current-value node prop)]
+        current   (current-value node prop)
+        node-id   (:id node)
+        attr-name (:name prop)]
+    (when color?
+      (attach-datalist-to-shadow-input! el color-datalist-id))
     (when current (u/set-attr! el :value current))
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)
                    v (if transform (transform-for-commit transform v) v)]
-               (commit-attr! (:id node) (:name prop) v))))
-    el))
+               (commit-attr! node-id attr-name v))))
+    (cond-> el
+      numeric?
+      (attach-scrub-meta!
+       {:read-fn   (fn []
+                      ;; Empty / non-numeric attr starts the drag at 0
+                      ;; so unset fields are still scrubbable from
+                      ;; nothing — otherwise the gesture would silently
+                      ;; do nothing on a fresh component.
+                     (let [doc    (:document @state/app-state)
+                           n      (m/get-node doc node-id)
+                           raw    (current-value n prop)
+                           parsed (when (and raw (not= "" raw))
+                                    (let [p (js/parseFloat raw)]
+                                      (when-not (js/isNaN p) p)))]
+                       (or parsed 0)))
+        :commit-fn! (fn [new-val first?]
+                      (let [doc  (:document @state/app-state)
+                            doc' (ops/set-attr doc node-id attr-name (str new-val))]
+                        (if first?
+                          (state/commit! doc')
+                          (state/commit-coalesced! doc'))))
+        :step       1}))))
 
 (defn- build-widget [node prop]
   (let [spec (editor-spec prop)]
@@ -247,13 +456,15 @@
 (defn- build-layout-field
   "Editor for one of the generic dimension layout fields
    (:width / :height / :padding / :margin). Stored in the node's
-   :layout map; reconciler turns it into inline style."
+   :layout map; reconciler turns it into inline style. Surfaces the
+   length-tokens datalist so `var(--x-space-…)` autocompletes."
   [node layout-key placeholder]
   (let [el      (-> (u/el :x-search-field
                           {:class "inspector-field-widget"
                            :placeholder placeholder})
                     (tag-widget! (str "__layout__/" (name layout-key)) "layout"))
         current (get-in node [:layout layout-key])]
+    (attach-datalist-to-shadow-input! el length-datalist-id)
     (when current (u/set-attr! el :value current))
     (u/on! el :x-search-field-input
            (fn [^js e]
@@ -299,19 +510,43 @@
 (defn- build-free-coord-field
   "Numeric/length editor for one of the :layout :x :y :w :h fields.
    Most useful when the node's placement is :free, but shown
-   unconditionally so users can pre-fill coordinates before toggling."
+   unconditionally so users can pre-fill coordinates before toggling.
+   Free-coord fields always store numbers (the reconciler turns them
+   into px lengths), so the row is uniformly scrubbable."
   [node layout-key placeholder]
   (let [el      (-> (u/el :x-search-field
                           {:class "inspector-field-widget"
                            :placeholder placeholder})
                     (tag-widget! (str "__layout__/" (name layout-key)) "layout"))
-        raw     (get-in node [:layout layout-key])]
+        raw     (get-in node [:layout layout-key])
+        node-id (:id node)]
     (when raw (u/set-attr! el :value (str raw)))
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)]
-               (commit-with! ops/set-layout (:id node) layout-key (parse-length-value v)))))
-    el))
+               (commit-with! ops/set-layout node-id layout-key (parse-length-value v)))))
+    (attach-scrub-meta!
+     el
+     {:read-fn    (fn []
+                     ;; Default to 0 when the field is empty so the
+                     ;; gesture engages immediately — useful when
+                     ;; placement is being changed to :free and the
+                     ;; user wants to scrub the new coord into shape.
+                    (let [doc (:document @state/app-state)
+                          v   (get-in (m/get-node doc node-id)
+                                      [:layout layout-key])]
+                      (cond
+                        (number? v) v
+                        (string? v) (let [parsed (js/parseFloat v)]
+                                      (if (js/isNaN parsed) 0 parsed))
+                        :else       0)))
+      :commit-fn! (fn [new-val first?]
+                    (let [doc  (:document @state/app-state)
+                          doc' (ops/set-layout doc node-id layout-key new-val)]
+                      (if first?
+                        (state/commit! doc')
+                        (state/commit-coalesced! doc'))))
+      :step       1})))
 
 (defn- build-layout-textarea
   "Multi-line editor for the free-form `:extra-style` layout field.
@@ -681,10 +916,14 @@
     container))
 
 (defn- field-row-with-binding [label widget node prop all-fields]
-  (u/el :div {:class "inspector-field"}
-        [(u/set-text! (u/el :div {:class "inspector-field-label"}) label)
-         widget
-         (build-bind-toggle node prop all-fields)]))
+  (let [label-el (u/set-text! (u/el :div {:class "inspector-field-label"}) label)]
+    (when-let [scrub (read-scrub-meta widget)]
+      (pointer-scrub! label-el widget
+                      (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
+    (u/el :div {:class "inspector-field"}
+          [label-el
+           widget
+           (build-bind-toggle node prop all-fields)])))
 
 ;; --- section builders ----------------------------------------------------
 
@@ -721,9 +960,12 @@
           [label-el body-el])))
 
 (defn- field-row [label widget]
-  (u/el :div {:class "inspector-field"}
-        [(u/set-text! (u/el :div {:class "inspector-field-label"}) label)
-         widget]))
+  (let [label-el (u/set-text! (u/el :div {:class "inspector-field-label"}) label)]
+    (when-let [scrub (read-scrub-meta widget)]
+      (pointer-scrub! label-el widget
+                      (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
+    (u/el :div {:class "inspector-field"}
+          [label-el widget])))
 
 (defn- attributes-section [{:keys [node meta]} all-fields]
   (let [props (:properties meta)
@@ -894,6 +1136,152 @@
         [(u/set-text!
           (u/el :div {:class "inspector-empty"})
           "No component selected. Click a layer or a palette item.")]))
+
+;; --- multi-select shared editors (M2.3) ---------------------------------
+
+(defn shared-properties
+  "Pure: properties that exist on every tag in `tags` with the same
+   `:name` and `:kind`. Returns the descriptor from the first tag
+   (the others are equivalent on the dimensions the inspector cares
+   about). Used by the multi-select attribute section to decide
+   which rows to render."
+  [tags]
+  (let [meta-list  (mapv registry/get-meta tags)
+        first-list (-> meta-list first :properties)]
+    (if (or (empty? meta-list) (empty? first-list))
+      []
+      (filterv
+       (fn [prop]
+         (every?
+          (fn [m]
+            (some #(and (= (:name prop) (:name %))
+                        (= (:kind prop) (:kind %)))
+                  (:properties m)))
+          (rest meta-list)))
+       first-list))))
+
+(defn joint-attr-value
+  "Pure: read attribute `prop` across `nodes` and return
+   `{:value :mixed?}`. `:value` is the common value when every node
+   agrees, the first node's value otherwise. `:mixed?` is true iff
+   the values disagree."
+  [nodes prop]
+  (let [vs (mapv #(current-value % prop) nodes)]
+    {:value  (first vs)
+     :mixed? (not (apply = vs))}))
+
+(defn- multi-set-attr! [ids attr-name v]
+  (let [doc  (:document @state/app-state)
+        v    (if (or (nil? v) (= "" v)) nil v)
+        doc' (ops/set-attrs-many doc ids {attr-name v})]
+    (state/commit! doc')))
+
+(defn- multi-set-prop! [ids prop-name v]
+  (let [doc  (:document @state/app-state)
+        doc' (ops/set-props-many doc ids {(keyword prop-name) v})]
+    (state/commit! doc')))
+
+(defn- build-multi-search-field [nodes prop spec]
+  (let [{:keys [value mixed?]} (joint-attr-value nodes prop)
+        transform (:transform prop)
+        numeric?  (= "number" (:type spec))
+        color?    (= :color (:kind prop))
+        el        (-> (u/el :x-search-field
+                            (cond-> {:class "inspector-field-widget"}
+                              numeric? (assoc :type "number")
+                              mixed?   (assoc :placeholder "Mixed")))
+                      (tag-widget! (:name prop) "text" transform))
+        ids       (mapv :id nodes)]
+    (when color?
+      (attach-datalist-to-shadow-input! el color-datalist-id))
+    (when (and (not mixed?) value (not= "" value))
+      (u/set-attr! el :value value))
+    (when mixed?
+      (.. el -classList (add "is-mixed")))
+    (u/on! el :x-search-field-input
+           (fn [^js e]
+             (let [v (read-event-value e)
+                   v (if transform (transform-for-commit transform v) v)]
+               (multi-set-attr! ids (:name prop) v))))
+    el))
+
+(defn- build-multi-text-area [nodes prop]
+  (let [{:keys [value mixed?]} (joint-attr-value nodes prop)
+        el  (-> (u/el :x-text-area
+                      (cond-> {:class "inspector-field-widget"}
+                        mixed? (assoc :placeholder "Mixed")))
+                (tag-widget! (:name prop) "text"))
+        ids (mapv :id nodes)]
+    (when (and (not mixed?) value (not= "" value))
+      (u/set-attr! el :value value))
+    (when mixed?
+      (.. el -classList (add "is-mixed")))
+    (u/on! el :x-text-area-input
+           (fn [^js e]
+             (multi-set-attr! ids (:name prop) (read-event-value e))))
+    el))
+
+(defn- build-multi-enum [nodes prop]
+  (let [{:keys [value mixed?]} (joint-attr-value nodes prop)
+        sel-el  (-> (u/el :x-select {:class "inspector-field-widget"})
+                    (tag-widget! (:name prop) "enum"))
+        ids     (mapv :id nodes)
+        ;; Prepend a "—" sentinel only in mixed mode so the user can
+        ;; see "values differ" without an explicit choice having been
+        ;; made; selecting a concrete option commits to all nodes.
+        opts    (cond-> (vec (:choices prop))
+                  mixed? (->> (cons "—") vec))]
+    (doseq [choice opts]
+      (let [o (u/el :option {:value choice})]
+        (u/set-text! o choice)
+        (when (or (and (not mixed?) (= choice value))
+                  (and mixed? (= choice "—")))
+          (u/set-attr! o :selected ""))
+        (.appendChild sel-el o)))
+    (when mixed?
+      (.. sel-el -classList (add "is-mixed")))
+    (u/on! sel-el :select-change
+           (fn [^js e]
+             (let [v (read-event-value e)]
+               (when (and v (not= v "—"))
+                 (multi-set-attr! ids (:name prop) v)))))
+    sel-el))
+
+(defn- build-multi-boolean [nodes prop]
+  (let [vs       (mapv #(boolean (get-in % [:props (keyword (:name prop))])) nodes)
+        mixed?   (not (apply = vs))
+        value    (first vs)
+        el       (-> (u/el :x-switch (cond-> {:class "inspector-field-widget"}
+                                       value (assoc :checked "")))
+                     (tag-widget! (:name prop) "boolean"))
+        ids      (mapv :id nodes)]
+    (when mixed?
+      (.. el -classList (add "is-mixed"))
+      ;; Indeterminate-ish: render off so the first toggle force-
+      ;; sets all to true, the next toggle force-sets all to false.
+      (.removeAttribute el "checked"))
+    (u/on! el :x-switch-change
+           (fn [^js e]
+             (multi-set-prop! ids (:name prop) (read-event-checked e))))
+    el))
+
+(defn- build-multi-widget [nodes prop]
+  (let [spec (editor-spec prop)]
+    (case (:kind spec)
+      :boolean     (build-multi-boolean   nodes prop)
+      :enum        (build-multi-enum      nodes prop)
+      :string-long (build-multi-text-area nodes prop)
+      (build-multi-search-field nodes prop spec))))
+
+(defn- multi-attributes-section [{:keys [nodes tags]}]
+  (let [props (shared-properties tags)
+        body  (if (seq props)
+                (for [p props]
+                  (field-row (display-label p) (build-multi-widget nodes p)))
+                [(u/set-text! (u/el :div {:class "inspector-empty"})
+                              "No shared attributes between the selected components.")])]
+    (section (str (count nodes) " components selected — Shared attributes")
+             body)))
 
 (defn- widget-value [^js el]
   (let [v (.-value el)] (if (nil? v) "" v)))
@@ -2002,7 +2390,11 @@
 
 (defn- render!
   [^js host-el model]
-  (let [sections (if model
+  (let [sections (cond
+                   (and model (:multi model))
+                   [(multi-attributes-section model)]
+
+                   model
                    (let [doc        (:document @state/app-state)
                          all-fields (collect-all-fields doc)
                          t          (text-section model)
@@ -2026,6 +2418,8 @@
                        grp-act      (conj grp-act)
                        trg          (conj trg)
                        ds           (conj ds)))
+
+                   :else
                    [(empty-view)])
         ^js scroll-el (or (.-parentElement host-el) host-el)
         scroll-top    (.-scrollTop scroll-el)]
@@ -2061,6 +2455,16 @@
 
                      (and doc-changed? (nil? new-model))
                      (render! body nil)
+
+                     ;; Multi-select: doc changed (most likely from
+                     ;; the user editing a shared-attr field). Skip
+                     ;; the rebuild — every keystroke would otherwise
+                     ;; throw away the focused input. The committed
+                     ;; values are correct in the doc; the panel's
+                     ;; visual "Mixed" markers may lag until the user
+                     ;; re-enters multi-select, which is acceptable.
+                     (and doc-changed? (:multi new-model))
+                     nil
 
                      doc-changed?
                      (let [old-model   (inspector-model old-state)

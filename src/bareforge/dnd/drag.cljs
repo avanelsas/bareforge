@@ -39,7 +39,7 @@
 ;; --- mutable drag state ---------------------------------------------------
 
 (defonce ^:private drag-state
-  #js {:phase      :idle  ;; :idle | :armed | :dragging
+  #js {:phase      :idle  ;; :idle | :armed | :dragging | :marquee-armed | :marquee
        :source-tag      nil   ;; palette drag: tag name to insert
        :source-node-id  nil   ;; canvas drag: existing node id to move
        :start-x    0
@@ -55,7 +55,10 @@
        :canvas-el  nil
        :free-drag?     false     ;; true when source is a :free node
        :free-initial-x 0
-       :free-initial-y 0})
+       :free-initial-y 0
+       :marquee-el     nil       ;; the rectangle div drawn during a marquee
+       :marquee-additive? false  ;; Shift-held at marquee start: extend selection
+       })
 
 (def ^:private move-threshold 4)
 
@@ -142,6 +145,124 @@
       (unchecked-set drag-state "slot-target-node" node-id)
       (unchecked-set drag-state "slot-target-name" slot-name)
       (unchecked-set drag-state "slot-target-el"   row-el))))
+
+;; --- marquee selection ---------------------------------------------------
+
+;; `start-marquee!` is paired with the existing palette/canvas drag
+;; starters and must reset state through `cleanup!`, which is defined
+;; below alongside the other public-API helpers. Forward-declare so
+;; the marquee block stays self-contained.
+(declare cleanup!)
+
+(defn- marquee-el [] (unchecked-get drag-state "marquee-el"))
+(defn- set-marquee-el! [el] (unchecked-set drag-state "marquee-el" el))
+(defn- marquee-additive? [] (unchecked-get drag-state "marquee-additive?"))
+(defn- set-marquee-additive! [v] (unchecked-set drag-state "marquee-additive?" (boolean v)))
+
+(defn- canvas-content-coord
+  "Convert a (clientX, clientY) point to the canvas host's content
+   coordinate space — i.e. the same space overlays use, accounting
+   for scroll. Returns `[x y]`."
+  [^js host client-x client-y]
+  (let [^js br (.getBoundingClientRect host)]
+    [(+ (- client-x (.-left br)) (.-scrollLeft host))
+     (+ (- client-y (.-top  br)) (.-scrollTop  host))]))
+
+(defn- ensure-marquee-el!
+  "Lazily create the rectangle div on first move. Lives inside the
+   canvas host so it scrolls in lockstep with the rendered tree, and
+   uses the same content-coord space as the selection overlay pool."
+  []
+  (or (marquee-el)
+      (let [^js host (canvas-el)
+            ^js m    (js/document.createElement "div")]
+        (.setAttribute m "class" "bareforge-marquee")
+        (.appendChild host m)
+        (set-marquee-el! m)
+        m)))
+
+(defn- update-marquee-rect!
+  "Paint the rectangle for the current cursor position."
+  [^js e]
+  (let [^js host (canvas-el)
+        [x0 y0]  (canvas-content-coord host (start-x) (start-y))
+        [x1 y1]  (canvas-content-coord host (.-clientX e) (.-clientY e))
+        left     (min x0 x1)
+        top      (min y0 y1)
+        width    (js/Math.abs (- x1 x0))
+        height   (js/Math.abs (- y1 y0))
+        ^js m    (ensure-marquee-el!)]
+    (set! (.. m -style -left)   (str left   "px"))
+    (set! (.. m -style -top)    (str top    "px"))
+    (set! (.. m -style -width)  (str width  "px"))
+    (set! (.. m -style -height) (str height "px"))))
+
+(defn- clear-marquee-el! []
+  (when-let [^js m (marquee-el)]
+    (when-let [^js p (.-parentNode m)]
+      (.removeChild p m)))
+  (set-marquee-el! nil))
+
+(defn- rects-overlap?
+  "Pure: AABB intersection test on `{:left :top :right :bottom}` maps."
+  [a b]
+  (and (< (:left a)   (:right  b))
+       (> (:right a)  (:left   b))
+       (< (:top a)    (:bottom b))
+       (> (:bottom a) (:top    b))))
+
+(defn- marquee-hits
+  "Walk every `[data-bareforge-id]` element under the canvas host and
+   return the raw DOM ids of those whose bounding box overlaps the
+   marquee rectangle. Skips root and skips the canvas-host itself.
+   Stable in document order."
+  [^js host marquee-rect]
+  (let [^js br    (.getBoundingClientRect host)
+        sl        (.-scrollLeft host)
+        st        (.-scrollTop  host)
+        ^js nodes (.querySelectorAll host "[data-bareforge-id]")
+        out       (volatile! [])]
+    (dotimes [i (.-length nodes)]
+      (let [^js el (.item nodes i)
+            id     (.getAttribute el "data-bareforge-id")]
+        (when (and id (not= id "root"))
+          (let [^js eb (.getBoundingClientRect el)
+                left   (+ (- (.-left   eb) (.-left br)) sl)
+                top    (+ (- (.-top    eb) (.-top  br)) st)
+                rect   {:left   left
+                        :top    top
+                        :right  (+ left (.-width  eb))
+                        :bottom (+ top  (.-height eb))}]
+            (when (rects-overlap? marquee-rect rect)
+              (vswap! out conj id))))))
+    @out))
+
+(defn- commit-marquee! [^js e]
+  (let [^js host (canvas-el)
+        [x0 y0]  (canvas-content-coord host (start-x) (start-y))
+        [x1 y1]  (canvas-content-coord host (.-clientX e) (.-clientY e))
+        rect     {:left (min x0 x1) :top (min y0 y1)
+                  :right (max x0 x1) :bottom (max y0 y1)}
+        hits     (marquee-hits host rect)
+        existing (if (marquee-additive?)
+                   (state/selected-ids @state/app-state)
+                   [])
+        merged   (vec (distinct (concat existing hits)))]
+    (state/set-selection! merged)))
+
+(defn- start-marquee!
+  "Arm a marquee selection from a pointerdown that landed on the canvas
+   root (no node hit). Stashes whether Shift was held so the eventual
+   commit either replaces or extends the existing selection — same
+   convention as Figma / Webflow."
+  [^js e]
+  (when-not (= :idle (phase))
+    (cleanup!))
+  (set-source-tag! nil)
+  (set-source-node-id! nil)
+  (start-xy! (.-clientX e) (.-clientY e))
+  (set-marquee-additive! (.-shiftKey e))
+  (set-phase! :marquee-armed))
 
 ;; --- ghost element --------------------------------------------------------
 
@@ -336,11 +457,10 @@
       (and tid (#{:before :after} pos))
       (or (before-after-target doc tid pos)
           ;; Root has no parent; fall back to inside.
-          (palette/insertion-target doc {:id tid}))
+          (palette/insertion-target doc tid))
 
       :else
-      (let [sel (when tid {:id tid})]
-        (palette/insertion-target doc sel)))))
+      (palette/insertion-target doc tid))))
 
 (defn- update-free-drag-position!
   "Visual feedback during a :free drag. Uses CSS transform so we
@@ -415,7 +535,7 @@
           {doc' :doc id :id}
           (ops/insert-new doc parent-id slot index tag overrides)]
       (state/commit! doc')
-      (state/set-selection! {:id id}))))
+      (state/select-one! id))))
 
 (defn- commit-move! [^js _e]
   (when (valid?)
@@ -428,7 +548,7 @@
       (try
         (let [doc' (ops/move doc src-id parent-id slot index)]
           (state/commit! doc')
-          (state/set-selection! {:id src-id}))
+          (state/select-one! src-id))
         (catch :default _ nil)))))
 
 ;; --- public API -----------------------------------------------------------
@@ -438,6 +558,8 @@
   (clear-target-highlight!)
   (clear-slot-target!)
   (slot-strips/hide!)
+  (clear-marquee-el!)
+  (set-marquee-additive! false)
   (set-valid! false)
   (set-target-position! nil)
   (set-phase! :idle)
@@ -513,6 +635,16 @@
       (do (position-ghost! (ghost) e)
           (resolve-target! e)))
 
+    :marquee-armed
+    (let [dx (- (.-clientX e) (start-x))
+          dy (- (.-clientY e) (start-y))]
+      (when (>= (+ (* dx dx) (* dy dy)) (* move-threshold move-threshold))
+        (set-phase! :marquee)
+        (update-marquee-rect! e)))
+
+    :marquee
+    (update-marquee-rect! e)
+
     nil))
 
 (defn on-up! [^js e]
@@ -527,7 +659,8 @@
 
     :armed
     (let [tag     (source-tag)
-          node-id (source-node-id)]
+          node-id (source-node-id)
+          shift?  (.-shiftKey e)]
       (cleanup!)
       (cond
         ;; Palette tap (no movement) → insert at current selection.
@@ -537,7 +670,23 @@
         ;; `__seed<N>` suffix) so the selection overlay can
         ;; highlight the specific clicked element; doc-lookup
         ;; sites (inspector, shortcuts) canonicalise on read.
-        node-id (state/set-selection! {:id node-id})))
+        ;; Shift-tap toggles membership for multi-select; plain
+        ;; tap collapses the selection back to a single id.
+        node-id (if shift?
+                  (state/select-toggle! node-id)
+                  (state/select-one! node-id))))
+
+    :marquee
+    (do (commit-marquee! e)
+        (cleanup!))
+
+    :marquee-armed
+    ;; Tap on empty canvas with no movement: clear selection unless
+    ;; Shift was held (additive marquee with no rectangle is a no-op).
+    (let [additive? (marquee-additive?)]
+      (cleanup!)
+      (when-not additive?
+        (state/select-clear!)))
 
     nil))
 
@@ -550,20 +699,25 @@
    bubble phase; this one uses capture (see `install-window-listeners!`)
    so the drag layer always wins the race for a Escape-during-drag."
   [^js e]
-  (when (and (contains? #{:armed :dragging} (phase))
+  (when (and (contains? #{:armed :dragging :marquee-armed :marquee} (phase))
              (= "Escape" (.-key e)))
     (.stopImmediatePropagation e)
     (cancel!)))
 
 (defn- on-canvas-pointerdown! [^js e]
   ;; Delegate: any pointerdown inside the canvas host starts a drag on
-  ;; the nearest bareforge-rendered ancestor. Root is not draggable.
-  ;; Preview mode disables drag entirely so native click / pointer
-  ;; events flow through to the user's own components.
+  ;; the nearest bareforge-rendered ancestor. A pointerdown that
+  ;; resolves to root, or that lands on the canvas padding (no
+  ;; bareforge-rendered ancestor at all), starts a marquee selection
+  ;; instead — root is not draggable, and the padding is conceptually
+  ;; empty space. Preview mode disables both drag and marquee entirely
+  ;; so native click / pointer events flow through to the user's own
+  ;; components.
   (when (not= :preview (:mode @state/app-state))
-    (when-let [id (canvas/element->node-id (.-target e))]
-      (when (not= id "root")
-        (start-from-canvas! e id)))))
+    (let [id (canvas/element->node-id (.-target e))]
+      (cond
+        (or (nil? id) (= id "root")) (start-marquee! e)
+        :else                         (start-from-canvas! e id)))))
 
 (defn install-window-listeners!
   "Install the pointermove, pointerup, pointercancel, and keydown

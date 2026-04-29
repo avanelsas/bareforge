@@ -6,6 +6,7 @@
    keeping with the effectful-zone rules in CLAUDE.md."
   (:require [bareforge.doc.actions :as actions]
             [bareforge.doc.model :as m]
+            [bareforge.meta.hints :as hints]
             [bareforge.meta.registry :as registry]
             [bareforge.render.reconcile :as rec]
             [bareforge.state :as state]
@@ -167,7 +168,13 @@
         (.setAttribute el "data-bareforge-id"  id)
         (.setAttribute el "data-bareforge-tag" (:tag node))
         (when (registry/container? (:tag node))
-          (.setAttribute el "data-bareforge-container" ""))
+          (.setAttribute el "data-bareforge-container" "")
+          ;; Empty-state CSS reads `data-bareforge-hint` to show a
+          ;; per-tag prompt ("Drop nav links / actions" inside an
+          ;; empty x-navbar etc.). Tags without a curated hint fall
+          ;; back to the generic `<tag>  (empty)` style.
+          (when-let [hint (hints/hint-for (:tag node))]
+            (.setAttribute el "data-bareforge-hint" hint)))
         (rec/apply-attrs! el (rec/attr-diff {} (:attrs node)))
         (rec/apply-props! el (rec/prop-diff {} (:props node)))
         (when-not raw-html?

@@ -140,9 +140,83 @@
   (is (= "#4f46e5" (get-in @state/app-state [:theme :overrides "--x-color-primary"])))
   (state/assoc-ui! :palette-search "nav")
   (is (= "nav" (get-in @state/app-state [:ui :palette-search])))
-  (state/set-selection! {:id "abc"})
-  (is (= {:id "abc"} (:selection @state/app-state)))
+  (state/select-one! "abc")
+  (is (= ["abc"] (:selection @state/app-state)))
   (testing "theme changes do not enter history"
     (is (= [] (get-in @state/app-state [:history :past])))
     (is (= [] (get-in @state/app-state [:history :future]))))
+  (state/reset-state!))
+
+;; --- selection helpers ---------------------------------------------------
+
+(deftest selected-ids-defaults-empty
+  (is (= [] (state/selected-ids (fresh))))
+  (is (= [] (state/selected-ids {}))))
+
+(deftest selected?-and-single-selected-id
+  (let [s0 (assoc (fresh) :selection [])
+        s1 (assoc (fresh) :selection ["a"])
+        s2 (assoc (fresh) :selection ["a" "b"])]
+    (is (false? (state/selected? s0 "a")))
+    (is (true?  (state/selected? s1 "a")))
+    (is (false? (state/selected? s1 "b")))
+    (is (true?  (state/selected? s2 "b")))
+    (is (nil?   (state/single-selected-id s0)))
+    (is (= "a"  (state/single-selected-id s1)))
+    (is (nil?   (state/single-selected-id s2))
+        "multi-select degrades single-selected-id to nil")))
+
+(deftest set-selection!-normalises-to-vector
+  (state/reset-state!)
+  (state/set-selection! ["a" "b" "c"])
+  (is (= ["a" "b" "c"] (:selection @state/app-state)))
+  (state/set-selection! '("d" "e"))
+  (is (= ["d" "e"] (:selection @state/app-state))
+      "lists are coerced to vectors")
+  (state/set-selection! nil)
+  (is (= [] (:selection @state/app-state))
+      "nil clears the selection")
+  (state/reset-state!))
+
+(deftest select-one!-and-clear!
+  (state/reset-state!)
+  (state/select-one! "abc")
+  (is (= ["abc"] (:selection @state/app-state)))
+  (state/select-clear!)
+  (is (= [] (:selection @state/app-state)))
+  (state/select-one! nil)
+  (is (= [] (:selection @state/app-state))
+      "select-one! nil clears the selection")
+  (state/reset-state!))
+
+(deftest select-toggle!-add-and-remove
+  (state/reset-state!)
+  (state/select-toggle! "a")
+  (is (= ["a"] (:selection @state/app-state)))
+  (state/select-toggle! "b")
+  (is (= ["a" "b"] (:selection @state/app-state))
+      "second toggle conjs onto the existing vector — newest at tail")
+  (state/select-toggle! "a")
+  (is (= ["b"] (:selection @state/app-state))
+      "toggling a present id removes it")
+  (state/select-toggle! "b")
+  (is (= [] (:selection @state/app-state))
+      "toggling the last id clears the selection")
+  (state/reset-state!))
+
+;; --- attribute clipboard --------------------------------------------------
+
+(deftest clipboard-attrs-defaults-nil
+  (is (nil? (state/clipboard-attrs (fresh)))))
+
+(deftest set-clipboard-attrs-roundtrip
+  (state/reset-state!)
+  (let [entry {:source-tag "x-button"
+               :attrs {"variant" "primary"}
+               :props {:disabled true}}]
+    (state/set-clipboard-attrs! entry)
+    (is (= entry (state/clipboard-attrs @state/app-state))))
+  (state/set-clipboard-attrs! nil)
+  (is (nil? (state/clipboard-attrs @state/app-state))
+      "nil clears the clipboard")
   (state/reset-state!))

@@ -5,6 +5,7 @@
    real listener to `state/*` calls."
   (:require [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
+            [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]
             [bareforge.storage.project-file :as pf]
@@ -45,6 +46,56 @@
    "ArrowUp"    [0 -1]
    "ArrowDown"  [0  1]})
 
+(def shortcut-info
+  "Display data for the cheat sheet. Order = display order within
+   each category. The keyboard bindings here MUST stay in lockstep
+   with `dispatch` — both surfaces evolve together when a shortcut is
+   added or moved. The companion test in `shortcuts_test` re-derives
+   the binding-string set and asserts coverage so a one-sided edit is
+   caught at compile time.
+
+   Categories are rendered as separate groups in the cheat sheet:
+   `:editing` `:selection` `:navigation` `:file` `:view`."
+  [{:category :editing    :keys "Cmd+Z"          :label "Undo"}
+   {:category :editing    :keys "Cmd+Shift+Z"    :label "Redo"}
+   {:category :editing    :keys "Delete / Backspace" :label "Delete selection"}
+   {:category :editing    :keys "Cmd+D"          :label "Duplicate selection"}
+   {:category :editing    :keys "Cmd+G"          :label "Wrap selection in x-container"}
+   {:category :editing    :keys "Cmd+Shift+G"    :label "Wrap selection in… (prompt)"}
+   {:category :editing    :keys "Cmd+Opt+C"      :label "Copy attributes from selection"}
+   {:category :editing    :keys "Cmd+Opt+V"      :label "Paste attributes onto selection"}
+   {:category :editing    :keys "Arrow keys"     :label "Nudge by 1px (free placement)"}
+   {:category :editing    :keys "Shift+Arrow"    :label "Nudge by 10px (free placement)"}
+   {:category :editing    :keys "Drag numeric label"
+    :label "Scrub numeric value (Shift × 10)"}
+
+   {:category :selection  :keys "Click"          :label "Select node"}
+   {:category :selection  :keys "Shift-click"    :label "Toggle node in multi-selection"}
+   {:category :selection  :keys "Drag empty canvas" :label "Marquee select"}
+   {:category :selection  :keys "Shift+drag empty canvas"
+    :label "Marquee extend selection"}
+
+   {:category :navigation :keys "Esc"            :label "Deselect / exit text edit"}
+   {:category :navigation :keys "Arrow keys (in Layers)"
+    :label "Walk the document tree"}
+   {:category :navigation :keys "Alt+Up / Alt+Down (in Layers)"
+    :label "Reorder selection within parent slot"}
+
+   {:category :file       :keys "Cmd+S"          :label "Save project"}
+   {:category :file       :keys "Cmd+O"          :label "Open project"}
+   {:category :file       :keys "Cmd+N"          :label "New project"}
+
+   {:category :view       :keys "Cmd+K"          :label "Open command palette"}
+   {:category :view       :keys "?"              :label "Show this cheat sheet"}])
+
+(def category-labels
+  "Human labels and ordering for the cheat sheet category groups."
+  [[:editing    "Editing"]
+   [:selection  "Selection"]
+   [:navigation "Navigation"]
+   [:file       "File"]
+   [:view       "View"]])
+
 (def ^:const nudge-coalesce-window-ms
   "How long after a nudge a subsequent nudge on the same node still
    merges into the same undo entry. Picked so that 'hold the arrow
@@ -74,11 +125,12 @@
 
 (defn dispatch
   "Project a key event into an action. Simple actions return a
-   keyword (`:undo` `:redo` `:delete` `:deselect` `:exit-text-edit`
-   `:save` `:open` `:new` `:noop`); parameterized actions return a
-   vector (`[:nudge dx dy]`). Takes a map shape:
-     {:key :meta? :shift? :tag-name :content-editable? :has-selection?
-      :selection-id :placement :text-editing-id}
+   keyword (`:undo` `:redo` `:delete` `:duplicate` `:wrap-in-prompt`
+   `:copy-attrs` `:paste-attrs` `:deselect` `:exit-text-edit` `:save`
+   `:open` `:new` `:noop`); parameterized actions return a vector
+   (`[:nudge dx dy]`, `[:wrap-in tag]`). Takes a map shape:
+     {:key :meta? :alt? :shift? :tag-name :content-editable?
+      :has-selection? :selection-id :placement :text-editing-id}
 
    Arrow keys nudge the selected node's `:layout :x / :y` by 1 px
    (or 10 px with Shift), but only when the selection has `:free`
@@ -92,11 +144,20 @@
 
    Cmd+S / Cmd+O / Cmd+N map to project-file save / open / new so
    the File menu in the toolbar is an affordance, not the only
-   path to these actions."
-  [{:keys [key meta? shift? has-selection? selection-id placement
+   path to these actions. Cmd+D duplicates the current selection;
+   Cmd+G wraps it in an x-container, with Cmd+Shift+G prompting
+   for a wrapper tag from a small whitelist."
+  [{:keys [key code meta? alt? shift? has-selection? selection-id placement
            text-editing-id]
     :as event}]
-  (let [editable? (editable-target? event)]
+  (let [editable? (editable-target? event)
+        ;; macOS US layout: Option+C produces "ç", Option+V produces
+        ;; "√" — the literal `key` no longer matches. `code` is the
+        ;; physical-key identifier ("KeyC", "KeyV"), unaffected by
+        ;; modifiers, so we match either to keep the gesture portable
+        ;; across macOS / Linux / Windows.
+        c-letter? (or (= "c" key) (= "KeyC" code))
+        v-letter? (or (= "v" key) (= "KeyV" code))]
     (cond
       (and meta? (= "z" key) (not shift?) (not editable?))
       :undo
@@ -112,6 +173,48 @@
 
       (and meta? (= "n" key) (not shift?) (not editable?))
       :new
+
+      ;; '?' on US layouts is Shift+/ — match the resolved key directly.
+      ;; Cheat sheet binding sits outside the meta? group so it works
+      ;; without the Cmd modifier; editable-target? still gates it so
+      ;; typing '?' into an inspector input doesn't open the modal.
+      (and (= "?" key)
+           (not meta?)
+           (not editable?))
+      :show-shortcuts
+
+      (and meta? (= "k" key) (not shift?) (not alt?)
+           (not editable?))
+      :show-command-palette
+
+      (and meta? alt? c-letter? (not shift?)
+           has-selection?
+           (not= "root" selection-id)
+           (not editable?))
+      :copy-attrs
+
+      (and meta? alt? v-letter? (not shift?)
+           has-selection?
+           (not editable?))
+      :paste-attrs
+
+      (and meta? (= "d" key) (not shift?) (not alt?)
+           has-selection?
+           (not editable?))
+      :duplicate
+
+      ;; Cmd-Shift-G first so the more-specific binding wins over Cmd-G.
+      (and meta? (or (= "G" key) (and shift? (= "g" key)))
+           has-selection?
+           (not= "root" selection-id)
+           (not editable?))
+      :wrap-in-prompt
+
+      (and meta? (= "g" key) (not shift?)
+           has-selection?
+           (not= "root" selection-id)
+           (not editable?))
+      [:wrap-in "x-container"]
 
       (and (contains? #{"Delete" "Backspace"} key)
            has-selection?
@@ -149,15 +252,21 @@
         ;; template-instance previews). Canonicalise before every
         ;; doc-side lookup so keyboard ops address the template
         ;; node the user intends, not a synthetic clone id.
-        sel-id (get-in @state/app-state [:selection :id])
-        doc-id (canvas/canonical-node-id sel-id)
-        node   (when doc-id (m/get-node (:document @state/app-state) doc-id))]
+        ;; Multi-select degrades placement-aware shortcuts (nudge,
+        ;; selection-id-aware delete) to no-op via single-selected-id
+        ;; → nil; has-selection? still reflects the broader vector.
+        single  (state/single-selected-id @state/app-state)
+        doc-id  (canvas/canonical-node-id single)
+        node    (when doc-id (m/get-node (:document @state/app-state) doc-id))
+        any-sel? (seq (state/selected-ids @state/app-state))]
     {:key               (.-key e)
+     :code              (.-code e)
      :meta?             (or (.-metaKey e) (.-ctrlKey e))
+     :alt?              (.-altKey e)
      :shift?            (.-shiftKey e)
      :tag-name          (some-> t .-tagName)
      :content-editable? (and t (.-isContentEditable t))
-     :has-selection?    (some? sel-id)
+     :has-selection?    (boolean any-sel?)
      :selection-id      doc-id
      :placement         (get-in node [:layout :placement])
      :text-editing-id   (get-in @state/app-state [:ui :text-editing-id])}))
@@ -176,7 +285,7 @@
    selection change) starts a fresh history entry."
   [dx dy]
   (let [sel-id     (canvas/canonical-node-id
-                    (get-in @state/app-state [:selection :id]))
+                    (state/single-selected-id @state/app-state))
         doc        (:document @state/app-state)
         node       (m/get-node doc sel-id)
         cur-x      (or (get-in node [:layout :x]) 0)
@@ -198,14 +307,134 @@
                  :last-ms    now-ms
                  :past-count (count (get-in @state/app-state [:history :past]))})))
 
+(def ^:private wrap-tag-whitelist
+  "Tags accepted by Cmd-Shift-G's prompt as a wrapper. Kept tight on
+   purpose: container components that have a `:default` slot accepting
+   multiple children. Adding a new tag here requires it to be a real
+   container in the registry, otherwise wrap-many's reparent step
+   would fail."
+  #{"x-container" "x-grid" "x-card" "x-navbar"})
+
+(defn- selected-doc-ids
+  "Read the current selection, canonicalise each id, dedupe, and drop
+   `\"root\"`. Used by every multi-id action (delete / duplicate /
+   wrap) so they all see the same logical id set."
+  []
+  (->> (state/selected-ids @state/app-state)
+       (map canvas/canonical-node-id)
+       distinct
+       (remove #{"root"})
+       (remove nil?)
+       vec))
+
+(defn duplicate! []
+  (let [ids (selected-doc-ids)]
+    (when (seq ids)
+      (let [doc (:document @state/app-state)
+            {doc' :doc new-ids :ids} (ops/duplicate-many doc ids)]
+        (state/commit! doc')
+        (state/set-selection! new-ids)))))
+
+(defn- supported-attr-names
+  "Set of attribute names the registry advertises for `tag`. Used to
+   filter pasted attrs/props to keys the target tag actually accepts —
+   pasting an x-button's `variant` onto an x-card should silently
+   drop, not stamp an unknown attribute."
+  [tag]
+  (set (map :name (:properties (registry/get-meta tag)))))
+
+(defn copy-attrs! []
+  (when-let [id (some-> (state/single-selected-id @state/app-state)
+                        canvas/canonical-node-id)]
+    (when-let [n (and (not= "root" id)
+                      (m/get-node (:document @state/app-state) id))]
+      (state/set-clipboard-attrs!
+       {:source-tag (:tag n)
+        :attrs      (or (:attrs n) {})
+        :props      (or (:props n) {})}))))
+
+(defn paste-attrs! []
+  (when-let [{:keys [attrs props]} (state/clipboard-attrs @state/app-state)]
+    (let [target-ids (selected-doc-ids)]
+      (when (seq target-ids)
+        (let [doc  (:document @state/app-state)
+              doc' (reduce
+                    (fn [d id]
+                      (let [tag    (some-> (m/get-node d id) :tag)
+                            ok     (when tag (supported-attr-names tag))]
+                        (if (and tag (seq ok))
+                          (let [attrs* (select-keys attrs ok)
+                                 ;; Boolean :props are keyed by keyword;
+                                 ;; cross-reference against the string
+                                 ;; supported-attrs set via `name`.
+                                props* (into {}
+                                             (filter (fn [[k _]]
+                                                       (contains? ok (name k)))
+                                                     props))]
+                            (-> d
+                                (ops/set-attrs id attrs*)
+                                (ops/set-props id props*)))
+                          d)))
+                    doc
+                    target-ids)]
+          (when (not= doc doc')
+            (state/commit! doc')))))))
+
+(defn wrap-in! [tag]
+  (let [ids (selected-doc-ids)]
+    (when (and (contains? wrap-tag-whitelist tag) (seq ids))
+      (let [doc (:document @state/app-state)
+            {doc' :doc wrap-id :id} (ops/wrap-many doc ids tag)]
+        (when wrap-id
+          (state/commit! doc')
+          (state/select-one! wrap-id))))))
+
+(defn- prompt-wrap-tag
+  "Prompt the user for a wrapper tag, restricted to `wrap-tag-whitelist`.
+   Returns the chosen tag string, or nil when the user cancels or
+   types something off-list."
+  []
+  (let [input (js/window.prompt
+               "Wrap selection in: x-container, x-grid, x-card, x-navbar"
+               "x-container")]
+    (when (and (string? input)
+               (contains? wrap-tag-whitelist input))
+      input)))
+
+(defonce ^:private show-shortcuts-fn (atom (constantly nil)))
+(defonce ^:private show-command-palette-fn (atom (constantly nil)))
+
+(defn set-show-shortcuts!
+  "Register the function called when `dispatch` returns :show-shortcuts.
+   Wired from main/init to avoid a circular `shortcuts ↔ cheat-sheet`
+   require — the cheat sheet itself requires shortcuts for the static
+   `shortcut-info` data, so the action callback flows the other way
+   via this atom."
+  [f]
+  (reset! show-shortcuts-fn f))
+
+(defn set-show-command-palette!
+  "Register the function called when `dispatch` returns
+   :show-command-palette. Same callback indirection as
+   `set-show-shortcuts!` to keep the namespace graph acyclic — the
+   command palette consumes shortcuts' public action helpers
+   (duplicate!, wrap-in!, copy-attrs!, paste-attrs!) plus
+   shortcut-info and category-labels, so the show callback flows
+   in the opposite direction."
+  [f]
+  (reset! show-command-palette-fn f))
+
 (defn- perform! [action ^js e]
   (cond
     (vector? action)
     (let [[op & args] action]
       (case op
-        :nudge (let [[dx dy] args]
-                 (.preventDefault e)
-                 (nudge! dx dy))))
+        :nudge   (let [[dx dy] args]
+                   (.preventDefault e)
+                   (nudge! dx dy))
+        :wrap-in (let [[tag] args]
+                   (.preventDefault e)
+                   (wrap-in! tag))))
 
     :else
     (case action
@@ -219,14 +448,21 @@
                                "Start a new project? Unsaved changes will be lost."))
                       (pf/new!)))
       :delete   (do (.preventDefault e)
-                    (let [sel-id (canvas/canonical-node-id
-                                  (get-in @state/app-state [:selection :id]))
-                          doc    (:document @state/app-state)
-                          doc'   (ops/remove doc sel-id)]
+                    (let [doc-ids (selected-doc-ids)
+                          doc     (:document @state/app-state)
+                          doc'    (ops/remove-many doc doc-ids)]
                       (state/commit! doc')
-                      (state/set-selection! nil)))
+                      (state/select-clear!)))
+      :duplicate (do (.preventDefault e) (duplicate!))
+      :wrap-in-prompt (do (.preventDefault e)
+                          (when-let [tag (prompt-wrap-tag)]
+                            (wrap-in! tag)))
+      :copy-attrs  (do (.preventDefault e) (copy-attrs!))
+      :paste-attrs (do (.preventDefault e) (paste-attrs!))
+      :show-shortcuts       (do (.preventDefault e) (@show-shortcuts-fn))
+      :show-command-palette (do (.preventDefault e) (@show-command-palette-fn))
       :exit-text-edit (do (.preventDefault e) (inline-edit/teardown!))
-      :deselect (do (.preventDefault e) (state/set-selection! nil))
+      :deselect (do (.preventDefault e) (state/select-clear!))
       nil)))
 
 (defn- on-keydown! [^js e]

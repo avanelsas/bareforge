@@ -7,7 +7,10 @@
   "Pure constructor for a fresh application state."
   []
   {:document     (m/empty-document)
-   :selection    nil
+   ;; Vector of selected node ids. Empty = nothing selected. Multi-select
+   ;; (Shift-click, marquee) extends this; single-node consumers route
+   ;; through `single-selected-id` which returns nil under multi-select.
+   :selection    []
    :history      {:past [] :future []}
    :mode         :edit
    :theme        {:base-preset "ocean" :overrides {}}
@@ -115,8 +118,77 @@
   [k f & args]
   (apply swap! app-state update-in [:ui k] f args))
 
-(defn set-selection! [sel]
-  (swap! app-state assoc :selection sel))
+;; --- selection helpers (pure) -------------------------------------------
+
+(defn selected-ids
+  "Pure: the current selection as a vector of node ids. Empty vector
+   when nothing is selected."
+  [state]
+  (or (:selection state) []))
+
+(defn selected?
+  "Pure: true iff `id` is in the current selection."
+  [state id]
+  (boolean (some #(= id %) (selected-ids state))))
+
+(defn single-selected-id
+  "Pure: the lone selected id, or nil if zero or 2+ are selected.
+   Single-node consumers (resize handles, nudge, inspector lookup,
+   inline edit teardown comparison) read selection through this so
+   they degrade gracefully when the user multi-selects."
+  [state]
+  (let [ids (selected-ids state)]
+    (when (= 1 (count ids)) (first ids))))
+
+;; --- selection mutators (effectful) -------------------------------------
+
+(defn set-selection!
+  "Replace the current selection with `ids` (a coll of node ids). nil
+   or an empty coll clears the selection. Order is preserved — the
+   most-recently added id ends up last, which is the natural anchor
+   for future range / shift-extend behaviour."
+  [ids]
+  (swap! app-state assoc :selection (vec ids)))
+
+(defn select-one!
+  "Replace the selection with a single id, or clear when nil."
+  [id]
+  (set-selection! (when id [id])))
+
+(defn select-clear!
+  "Drop the selection entirely. Equivalent to `(set-selection! nil)`."
+  []
+  (set-selection! nil))
+
+(defn select-toggle!
+  "Toggle membership of `id` in the current selection. Adds when
+   absent, removes when present. Used by Shift-click and the layers
+   panel's Shift-click row toggle."
+  [id]
+  (swap! app-state update :selection
+         (fn [current]
+           (let [ids (or current [])]
+             (if (some #(= id %) ids)
+               (vec (clojure.core/remove #(= id %) ids))
+               (conj (vec ids) id))))))
+
+;; --- attribute clipboard ------------------------------------------------
+
+(defn clipboard-attrs
+  "Pure: read the in-memory attribute clipboard, or nil when nothing
+   has been copied. Shape:
+     `{:source-tag <tag> :attrs {<name> <v>} :props {<keyword> <v>}}`."
+  [state]
+  (get-in state [:ui :clipboard :attrs]))
+
+(defn set-clipboard-attrs!
+  "Replace the attribute clipboard with `entry`, or clear when nil.
+   Lives under `:ui` so it bypasses history — copy/paste is a workflow
+   gesture, not a document edit."
+  [entry]
+  (if (nil? entry)
+    (swap! app-state update-in [:ui :clipboard] dissoc :attrs)
+    (swap! app-state assoc-in  [:ui :clipboard :attrs] entry)))
 
 (defn set-mode! [mode]
   (swap! app-state assoc :mode mode))

@@ -111,6 +111,20 @@
       overflow: auto;
       position: relative;
     }
+    /* In edit mode, suppress native text selection inside the canvas:
+       Shift-click and marquee-drag would otherwise paint a browser
+       text-selection band over the rendered preview, fighting our own
+       multi-select. Inline text editing has its own textarea overlay,
+       which we re-enable below. Preview mode leaves selection untouched
+       so users can interact with their built page normally. */
+    .chrome[data-mode="edit"] .canvas-host {
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .bareforge-inline-edit {
+      user-select: text;
+      -webkit-user-select: text;
+    }
     .bareforge-selection-overlay {
       position: absolute;
       pointer-events: none;
@@ -157,6 +171,30 @@
     .bareforge-selection-handle[data-handle="s"]  { bottom: -5px; left: 50%;     margin-left: -5px; cursor: s-resize; }
     .bareforge-selection-handle[data-handle="sw"] { bottom: -5px; left: -5px;    cursor: sw-resize; }
     .bareforge-selection-handle[data-handle="w"]  { top: 50%;     left: -5px;    margin-top: -5px;  cursor: w-resize; }
+    .bareforge-marquee {
+      position: absolute;
+      pointer-events: none;
+      z-index: 99;
+      border: 1px dashed var(--x-color-primary, #4f46e5);
+      background: rgba(79, 70, 229, 0.08);
+    }
+    /* --- cheat sheet ----------------------------------------------- */
+    /* x-modal carries its own backdrop / panel chrome; we only style
+       the row + group layout inside the modal body. Typography (kbd,
+       overline, body2, h3) inherits from the active theme. */
+    .cheat-group + .cheat-group { margin-top: 18px; }
+    .cheat-row {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 14px;
+      padding: 4px 0;
+      align-items: baseline;
+    }
+
+    /* x-command-palette owns its own modal chrome and shadow-DOM
+       styling — no host-level CSS needed. */
+    .bareforge-marquee[data-hidden] { display: none; }
+    .chrome[data-mode="preview"] .bareforge-marquee { display: none; }
     .bareforge-inline-edit {
       position: absolute;
       z-index: 101;
@@ -226,11 +264,49 @@
     .palette-item:active {
       background: var(--x-color-surface-active, rgba(127, 127, 127, 0.2));
     }
+    .palette-item-header {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      column-gap: 8px;
+      align-items: baseline;
+    }
     .palette-item-label { font-size: 13px; font-weight: 500; }
     .palette-item-tag {
       font-size: 11px;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+    }
+    /* Pattern caret + inline flyout (M3.4). The caret rotates when
+       open so the affordance reads as expand/collapse. */
+    .palette-item-caret {
+      font-size: 11px;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      cursor: pointer;
+      padding: 0 4px;
+      user-select: none;
+      transition: transform 120ms ease;
+    }
+    .palette-item-caret[data-open] { transform: rotate(180deg); }
+    .palette-patterns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .palette-patterns[data-hidden] { display: none; }
+    .palette-pattern {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--x-color-surface, rgba(127, 127, 127, 0.1));
+      color: var(--x-color-text);
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+      cursor: pointer;
+      user-select: none;
+    }
+    .palette-pattern:hover {
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.18));
+      border-color: var(--x-color-primary);
     }
     .palette-empty {
       font-size: 12px;
@@ -317,7 +393,24 @@
       color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
+    /* Numeric labels become drag-to-scrub handles. The `is-scrubbable`
+       class is added by `pointer-scrub!` only when the widget exposes
+       a scrub spec, so non-numeric labels keep their default cursor. */
+    .inspector-field-label.is-scrubbable {
+      cursor: ew-resize;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
     .inspector-field-widget { width: 100%; }
+    /* Multi-select shared-attr widgets render the .is-mixed class
+       when values disagree across the selected nodes. A subtle
+       border tint plus muted text on the placeholder makes the
+       state legible without shouting at the user. */
+    .inspector-field-widget.is-mixed {
+      opacity: 0.85;
+      border-style: dashed;
+    }
     /* Compact x-color-picker for the Inspector. Halves the main
        colour-area height and tightens the strip heights + gap so a
        picker with alpha still fits where the default (alpha-less)
@@ -670,6 +763,13 @@
       color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
       pointer-events: none;
       user-select: none;
+    }
+    /* Per-tag drop hint (M3.6) — overrides the generic placeholder
+       when the canvas reconciler stamped a `data-bareforge-hint`
+       attribute (see meta/hints.cljs for the data table). The more
+       specific selector wins over the generic rule above. */
+    .canvas-host [data-bareforge-container][data-bareforge-hint]:empty::before {
+      content: attr(data-bareforge-hint);
     }
     /* Containers that host an absolute :background child get this
        class from the reconciler so they form a positioned ancestor

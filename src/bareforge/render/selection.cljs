@@ -1,25 +1,28 @@
 (ns bareforge.render.selection
-  "Canvas selection overlay. A thin, absolutely-positioned `<div>`
-   sibling of the rendered tree inside the canvas host is repositioned
-   on every selection / document change to draw a 1 px border *around*
-   the currently-selected element. The overlay never modifies the
-   selected element's own CSS, so it cannot interact with the user's
-   design (no box-shadow inflation, no layout shift).
+  "Canvas selection overlay. A pool of thin, absolutely-positioned
+   `<div>` siblings of the rendered tree inside the canvas host is
+   repositioned on every selection / document change to draw a 1 px
+   border *around* every currently-selected element. Overlays never
+   modify the selected elements' own CSS, so they cannot interact
+   with the user's design (no box-shadow inflation, no layout shift).
 
    Coordinates are computed relative to the canvas host's padding box,
-   which is also the containing block for the overlay (canvas-host has
-   `position: relative`). Because the overlay is a child of the same
+   which is also the containing block for the overlays (canvas-host has
+   `position: relative`). Because overlays are children of the same
    scrollable container as the rendered content, scrolling moves both
    in lockstep — no scroll listener is needed.
 
-   The overlay also renders 8 resize handles as children. Which
-   handles are interactive depends on the selected node's placement:
-   `:free` nodes get the full 8 (updates `:layout :x :y :w :h`);
-   `:flow` nodes get only E/S/SE (grow the width/height axis,
-   updating `:layout :width :height` as CSS length strings);
-   `:background` nodes and the root get none. Live visual feedback
-   writes directly to the element's inline style during drag, then
-   a single commit at pointerup keeps the undo history clean."
+   The first overlay in the pool (the 'primary') also carries 8
+   resize handles as children. Which handles are interactive depends
+   on the selected node's placement: `:free` nodes get the full 8
+   (updates `:layout :x :y :w :h`); `:flow` nodes get only E/S/SE
+   (grow the width/height axis, updating `:layout :width :height` as
+   CSS length strings); `:background` nodes and the root get none.
+   Resize is single-select only: when more than one node is selected
+   the primary overlay's `data-resize-mode` attribute is cleared so
+   the handles stay hidden. Live visual feedback writes directly to
+   the element's inline style during drag, then a single commit at
+   pointerup keeps the undo history clean."
   (:require [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
             [bareforge.render.canvas :as canvas]
@@ -107,7 +110,11 @@
 
 ;; --- effectful -----------------------------------------------------------
 
-(defonce ^:private overlay-state #js {:el nil :host nil})
+;; Pool of overlay elements. The first ('primary') carries the 8 resize
+;; handles; secondaries are plain border boxes. Pool grows on demand and
+;; never shrinks — extras are simply hidden via `data-hidden` when the
+;; selection contracts.
+(defonce ^:private overlay-state #js {:host nil :pool #js []})
 
 (defonce ^:private resize-state
   #js {:active?  false
@@ -119,8 +126,28 @@
        :start-x  0 :start-y  0
        :start-w  0 :start-h  0})
 
-(defn- ^js overlay-el [] (unchecked-get overlay-state "el"))
-(defn- ^js host-el    [] (unchecked-get overlay-state "host"))
+(defn- ^js host-el [] (unchecked-get overlay-state "host"))
+
+(defn- ^js pool
+  "Return the overlay pool, lazy-initialising it on first access. The
+   lazy init survives a shadow-cljs hot-reload that started under an
+   earlier version of `overlay-state` whose shape lacked the `:pool`
+   key — without it, refresh! would dereference undefined and the
+   overlay would silently stop drawing."
+  []
+  (or (unchecked-get overlay-state "pool")
+      (let [p #js []]
+        (unchecked-set overlay-state "pool" p)
+        p)))
+(defn- ^js primary-overlay []
+  (let [^js p (pool)]
+    (when (and p (pos? (.-length p)))
+      (aget p 0))))
+
+;; Backwards-compatible alias used by resize-state initialisation
+;; below — the resize machinery only ever uses the primary overlay.
+(defn- ^js overlay-el [] (primary-overlay))
+
 (defn- resize-active? [] (unchecked-get resize-state "active?"))
 
 (defn- bcr->map [^js r]
@@ -141,31 +168,71 @@
 (defn- hide! [^js overlay]
   (.setAttribute overlay "data-hidden" ""))
 
-(defn- selected-node []
-  (when-let [sel-id (get-in @state/app-state [:selection :id])]
-    (m/get-node (:document @state/app-state) sel-id)))
+(declare build-handles!)
+
+(defn- create-overlay!
+  "Append a fresh overlay element to the host and push it onto the
+   pool. The first overlay created (`primary?` true) gets the resize
+   handle children installed."
+  [primary?]
+  (let [^js o (js/document.createElement "div")]
+    (.setAttribute o "class" "bareforge-selection-overlay")
+    (.setAttribute o "data-hidden" "")
+    (.appendChild (host-el) o)
+    (.push (pool) o)
+    (when primary? (build-handles! o))
+    o))
+
+(defn- ensure-pool-size! [n]
+  (let [^js p (pool)]
+    (while (< (.-length p) n)
+      (create-overlay! false))))
+
+(defn- selection-entries
+  "Resolve `:selection` to a vector of {:id :el :node} maps for ids
+   whose DOM element exists. Missing / stale ids are dropped silently
+   so a render pass mid-edit doesn't flicker the overlay."
+  []
+  (let [doc (:document @state/app-state)]
+    (into []
+          (keep (fn [id]
+                  (when-let [^js el (canvas/dom-for-id id)]
+                    {:id   id
+                     :el   el
+                     :node (m/get-node doc (canvas/canonical-node-id id))})))
+          (state/selected-ids @state/app-state))))
 
 (defn- refresh!
-  "Read the current selection from app-state, look up its DOM element,
-   and reposition the overlay (or hide it if nothing valid is selected).
-   Sets `data-resize-mode` on the overlay to `\"free\"` or `\"flow\"`
-   so CSS can show the appropriate handle subset; root and background
-   selections clear the attribute entirely."
+  "Walk the current selection vector, position one overlay per
+   resolved DOM element, and hide any pool entries beyond that count.
+   The primary overlay carries `data-resize-mode` only when exactly
+   one node is selected and that node's placement supports resize —
+   otherwise the handles stay hidden via CSS, even though they remain
+   in the DOM as primary's children."
   []
-  (let [^js overlay (overlay-el)
-        ^js host    (host-el)]
-    (when (and overlay host)
-      (let [sel-id (get-in @state/app-state [:selection :id])
-            ^js el (canvas/dom-for-id sel-id)
-            node   (selected-node)
-            mode   (when (and node (not= "root" sel-id))
-                     (resize-mode-for-node node))]
-        (if el
-          (do (show! overlay el host)
-              (if mode
-                (.setAttribute overlay "data-resize-mode" (name mode))
-                (.removeAttribute overlay "data-resize-mode")))
-          (hide! overlay))))))
+  (let [^js host (host-el)]
+    (when host
+      (let [entries (selection-entries)
+            n       (count entries)
+            single? (= n 1)]
+        (ensure-pool-size! n)
+        (let [^js p (pool)]
+          (dotimes [i n]
+            (let [{:keys [id el node]} (nth entries i)
+                  ^js o (aget p i)
+                  primary? (zero? i)]
+              (show! o el host)
+              (if (and primary? single? (not= "root" id))
+                (let [mode (resize-mode-for-node node)]
+                  (if mode
+                    (.setAttribute o "data-resize-mode" (name mode))
+                    (.removeAttribute o "data-resize-mode")))
+                (when primary? (.removeAttribute o "data-resize-mode")))))
+          ;; Hide pool entries that are no longer needed.
+          (loop [i n]
+            (when (< i (.-length p))
+              (hide! (aget p i))
+              (recur (inc i)))))))))
 
 (declare on-resize-move! on-resize-up!)
 
@@ -245,9 +312,11 @@
 
 (defn- start-resize!
   [^js e handle-str]
-  (let [sel-id (get-in @state/app-state [:selection :id])
-        node   (selected-node)
-        ^js el (canvas/dom-for-id sel-id)
+  (let [sel-id (state/single-selected-id @state/app-state)
+        node   (when sel-id
+                 (m/get-node (:document @state/app-state)
+                             (canvas/canonical-node-id sel-id)))
+        ^js el (when sel-id (canvas/dom-for-id sel-id))
         handle (keyword handle-str)
         mode   (when node (resize-mode-for-node node))]
     (when (and node el mode
@@ -316,24 +385,20 @@
      (js/requestAnimationFrame refresh!))))
 
 (defn install!
-  "Mount the selection overlay inside `canvas-host-el`. Creates the
-   overlay element, appends it to the host, installs a watcher on
-   `state/app-state` that fires on selection / document changes, and
-   wires a window resize listener for layout-shift cases. Safe to
-   call once at app startup."
+  "Mount the selection overlay pool inside `canvas-host-el`. Seeds the
+   pool with one primary overlay (handles attached), installs a
+   watcher on `state/app-state` that fires on selection / document
+   changes, and wires a window resize listener for layout-shift
+   cases. Safe to call once at app startup."
   [^js canvas-host-el]
-  (let [overlay (js/document.createElement "div")]
-    (.setAttribute overlay "class" "bareforge-selection-overlay")
-    (.setAttribute overlay "data-hidden" "")
-    (.appendChild canvas-host-el overlay)
-    (unchecked-set overlay-state "el"   overlay)
-    (unchecked-set overlay-state "host" canvas-host-el)
-    (build-handles! overlay)
-    (schedule-refresh!)
-    (add-watch state/app-state ::selection-overlay
-               (fn [_ _ old-state new-state]
-                 (when (or (not= (:selection old-state) (:selection new-state))
-                           (not= (:document  old-state) (:document  new-state)))
-                   (schedule-refresh!))))
-    (.addEventListener js/window "resize"
-                       (fn [_] (schedule-refresh!)))))
+  (unchecked-set overlay-state "host" canvas-host-el)
+  (unchecked-set overlay-state "pool" #js [])
+  (create-overlay! true)
+  (schedule-refresh!)
+  (add-watch state/app-state ::selection-overlay
+             (fn [_ _ old-state new-state]
+               (when (or (not= (:selection old-state) (:selection new-state))
+                         (not= (:document  old-state) (:document  new-state)))
+                 (schedule-refresh!))))
+  (.addEventListener js/window "resize"
+                     (fn [_] (schedule-refresh!))))

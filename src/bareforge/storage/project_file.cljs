@@ -66,7 +66,7 @@
            (-> s
                (assoc    :document  (:document parsed))
                (assoc    :theme     (or (:theme parsed) (:theme s)))
-               (assoc    :selection nil)
+               (assoc    :selection [])
                (assoc-in [:history :past]   [])
                (assoc-in [:history :future] [])
                (assoc    :dirty?    false)

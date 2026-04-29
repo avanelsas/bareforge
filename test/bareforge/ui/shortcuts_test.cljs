@@ -219,6 +219,158 @@
     (is (= :noop
            (k/dispatch (assoc free-selected :key "ArrowLeft" :meta? true))))))
 
+;; --- duplicate ----------------------------------------------------------
+
+(def ^:private with-selection
+  (assoc base
+         :has-selection? true
+         :selection-id   "n_3"))
+
+(deftest dispatch-cmd-d-duplicates
+  (is (= :duplicate
+         (k/dispatch (assoc with-selection :key "d" :meta? true)))))
+
+(deftest dispatch-cmd-d-noop-without-selection
+  (is (= :noop
+         (k/dispatch (assoc base :key "d" :meta? true)))))
+
+(deftest dispatch-cmd-d-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "d" :meta? true
+                            :tag-name "INPUT")))))
+
+(deftest dispatch-cmd-shift-d-is-noop
+  (testing "Cmd+Shift+D is reserved (browser bookmark variants);
+            we only bind plain Cmd+D"
+    (is (= :noop
+           (k/dispatch (assoc with-selection :key "d" :meta? true :shift? true))))))
+
+;; --- wrap-in ------------------------------------------------------------
+
+(deftest dispatch-cmd-g-wraps-in-x-container
+  (is (= [:wrap-in "x-container"]
+         (k/dispatch (assoc with-selection :key "g" :meta? true)))))
+
+(deftest dispatch-cmd-g-noop-without-selection
+  (is (= :noop
+         (k/dispatch (assoc base :key "g" :meta? true)))))
+
+(deftest dispatch-cmd-g-noop-on-root
+  (testing "wrapping root makes no sense — handled by the dispatch
+            guard, mirroring the :delete pattern"
+    (is (= :noop
+           (k/dispatch (assoc with-selection :key "g" :meta? true
+                              :selection-id "root"))))))
+
+(deftest dispatch-cmd-g-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "g" :meta? true
+                            :tag-name "X-SEARCH-FIELD")))))
+
+(deftest dispatch-cmd-shift-g-prompts
+  (is (= :wrap-in-prompt
+         (k/dispatch (assoc with-selection :key "g" :meta? true :shift? true))))
+  (is (= :wrap-in-prompt
+         (k/dispatch (assoc with-selection :key "G" :meta? true :shift? true)))))
+
+(deftest dispatch-cmd-shift-g-noop-on-root
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "g" :meta? true :shift? true
+                            :selection-id "root")))))
+
+;; --- copy / paste attrs -------------------------------------------------
+
+(deftest dispatch-cmd-opt-c-copies-attrs
+  (is (= :copy-attrs
+         (k/dispatch (assoc with-selection :key "c" :meta? true :alt? true)))))
+
+(deftest dispatch-cmd-opt-c-noop-on-root
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "c" :meta? true :alt? true
+                            :selection-id "root")))))
+
+(deftest dispatch-cmd-opt-c-noop-without-selection
+  (is (= :noop
+         (k/dispatch (assoc base :key "c" :meta? true :alt? true)))))
+
+(deftest dispatch-plain-cmd-c-is-noop
+  (testing "plain Cmd-C still falls through to the browser's native copy
+            so users can copy text from inspector inputs / layers panel"
+    (is (= :noop
+           (k/dispatch (assoc with-selection :key "c" :meta? true))))))
+
+(deftest dispatch-cmd-opt-v-pastes-attrs
+  (is (= :paste-attrs
+         (k/dispatch (assoc with-selection :key "v" :meta? true :alt? true)))))
+
+(deftest dispatch-cmd-opt-v-noop-without-selection
+  (is (= :noop
+         (k/dispatch (assoc base :key "v" :meta? true :alt? true)))))
+
+(deftest dispatch-cmd-opt-c-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "c" :meta? true :alt? true
+                            :tag-name "INPUT")))))
+
+(deftest dispatch-cmd-opt-v-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc with-selection :key "v" :meta? true :alt? true
+                            :tag-name "X-TEXT-FIELD")))))
+
+(deftest dispatch-cmd-opt-c-matches-macos-modified-key
+  (testing "On macOS US layout Option+C produces 'ç', so dispatch must
+            also accept the physical .code 'KeyC' as the letter source.
+            We supply the modified key — the matching .code value
+            should still resolve the action."
+    (is (= :copy-attrs
+           (k/dispatch (assoc with-selection
+                              :key "ç" :code "KeyC"
+                              :meta? true :alt? true))))
+    (is (= :paste-attrs
+           (k/dispatch (assoc with-selection
+                              :key "√" :code "KeyV"
+                              :meta? true :alt? true))))))
+
+;; --- cheat sheet --------------------------------------------------------
+
+(deftest dispatch-question-mark-shows-shortcuts
+  (is (= :show-shortcuts
+         (k/dispatch (assoc base :key "?")))))
+
+(deftest dispatch-question-mark-ignored-in-editable
+  (testing "typing '?' into an inspector input shouldn't open the cheat sheet"
+    (is (= :noop
+           (k/dispatch (assoc base :key "?" :tag-name "X-SEARCH-FIELD"))))))
+
+(deftest dispatch-question-mark-ignored-with-meta
+  (is (= :noop
+         (k/dispatch (assoc base :key "?" :meta? true)))))
+
+(deftest dispatch-cmd-k-shows-command-palette
+  (is (= :show-command-palette
+         (k/dispatch (assoc base :key "k" :meta? true)))))
+
+(deftest dispatch-cmd-k-ignored-in-editable
+  (is (= :noop
+         (k/dispatch (assoc base :key "k" :meta? true :tag-name "INPUT")))))
+
+(deftest dispatch-cmd-shift-k-is-noop
+  (is (= :noop
+         (k/dispatch (assoc base :key "k" :meta? true :shift? true)))))
+
+;; --- shortcut-info coverage --------------------------------------------
+
+(deftest shortcut-info-has-known-categories
+  (let [valid (set (map first k/category-labels))]
+    (doseq [{:keys [category]} k/shortcut-info]
+      (is (contains? valid category)
+          (str "shortcut-info entry uses unknown category " category)))))
+
+(deftest shortcut-info-non-empty
+  (is (pos? (count k/shortcut-info)))
+  (is (every? :keys  k/shortcut-info))
+  (is (every? :label k/shortcut-info)))
+
 ;; --- coalesce? -----------------------------------------------------------
 
 (def ^:private last-rec

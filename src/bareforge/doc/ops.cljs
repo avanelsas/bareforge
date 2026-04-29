@@ -56,6 +56,22 @@
             slot-path* (vec (butlast node-path))]
         (update-in doc slot-path* vec-remove idx)))))
 
+(defn remove-many
+  "Remove every id in `ids` (and their subtrees). Idempotent against
+   ids that disappear partway through (e.g. removing a parent
+   cascades-remove its descendants — a later id in the same set just
+   becomes a no-op). Skips root and skips already-missing paths so
+   the op is safe to feed an unfiltered selection vector."
+  [doc ids]
+  (reduce (fn [d id]
+            (let [p (m/path-to d id)]
+              (cond
+                (nil? p)         d
+                (= p [:root])    d
+                :else            (remove d id))))
+          doc
+          ids))
+
 (defn move
   "Move an existing node to a new parent/slot/idx. Moving a node under its
    own subtree is an error. Note: when moving within the same slot, the
@@ -76,6 +92,105 @@
     (update-in removed (slot-vec-path pt new-slot)
                (fnil vec-insert []) new-idx node)))
 
+(defn- assign-fresh-ids
+  "Pure: walk `node` and its slots subtree, assigning a fresh id to
+   every node. Returns `[renamed-node next-id-counter]`. Used by
+   `duplicate` to clone a subtree without violating the document's
+   id-uniqueness invariant — every id in the cloned subtree comes
+   from the same `(ids/gen)` stream as a fresh insertion would."
+  [node next-id]
+  (let [[new-id next1] (ids/gen next-id)
+        with-id        (assoc node :id new-id)]
+    (if-let [slots (:slots node)]
+      (let [[new-slots final-id]
+            (reduce-kv
+             (fn [[acc nid] slot-name children]
+               (let [[chs nid'] (reduce
+                                 (fn [[chs cnid] child]
+                                   (let [[c' cnid'] (assign-fresh-ids child cnid)]
+                                     [(conj chs c') cnid']))
+                                 [[] nid]
+                                 children)]
+                 [(assoc acc slot-name chs) nid']))
+             [{} next1]
+             slots)]
+        [(assoc with-id :slots new-slots) final-id])
+      [with-id next1])))
+
+(defn duplicate
+  "Insert a deep clone of `id` (the entire subtree, every descendant
+   re-ided) as the next sibling. Root cannot be duplicated. Throws
+   when `id` is missing or refers to root. Returns
+   `{:doc :id}` with the top-level clone's new id."
+  [doc id]
+  (let [info (m/parent-of doc id)]
+    (when (nil? info)
+      (throw (ex-info "duplicate: cannot duplicate root or missing node"
+                      {:id id})))
+    (let [node            (m/get-node doc id)
+          [renamed next1] (assign-fresh-ids node (:next-id doc 0))
+          {:keys [parent-id slot index]} info
+          parent-path     (m/path-to doc parent-id)]
+      {:doc (-> doc
+                (assoc :next-id next1)
+                (update-in (slot-vec-path parent-path slot)
+                           (fnil vec-insert []) (inc index) renamed))
+       :id  (:id renamed)})))
+
+(defn duplicate-many
+  "Duplicate every id in `ids`, in input order. Returns
+   `{:doc :ids}` where `:ids` is a vector of the new top-level clone
+   ids in the same order — the natural new selection after a
+   multi-duplicate. Ids that no longer exist (or refer to root) are
+   silently skipped so the op is safe to feed an unfiltered selection
+   vector."
+  [doc ids]
+  (reduce (fn [{:keys [doc ids] :as acc} id]
+            (let [info (m/parent-of doc id)]
+              (if (nil? info)
+                acc
+                (let [{doc' :doc new-id :id} (duplicate doc id)]
+                  {:doc doc' :ids (conj ids new-id)}))))
+          {:doc doc :ids []}
+          ids))
+
+(defn wrap-many
+  "Wrap a set of sibling nodes in a fresh `tag` node, inserted at the
+   position of the lowest-indexed sibling. The selected ids must
+   share a parent and slot — otherwise the op is a no-op. Original
+   document order is preserved inside the wrapper's `default` slot.
+   Returns `{:doc :id}` where `:id` is the new wrapper's id, or nil
+   when the op was a no-op."
+  [doc ids tag]
+  (let [infos (->> ids
+                   (keep (fn [id]
+                           (when-let [i (m/parent-of doc id)]
+                             (assoc i :child-id id))))
+                   vec)]
+    (cond
+      (empty? infos)
+      {:doc doc :id nil}
+
+      (not= (count infos) (count ids))
+      ;; At least one id was missing or referred to root; refuse to
+      ;; wrap a partial set rather than silently dropping nodes.
+      {:doc doc :id nil}
+
+      (not (apply = (map (juxt :parent-id :slot) infos)))
+      {:doc doc :id nil}
+
+      :else
+      (let [{:keys [parent-id slot]} (first infos)
+            ordered     (sort-by :index infos)
+            insert-idx  (:index (first ordered))
+            {doc' :doc wrap-id :id}
+            (insert-new doc parent-id slot insert-idx tag)
+            wrapped (reduce (fn [d [i {child-id :child-id}]]
+                              (move d child-id wrap-id "default" i))
+                            doc'
+                            (map-indexed vector ordered))]
+        {:doc wrapped :id wrap-id}))))
+
 (defn- at [doc id]
   (or (m/path-to doc id)
       (throw (ex-info "node not found" {:id id}))))
@@ -93,6 +208,53 @@
 (defn unset-attr [doc id k]   (update-in doc (conj (at doc id) :attrs) dissoc k))
 (defn set-prop   [doc id k v] (assoc-in  doc (conj (at doc id) :props k) v))
 (defn unset-prop [doc id k]   (update-in doc (conj (at doc id) :props) dissoc k))
+
+(defn set-attrs
+  "Apply a map of attribute name → value to one node in a single
+   update. Nil values dispatch to `unset-attr` so blanket-pasting a
+   sparse clipboard clears any keys that were absent on the source.
+   Used by attribute paste; safe to call with an empty map (no-op)."
+  [doc id attr-map]
+  (reduce-kv (fn [d k v]
+               (if (nil? v)
+                 (unset-attr d id k)
+                 (set-attr d id k v)))
+             doc
+             (or attr-map {})))
+
+(defn set-props
+  "Counterpart to `set-attrs` for boolean / JS-side properties stored
+   under `:props`. Keys are keywords. Nil values unset."
+  [doc id prop-map]
+  (reduce-kv (fn [d k v]
+               (if (nil? v)
+                 (unset-prop d id k)
+                 (set-prop d id k v)))
+             doc
+             (or prop-map {})))
+
+(defn set-attrs-many
+  "Apply `attr-map` to every id in `ids` in a single document update.
+   Foundation for multi-select inspector edit — one user input
+   becomes one commit covering N nodes. Skips ids that no longer
+   exist so an unfiltered selection vector is safe."
+  [doc ids attr-map]
+  (reduce (fn [d id]
+            (if (m/path-to d id)
+              (set-attrs d id attr-map)
+              d))
+          doc
+          (or ids [])))
+
+(defn set-props-many
+  "Counterpart of `set-attrs-many` for boolean props."
+  [doc ids prop-map]
+  (reduce (fn [d id]
+            (if (m/path-to d id)
+              (set-props d id prop-map)
+              d))
+          doc
+          (or ids [])))
 (defn set-text   [doc id t]   (assoc-in  doc (conj (at doc id) :text) t))
 
 (defn set-inner-html

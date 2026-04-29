@@ -7,6 +7,7 @@
             [bareforge.render.selection :as selection]
             [bareforge.render.slot-strips :as slot-strips]
             [bareforge.state :as state]
+            [bareforge.ui.command-palette :as command-palette]
             [bareforge.ui.inspector :as inspector]
             [bareforge.ui.layers :as layers]
             [bareforge.ui.palette :as palette]
@@ -31,10 +32,14 @@
   (let [theme-panel     (theme-editor/create)
         templates-panel (templates/create)
         tour-el         (welcome-tour/create)
-        toolbar-el      (toolbar/create
-                         {:on-theme-toggle     #(theme-editor/toggle! theme-panel)
-                          :on-templates-toggle #(templates/toggle! templates-panel)
-                          :on-welcome-tour     welcome-tour/open!})
+        ;; Thunks shared between the toolbar buttons and the Cmd-K
+        ;; command palette. Define once so a future binding
+        ;; (e.g. closing both panels) doesn't drift between surfaces.
+        chrome-thunks   {:on-theme-toggle     #(theme-editor/toggle! theme-panel)
+                         :on-templates-toggle #(templates/toggle! templates-panel)
+                         :on-welcome-tour     welcome-tour/open!}
+        _               (command-palette/install! chrome-thunks)
+        toolbar-el      (toolbar/create chrome-thunks)
         palette-el      (palette/create {:on-drag-start drag/start-from-palette!})
         layers-el       (layers/create)
         canvas-host     (u/el :div {:id    "bareforge-canvas"
