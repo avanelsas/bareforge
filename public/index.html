@@ -340,6 +340,15 @@
       color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
+    /* Numeric labels become drag-to-scrub handles. The `is-scrubbable`
+       class is added by `pointer-scrub!` only when the widget exposes
+       a scrub spec, so non-numeric labels keep their default cursor. */
+    .inspector-field-label.is-scrubbable {
+      cursor: ew-resize;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
     .inspector-field-widget { width: 100%; }
     /* Compact x-color-picker for the Inspector. Halves the main
        colour-area height and tightens the strip heights + gap so a

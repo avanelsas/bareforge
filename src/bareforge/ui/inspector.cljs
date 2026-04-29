@@ -153,6 +153,101 @@
   (or (some-> e .-detail (.-value))
       (some-> e .-target .-value)))
 
+;; --- numeric drag (M2.1) -----------------------------------------------
+
+(defn- ^js attach-scrub-meta!
+  "Stash a scrub spec on a widget element. `field-row` reads it back
+   to wire a horizontal-drag scrubber on the row's label. Spec map:
+   `{:read-fn :commit-fn! :step}`. Returns the element for thread-
+   friendly use in builder pipelines."
+  [^js el spec]
+  (set! (.-bareforgeScrub el) spec)
+  el)
+
+(defn- read-scrub-meta [^js el]
+  (when el (.-bareforgeScrub el)))
+
+(defonce ^:private scrub-state
+  ;; One global drag-in-flight tracker is enough — only one inspector
+  ;; row can be scrubbed at a time, and a label captures the pointer
+  ;; so other handlers don't compete.
+  #js {:active? false
+       :start-x 0
+       :start-val 0
+       :first? true
+       :pointer-id nil
+       :label nil
+       :input nil
+       :commit-fn nil
+       :step 1})
+
+(defn- on-scrub-move! [^js e]
+  (when (.-active? scrub-state)
+    (.preventDefault e)
+    (let [dx        (- (.-clientX e) (.-start-x scrub-state))
+          step-px   (.-step scrub-state)
+          mult      (if (.-shiftKey e) 10 1)
+          start-val (.-start-val scrub-state)
+          new-val   (+ start-val (* dx step-px mult))
+          ;; Snap to an integer when the step is integer-valued; for
+          ;; sub-unit steps fall through with the raw float.
+          rounded   (if (zero? (mod step-px 1))
+                      (js/Math.round new-val)
+                      new-val)
+          ^js input (.-input scrub-state)
+          first?    (.-first? scrub-state)
+          commit-fn (.-commit-fn scrub-state)]
+      (commit-fn rounded first?)
+      (when input (u/set-attr! input :value (str rounded)))
+      (when first? (set! (.-first? scrub-state) false)))))
+
+(defn- end-scrub! []
+  (let [^js label (.-label scrub-state)
+        pid       (.-pointer-id scrub-state)]
+    (when (and label pid)
+      (try (.releasePointerCapture label pid) (catch :default _ nil)))
+    (set! (.-active? scrub-state) false)
+    (set! (.-label scrub-state) nil)
+    (set! (.-input scrub-state) nil)
+    (set! (.-commit-fn scrub-state) nil)
+    (set! (.-pointer-id scrub-state) nil)
+    (.removeEventListener js/window "pointermove" on-scrub-move!)
+    (.removeEventListener js/window "pointerup"   end-scrub!)
+    (.removeEventListener js/window "pointercancel" end-scrub!)))
+
+(defn- pointer-scrub!
+  "Wire pointerdown on `label-el` so a horizontal drag scrubs the
+   numeric value of `input-el`. `read-fn` returns the current numeric
+   value (nil to suppress the gesture). `commit-fn!` is called as
+   `(new-val first?)`; the first call pushes a fresh history entry
+   via `state/commit!`, every later call uses `state/commit-coalesced!`
+   so the whole drag undoes as a single step. Shift multiplies the
+   step by 10."
+  [^js label-el ^js input-el read-fn commit-fn! step]
+  (.. label-el -classList (add "is-scrubbable"))
+  (u/on! label-el :pointerdown
+         (fn [^js e]
+           (let [v (read-fn)]
+             (when (number? v)
+               (.preventDefault e)
+               (try (.setPointerCapture label-el (.-pointerId e))
+                    (catch :default _ nil))
+               (set! (.-active? scrub-state)    true)
+               (set! (.-start-x scrub-state)    (.-clientX e))
+               (set! (.-start-val scrub-state)  v)
+               (set! (.-first? scrub-state)     true)
+               (set! (.-pointer-id scrub-state) (.-pointerId e))
+               (set! (.-label scrub-state)      label-el)
+               (set! (.-input scrub-state)      input-el)
+               (set! (.-commit-fn scrub-state)  commit-fn!)
+               (set! (.-step scrub-state)       (or step 1))
+               ;; Window-level move/up means the drag survives the
+               ;; pointer leaving the label, which is the natural
+               ;; gesture (drag continues until release).
+               (.addEventListener js/window "pointermove"   on-scrub-move!)
+               (.addEventListener js/window "pointerup"     end-scrub!)
+               (.addEventListener js/window "pointercancel" end-scrub!))))))
+
 (defn- read-event-checked ^js [^js e]
   (let [d (.-detail e)]
     (cond
@@ -206,18 +301,37 @@
 
 (defn- build-search-field [node prop spec]
   (let [transform (:transform prop)
+        numeric?  (= "number" (:type spec))
         el        (-> (u/el :x-search-field
                             (cond-> {:class "inspector-field-widget"}
-                              (= "number" (:type spec)) (assoc :type "number")))
+                              numeric? (assoc :type "number")))
                       (tag-widget! (:name prop) "text" transform))
-        current   (current-value node prop)]
+        current   (current-value node prop)
+        node-id   (:id node)
+        attr-name (:name prop)]
     (when current (u/set-attr! el :value current))
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)
                    v (if transform (transform-for-commit transform v) v)]
-               (commit-attr! (:id node) (:name prop) v))))
-    el))
+               (commit-attr! node-id attr-name v))))
+    (cond-> el
+      numeric?
+      (attach-scrub-meta!
+        {:read-fn   (fn []
+                      (let [doc (:document @state/app-state)
+                            n   (m/get-node doc node-id)
+                            raw (current-value n prop)]
+                        (when (and raw (not= "" raw))
+                          (let [n (js/parseFloat raw)]
+                            (when-not (js/isNaN n) n)))))
+         :commit-fn! (fn [new-val first?]
+                       (let [doc  (:document @state/app-state)
+                             doc' (ops/set-attr doc node-id attr-name (str new-val))]
+                         (if first?
+                           (state/commit! doc')
+                           (state/commit-coalesced! doc'))))
+         :step       1}))))
 
 (defn- build-widget [node prop]
   (let [spec (editor-spec prop)]
@@ -314,19 +428,39 @@
 (defn- build-free-coord-field
   "Numeric/length editor for one of the :layout :x :y :w :h fields.
    Most useful when the node's placement is :free, but shown
-   unconditionally so users can pre-fill coordinates before toggling."
+   unconditionally so users can pre-fill coordinates before toggling.
+   Free-coord fields always store numbers (the reconciler turns them
+   into px lengths), so the row is uniformly scrubbable."
   [node layout-key placeholder]
   (let [el      (-> (u/el :x-search-field
                           {:class "inspector-field-widget"
                            :placeholder placeholder})
                     (tag-widget! (str "__layout__/" (name layout-key)) "layout"))
-        raw     (get-in node [:layout layout-key])]
+        raw     (get-in node [:layout layout-key])
+        node-id (:id node)]
     (when raw (u/set-attr! el :value (str raw)))
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)]
-               (commit-with! ops/set-layout (:id node) layout-key (parse-length-value v)))))
-    el))
+               (commit-with! ops/set-layout node-id layout-key (parse-length-value v)))))
+    (attach-scrub-meta!
+      el
+      {:read-fn    (fn []
+                     (let [doc (:document @state/app-state)
+                           n   (get-in (m/get-node doc node-id)
+                                       [:layout layout-key])]
+                       (cond
+                         (number? n) n
+                         (string? n) (let [parsed (js/parseFloat n)]
+                                       (when-not (js/isNaN parsed) parsed))
+                         :else       nil)))
+       :commit-fn! (fn [new-val first?]
+                     (let [doc  (:document @state/app-state)
+                           doc' (ops/set-layout doc node-id layout-key new-val)]
+                       (if first?
+                         (state/commit! doc')
+                         (state/commit-coalesced! doc'))))
+       :step       1})))
 
 (defn- build-layout-textarea
   "Multi-line editor for the free-form `:extra-style` layout field.
@@ -696,10 +830,14 @@
     container))
 
 (defn- field-row-with-binding [label widget node prop all-fields]
-  (u/el :div {:class "inspector-field"}
-        [(u/set-text! (u/el :div {:class "inspector-field-label"}) label)
-         widget
-         (build-bind-toggle node prop all-fields)]))
+  (let [label-el (u/set-text! (u/el :div {:class "inspector-field-label"}) label)]
+    (when-let [scrub (read-scrub-meta widget)]
+      (pointer-scrub! label-el widget
+                      (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
+    (u/el :div {:class "inspector-field"}
+          [label-el
+           widget
+           (build-bind-toggle node prop all-fields)])))
 
 ;; --- section builders ----------------------------------------------------
 
@@ -736,9 +874,12 @@
           [label-el body-el])))
 
 (defn- field-row [label widget]
-  (u/el :div {:class "inspector-field"}
-        [(u/set-text! (u/el :div {:class "inspector-field-label"}) label)
-         widget]))
+  (let [label-el (u/set-text! (u/el :div {:class "inspector-field-label"}) label)]
+    (when-let [scrub (read-scrub-meta widget)]
+      (pointer-scrub! label-el widget
+                      (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
+    (u/el :div {:class "inspector-field"}
+          [label-el widget])))
 
 (defn- attributes-section [{:keys [node meta]} all-fields]
   (let [props (:properties meta)
