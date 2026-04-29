@@ -194,21 +194,30 @@
 
 (defn- attach-datalist-to-shadow-input!
   "BareDOM's `x-search-field` wraps a real `<input part=\"input\">` in
-   its open shadow root, but native HTML datalist autocomplete only
-   activates when `list=` is on the actual `<input>` — not on the
-   custom-element host. Reach into the shadow root on the next
-   animation frame (after `connectedCallback` has populated it) and
-   set `list=` on the inner input. No-op if the shadow root never
-   appears (e.g. component rebuilt mid-flight). Safe to call before
-   the element is in the DOM."
+   its open shadow root. Two things are needed for native datalist
+   autocomplete to work in that setup:
+
+   1. `list=` has to be on the actual `<input>`, not the custom-element
+      host (BareDOM doesn't observe / forward `list`).
+   2. The referenced `<datalist>` has to live in the same tree as the
+      input. The HTML spec scopes the `list` lookup to the input's
+      containing root, so a body-level datalist is invisible to an
+      input inside a shadow root.
+
+   We clone the global datalist (mounted by `install-token-datalists!`)
+   into the field's shadow root on the next animation frame, and set
+   `list=` on the inner input. Idempotent — the clone only happens
+   when the shadow root doesn't already carry a datalist with the
+   target id."
   [^js host datalist-id]
   (letfn [(try-attach! []
             (if-let [^js sr (.-shadowRoot host)]
               (when-let [^js inner (.querySelector sr "[part=input]")]
+                (when-not (.querySelector sr
+                            (str "datalist[id='" datalist-id "']"))
+                  (when-let [^js src (js/document.getElementById datalist-id)]
+                    (.appendChild sr (.cloneNode src true))))
                 (.setAttribute inner "list" datalist-id))
-              ;; Shadow root not built yet; retry on next frame. One
-              ;; extra hop is enough for every BareDOM component we've
-              ;; seen — connectedCallback fires synchronously on append.
               (js/requestAnimationFrame try-attach!)))]
     (js/requestAnimationFrame try-attach!)))
 
