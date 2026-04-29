@@ -317,6 +317,20 @@
          (k/dispatch (assoc with-selection :key "v" :meta? true :alt? true
                                            :tag-name "X-TEXT-FIELD")))))
 
+(deftest dispatch-cmd-opt-c-matches-macos-modified-key
+  (testing "On macOS US layout Option+C produces 'ç', so dispatch must
+            also accept the physical .code 'KeyC' as the letter source.
+            We supply the modified key — the matching .code value
+            should still resolve the action."
+    (is (= :copy-attrs
+           (k/dispatch (assoc with-selection
+                              :key "ç" :code "KeyC"
+                              :meta? true :alt? true))))
+    (is (= :paste-attrs
+           (k/dispatch (assoc with-selection
+                              :key "√" :code "KeyV"
+                              :meta? true :alt? true))))))
+
 ;; --- coalesce? -----------------------------------------------------------
 
 (def ^:private last-rec

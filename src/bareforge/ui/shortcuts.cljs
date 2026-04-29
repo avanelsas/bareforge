@@ -97,10 +97,17 @@
    path to these actions. Cmd+D duplicates the current selection;
    Cmd+G wraps it in an x-container, with Cmd+Shift+G prompting
    for a wrapper tag from a small whitelist."
-  [{:keys [key meta? alt? shift? has-selection? selection-id placement
+  [{:keys [key code meta? alt? shift? has-selection? selection-id placement
            text-editing-id]
     :as event}]
-  (let [editable? (editable-target? event)]
+  (let [editable? (editable-target? event)
+        ;; macOS US layout: Option+C produces "ç", Option+V produces
+        ;; "√" — the literal `key` no longer matches. `code` is the
+        ;; physical-key identifier ("KeyC", "KeyV"), unaffected by
+        ;; modifiers, so we match either to keep the gesture portable
+        ;; across macOS / Linux / Windows.
+        c-letter? (or (= "c" key) (= "KeyC" code))
+        v-letter? (or (= "v" key) (= "KeyV" code))]
     (cond
       (and meta? (= "z" key) (not shift?) (not editable?))
       :undo
@@ -117,13 +124,13 @@
       (and meta? (= "n" key) (not shift?) (not editable?))
       :new
 
-      (and meta? alt? (= "c" key) (not shift?)
+      (and meta? alt? c-letter? (not shift?)
            has-selection?
            (not= "root" selection-id)
            (not editable?))
       :copy-attrs
 
-      (and meta? alt? (= "v" key) (not shift?)
+      (and meta? alt? v-letter? (not shift?)
            has-selection?
            (not editable?))
       :paste-attrs
@@ -190,6 +197,7 @@
         node    (when doc-id (m/get-node (:document @state/app-state) doc-id))
         any-sel? (seq (state/selected-ids @state/app-state))]
     {:key               (.-key e)
+     :code              (.-code e)
      :meta?             (or (.-metaKey e) (.-ctrlKey e))
      :alt?              (.-altKey e)
      :shift?            (.-shiftKey e)
