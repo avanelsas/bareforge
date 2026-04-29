@@ -764,6 +764,13 @@
       pointer-events: none;
       user-select: none;
     }
+    /* Per-tag drop hint (M3.6) — overrides the generic placeholder
+       when the canvas reconciler stamped a `data-bareforge-hint`
+       attribute (see meta/hints.cljs for the data table). The more
+       specific selector wins over the generic rule above. */
+    .canvas-host [data-bareforge-container][data-bareforge-hint]:empty::before {
+      content: attr(data-bareforge-hint);
+    }
     /* Containers that host an absolute :background child get this
        class from the reconciler so they form a positioned ancestor
        without touching their own inline style. `isolation: isolate`

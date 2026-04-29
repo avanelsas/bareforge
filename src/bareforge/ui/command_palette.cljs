@@ -50,7 +50,7 @@
   "Wrap-in tags offered by the palette — must be a subset of
    shortcuts/wrap-tag-whitelist so the keyboard prompt and the
    palette accept the same set."
-  ["x-container" "x-grid" "x-card" "x-flex"])
+  ["x-container" "x-grid" "x-card" "x-navbar"])
 
 (defn- wrap-commands []
   (mapv (fn [tag]

@@ -313,7 +313,7 @@
    multiple children. Adding a new tag here requires it to be a real
    container in the registry, otherwise wrap-many's reparent step
    would fail."
-  #{"x-container" "x-grid" "x-card" "x-flex"})
+  #{"x-container" "x-grid" "x-card" "x-navbar"})
 
 (defn- selected-doc-ids
   "Read the current selection, canonicalise each id, dedupe, and drop
@@ -395,7 +395,7 @@
    types something off-list."
   []
   (let [input (js/window.prompt
-                "Wrap selection in: x-container, x-grid, x-card, x-flex"
+                "Wrap selection in: x-container, x-grid, x-card, x-navbar"
                 "x-container")]
     (when (and (string? input)
                (contains? wrap-tag-whitelist input))
