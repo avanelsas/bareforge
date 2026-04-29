@@ -4,6 +4,7 @@
             [bareforge.state :as state]
             [bareforge.storage.indexeddb :as idb]
             [bareforge.ui.app :as app]
+            [bareforge.ui.inspector :as inspector]
             [bareforge.ui.welcome-tour :as welcome-tour]
             [bareforge.util.dom :as u]))
 
@@ -25,6 +26,7 @@
 (defn ^:export init
   []
   (baredom/register!)
+  (inspector/install-token-datalists!)
   (app/mount! (u/by-id "app"))
   (-> (idb/restore!)
       (.then (fn [restored?]

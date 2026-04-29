@@ -13,6 +13,7 @@
   (:require [bareforge.doc.actions :as actions]
             [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
+            [bareforge.meta.design-tokens :as tokens]
             [bareforge.meta.events :as meta-events]
             [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
@@ -156,6 +157,40 @@
 (defn- read-event-value ^js [^js e]
   (or (some-> e .-detail (.-value))
       (some-> e .-target .-value)))
+
+;; --- CSS-var autocomplete (M2.4) ----------------------------------------
+
+(def ^:private color-datalist-id  "bareforge-tokens-color")
+(def ^:private length-datalist-id "bareforge-tokens-length")
+
+(defn- ^js build-token-datalist!
+  "Build a `<datalist>` element populated with `var(--x-…)` options
+   for every token entry. Called once at install time per category."
+  [^js doc id entries]
+  (let [^js dl (.createElement doc "datalist")]
+    (.setAttribute dl "id" id)
+    (doseq [{:keys [name]} entries]
+      (let [^js o (.createElement doc "option")]
+        (.setAttribute o "value" (tokens/var-of name))
+        (.appendChild dl o)))
+    dl))
+
+(defn install-token-datalists!
+  "Mount one shared `<datalist>` per token category at the top of the
+   document body. Inspector widgets reference these via `list=` so
+   typing `var(` in a colour or length field surfaces native browser
+   autocomplete with theme tokens. Idempotent — calling twice replaces
+   the existing datalists rather than duplicating them."
+  []
+  (let [^js doc js/document
+        ^js body (.-body doc)]
+    (doseq [id [color-datalist-id length-datalist-id]]
+      (when-let [^js prev (.getElementById doc id)]
+        (.removeChild (.-parentNode prev) prev)))
+    (.appendChild body (build-token-datalist! doc color-datalist-id
+                                              (tokens/tokens-for :color)))
+    (.appendChild body (build-token-datalist! doc length-datalist-id
+                                              (tokens/tokens-for :length)))))
 
 ;; --- numeric drag (M2.1) -----------------------------------------------
 
@@ -306,9 +341,14 @@
 (defn- build-search-field [node prop spec]
   (let [transform (:transform prop)
         numeric?  (= "number" (:type spec))
+        ;; Surface BareDOM theme tokens via a native datalist when the
+        ;; field is colour-shaped. The reference is the datalist's id —
+        ;; install-token-datalists! mounts it once on app boot.
+        color?    (= :color (:kind prop))
         el        (-> (u/el :x-search-field
                             (cond-> {:class "inspector-field-widget"}
-                              numeric? (assoc :type "number")))
+                              numeric? (assoc :type "number")
+                              color?   (assoc :list color-datalist-id)))
                       (tag-widget! (:name prop) "text" transform))
         current   (current-value node prop)
         node-id   (:id node)
@@ -385,11 +425,13 @@
 (defn- build-layout-field
   "Editor for one of the generic dimension layout fields
    (:width / :height / :padding / :margin). Stored in the node's
-   :layout map; reconciler turns it into inline style."
+   :layout map; reconciler turns it into inline style. Surfaces the
+   length-tokens datalist so `var(--x-space-…)` autocompletes."
   [node layout-key placeholder]
   (let [el      (-> (u/el :x-search-field
                           {:class "inspector-field-widget"
-                           :placeholder placeholder})
+                           :placeholder placeholder
+                           :list length-datalist-id})
                     (tag-widget! (str "__layout__/" (name layout-key)) "layout"))
         current (get-in node [:layout layout-key])]
     (when current (u/set-attr! el :value current))
@@ -1112,9 +1154,11 @@
   (let [{:keys [value mixed?]} (joint-attr-value nodes prop)
         transform (:transform prop)
         numeric?  (= "number" (:type spec))
+        color?    (= :color (:kind prop))
         el        (-> (u/el :x-search-field
                             (cond-> {:class "inspector-field-widget"}
                               numeric? (assoc :type "number")
+                              color?   (assoc :list color-datalist-id)
                               mixed?   (assoc :placeholder "Mixed")))
                       (tag-widget! (:name prop) "text" transform))
         ids       (mapv :id nodes)]
