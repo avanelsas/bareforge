@@ -526,7 +526,7 @@
                                              {:attrs {"text"      "Something extraordinary is coming"
                                                       "preset"    "wave"
                                                       "animation" "scroll"
-                                                      "font-size" "3rem"}})
+                                                      "font-size" "2rem"}})
         {d :doc}             (add-text+align d "root" "default" 7 "body1"
                                              "Six years of work, one launch event. Reserve your seat or watch the teaser to see what we've been building."
                                              "center")
