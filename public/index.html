@@ -191,35 +191,8 @@
       align-items: baseline;
     }
 
-    /* --- command palette -------------------------------------------- */
-    .command-body {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      min-width: 0;
-    }
-    .command-input { width: 100%; }
-    .command-list {
-      display: flex;
-      flex-direction: column;
-      max-height: 50vh;
-      overflow: auto;
-      gap: 2px;
-    }
-    .command-row {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 12px;
-      align-items: center;
-      padding: 8px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-    .command-row:hover { background: var(--x-color-surface-hover); }
-    .command-row.is-active {
-      background: var(--x-color-surface-active);
-      outline: 1px solid var(--x-color-primary);
-    }
+    /* x-command-palette owns its own modal chrome and shadow-DOM
+       styling — no host-level CSS needed. */
     .bareforge-marquee[data-hidden] { display: none; }
     .chrome[data-mode="preview"] .bareforge-marquee { display: none; }
     .bareforge-inline-edit {
