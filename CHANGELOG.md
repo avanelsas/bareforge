@@ -8,10 +8,14 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 ## [Unreleased]
 
-Editor authoring quality-of-life. No document-model, project-file,
-or export changes — saved projects load identically, every export
-target stays at parity. Test count: 571 (up from 486), zero
-release-build warnings under Closure Advanced.
+Nothing yet.
+
+## [0.2.0] — 2026-04-29
+
+Minor release. Editor authoring quality-of-life. No document-model,
+project-file, or export changes — saved projects load identically,
+every export target stays at parity. Test count: 571 (up from 486),
+zero release-build warnings under Closure Advanced.
 
 ### Added
 
@@ -105,6 +109,14 @@ release-build warnings under Closure Advanced.
   Shift-click and marquee-drag gestures don't paint a native
   text-selection band over the rendered preview. Inline-text
   editing's textarea overlay re-enables `user-select: text`.
+
+### Verified
+
+- 571 tests / 1773 assertions / 0 failures / 0 errors.
+- `npx shadow-cljs release app` — 0 warnings under Closure Advanced.
+- `clj-kondo --lint src test scripts` — 0 errors, 0 warnings.
+- `cljfmt check` — all files formatted.
+- BareDOM 2.4.1, no upstream version bump in this release.
 
 ## [0.1.1] — 2026-04-28
 
@@ -209,6 +221,7 @@ parity across four export targets.
 - Export round-trip: every starter template exports to all four
   targets and renders in a browser.
 
-[Unreleased]: https://github.com/avanelsas/bareforge/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/avanelsas/bareforge/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/avanelsas/bareforge/releases/tag/v0.2.0
 [0.1.1]: https://github.com/avanelsas/bareforge/releases/tag/v0.1.1
 [0.1.0]: https://github.com/avanelsas/bareforge/releases/tag/v0.1.0
