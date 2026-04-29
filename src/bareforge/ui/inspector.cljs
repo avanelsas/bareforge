@@ -192,6 +192,26 @@
     (.appendChild body (build-token-datalist! doc length-datalist-id
                                               (tokens/tokens-for :length)))))
 
+(defn- attach-datalist-to-shadow-input!
+  "BareDOM's `x-search-field` wraps a real `<input part=\"input\">` in
+   its open shadow root, but native HTML datalist autocomplete only
+   activates when `list=` is on the actual `<input>` — not on the
+   custom-element host. Reach into the shadow root on the next
+   animation frame (after `connectedCallback` has populated it) and
+   set `list=` on the inner input. No-op if the shadow root never
+   appears (e.g. component rebuilt mid-flight). Safe to call before
+   the element is in the DOM."
+  [^js host datalist-id]
+  (letfn [(try-attach! []
+            (if-let [^js sr (.-shadowRoot host)]
+              (when-let [^js inner (.querySelector sr "[part=input]")]
+                (.setAttribute inner "list" datalist-id))
+              ;; Shadow root not built yet; retry on next frame. One
+              ;; extra hop is enough for every BareDOM component we've
+              ;; seen — connectedCallback fires synchronously on append.
+              (js/requestAnimationFrame try-attach!)))]
+    (js/requestAnimationFrame try-attach!)))
+
 ;; --- numeric drag (M2.1) -----------------------------------------------
 
 (defn- ^js attach-scrub-meta!
@@ -342,17 +362,19 @@
   (let [transform (:transform prop)
         numeric?  (= "number" (:type spec))
         ;; Surface BareDOM theme tokens via a native datalist when the
-        ;; field is colour-shaped. The reference is the datalist's id —
-        ;; install-token-datalists! mounts it once on app boot.
+        ;; field is colour-shaped. The list attribute has to be on the
+        ;; shadow inner `<input>`, not the custom-element host — see
+        ;; `attach-datalist-to-shadow-input!`.
         color?    (= :color (:kind prop))
         el        (-> (u/el :x-search-field
                             (cond-> {:class "inspector-field-widget"}
-                              numeric? (assoc :type "number")
-                              color?   (assoc :list color-datalist-id)))
+                              numeric? (assoc :type "number")))
                       (tag-widget! (:name prop) "text" transform))
         current   (current-value node prop)
         node-id   (:id node)
         attr-name (:name prop)]
+    (when color?
+      (attach-datalist-to-shadow-input! el color-datalist-id))
     (when current (u/set-attr! el :value current))
     (u/on! el :x-search-field-input
            (fn [^js e]
@@ -430,10 +452,10 @@
   [node layout-key placeholder]
   (let [el      (-> (u/el :x-search-field
                           {:class "inspector-field-widget"
-                           :placeholder placeholder
-                           :list length-datalist-id})
+                           :placeholder placeholder})
                     (tag-widget! (str "__layout__/" (name layout-key)) "layout"))
         current (get-in node [:layout layout-key])]
+    (attach-datalist-to-shadow-input! el length-datalist-id)
     (when current (u/set-attr! el :value current))
     (u/on! el :x-search-field-input
            (fn [^js e]
@@ -1158,10 +1180,11 @@
         el        (-> (u/el :x-search-field
                             (cond-> {:class "inspector-field-widget"}
                               numeric? (assoc :type "number")
-                              color?   (assoc :list color-datalist-id)
                               mixed?   (assoc :placeholder "Mixed")))
                       (tag-widget! (:name prop) "text" transform))
         ids       (mapv :id nodes)]
+    (when color?
+      (attach-datalist-to-shadow-input! el color-datalist-id))
     (when (and (not mixed?) value (not= "" value))
       (u/set-attr! el :value value))
     (when mixed?
