@@ -986,26 +986,31 @@
    {:id    :docs-home
     :label "Docs home"
     :category :docs
+    :theme-preset "ocean"
     :description "Three-card landing for a documentation site — getting started / recipes / architecture"
     :build docs-home}
    {:id    :changelog
     :label "Changelog"
     :category :docs
+    :theme-preset "mono-ai"
     :description "Reverse-chronological release notes with version + date headers"
     :build changelog}
    {:id    :status-page
     :label "Status page"
     :category :docs
+    :theme-preset "forest"
     :description "All-systems-operational banner + service grid + recent incidents"
     :build status-page}
    {:id    :blog-post
     :label "Blog post"
     :category :docs
+    :theme-preset "warm-mineral"
     :description "Article header with avatar / date + body paragraphs in a read-friendly width"
     :build blog-post}
    {:id    :dashboard-skeleton
     :label "Dashboard skeleton"
     :category :dashboard
+    :theme-preset "aurora"
     :description "Navbar + stat row + recent-activity card — drop in your own chart and table"
     :build dashboard-skeleton}
    {:id    :kinetic-showcase
@@ -1026,15 +1031,26 @@
 ;; --- apply ------------------------------------------------------------------
 
 (defn apply-template!
-  "Replace the current document with `template`'s build output,
-   preserving the canvas theme. Resets selection and history,
-   clears the autosave, prompts if :dirty? is true."
+  "Replace the current document with `template`'s build output.
+   Resets selection and history, clears the autosave, prompts if
+   :dirty? is true.
+
+   Theme handling:
+   - Templates that declare `:theme-preset` switch to that preset
+     (with a fresh empty `:overrides` map) so the visual rhythm of
+     the template lands as designed — `aurora` for the dashboard,
+     `warm-mineral` for the blog post, etc.
+   - Templates without `:theme-preset` preserve the user's current
+     theme, so loading e.g. an existing landing template doesn't
+     wipe theme tweaks the user already made."
   [template]
   (when (or (not (:dirty? @state/app-state))
             (js/window.confirm (str "Load \"" (:label template)
                                     "\"? Unsaved changes will be lost.")))
     (canvas/clear!)
-    (let [theme (:theme @state/app-state)
+    (let [theme (if-let [preset (:theme-preset template)]
+                  {:base-preset preset :overrides {}}
+                  (:theme @state/app-state))
           doc   ((:build template))]
       (reset! state/app-state
               (-> (state/initial-state)

@@ -1,6 +1,7 @@
 (ns bareforge.ui.templates-test
   (:require [cljs.test :refer [deftest is testing]]
-            [bareforge.ui.templates :as templates]))
+            [bareforge.ui.templates :as templates]
+            [bareforge.ui.theme-editor :as theme-editor]))
 
 (deftest every-template-has-required-fields
   (doseq [t templates/templates]
@@ -60,3 +61,14 @@
             (str (:label t)
                  " produced a doc with no children — the build thunk
                   did nothing"))))))
+
+(deftest theme-presets-are-real
+  (testing "every :theme-preset on a template names one of the eight
+            BareDOM built-in presets — drift fails the test loudly
+            instead of silently falling back to default"
+    (let [allowed (set theme-editor/presets)]
+      (doseq [t templates/templates
+              :let [p (:theme-preset t)]
+              :when p]
+        (is (contains? allowed p)
+            (str (:label t) " uses unknown theme preset " p))))))
