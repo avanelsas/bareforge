@@ -45,14 +45,43 @@ maintainer's review time. The CI workflow at
 `.github/workflows/ci.yml` enforces the same four gates;
 matching them locally first is the contract.
 
-**AI assistants: ALWAYS ask for explicit permission before
-opening a pull request.** Even when the four gates above are
-green and the work looks ready, do not run `gh pr create`
-without the maintainer's go-ahead. PR creation is a public,
-shared-state action (notifies reviewers, kicks CI, lands in the
-PR list); the maintainer wants the final call on timing, title,
-and body. Push the feature branch if needed, summarise the
-gate results, and wait for a "yes" before opening the PR.
+## NEVER open a pull request without explicit approval
+
+This is the single most-violated rule in the repo's history with
+AI-assisted contributors, so it gets its own section: **do not run
+`gh pr create` (or any equivalent) until the maintainer has
+explicitly said "open the PR" / "push and open the pr" / "go ahead
+with the PR" or similar.**
+
+Things that are NOT PR approval:
+
+- **Plan approval.** The maintainer approving a plan via
+  `ExitPlanMode` is approval to **write the code**, not to open a
+  PR. Plan approval and PR approval are separate signals.
+- **All four gates green.** Cljfmt, tests, release build, and lint
+  passing means the branch is ready to be reviewed — not that the
+  maintainer wants the review request fired right now.
+- **A previous PR was opened on a similar instruction.** Each PR
+  needs its own go-ahead. "Push and open the PR" said once is
+  approval for *that* PR, not for the next one.
+- **Auto mode being on.** Auto mode minimises interruptions for
+  routine local work; PR creation is shared-state, not local, and
+  is explicitly excluded.
+
+What to do instead when the work is ready:
+
+1. Push the feature branch (`git push -u origin <branch>`). Pushing
+   a branch is fine; only the PR creation step is gated.
+2. Summarise the work and the gate results in chat.
+3. Ask: "Ready to open the PR?" (or equivalent). Wait for a
+   yes.
+4. Only then run `gh pr create`.
+
+PR creation notifies reviewers, kicks CI on a shared runner, and
+lands in the PR list — it is irreversibly visible to anyone
+watching the repo. The maintainer wants the final call on timing,
+title, and body. The minute spent waiting for a "yes" is cheaper
+than reverting an early PR.
 
 ## After a PR is merged
 
