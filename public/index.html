@@ -512,6 +512,66 @@
       padding: 4px 4px 2px 16px;
     }
 
+    /* --- inline binding chip + popover ------------------------------- */
+    .inspector-field-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-height: 18px;
+    }
+    .inspector-bind-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 1px 6px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      font-size: 11px;
+      font-family: inherit;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
+      cursor: pointer;
+      line-height: 1.4;
+    }
+    .inspector-bind-chip:hover {
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.08));
+      color: var(--x-color-text, currentColor);
+    }
+    .inspector-bind-chip--bound {
+      border-color: var(--x-color-border, rgba(127, 127, 127, 0.3));
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.08));
+      color: var(--x-color-text, currentColor);
+      cursor: default;
+    }
+    .inspector-bind-chip-label {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      cursor: pointer;
+    }
+    .inspector-bind-chip-x {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 0 2px;
+      margin-left: 2px;
+    }
+    .inspector-bind-chip-x:hover {
+      color: var(--x-color-danger-fg, #d44);
+    }
+    .inspector-bind-popover {
+      margin-top: 2px;
+      padding: 4px;
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.3));
+      border-radius: 6px;
+      background: var(--x-color-surface, rgba(255, 255, 255, 0.04));
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+    }
+    .inspector-bind-popover[hidden] { display: none; }
+
     /* --- inspector events section ------------------------------------ */
     .inspector-event-row-wrap { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
     .inspector-event-hint { font-size: 11px; opacity: 0.55; padding-left: 2px; }

@@ -862,68 +862,98 @@
     (.appendChild wrap body)
     wrap))
 
-(defn- build-bind-toggle
-  "Bind UI for a property. Three states:
-   - Unbound: 🔗 icon opens a grouped picker panel.
-   - Picking: panel expanded in place with search + grouped sections.
-   - Bound:   shows qualified field label + × to unbind."
-  [node prop _all-fields]
-  (let [prop-name (:name prop)
-        doc       (:document @state/app-state)
-        tmpl      (enclosing-template-group doc (:id node))
-        tmpl-name (:name tmpl)
-        binding   (get-in node [:bindings prop-name])
-        container (u/el :div {:class "inspector-bind-row"})]
-    (if binding
-      (let [owner-name   (or (:owner binding)
-                             (some (fn [n]
-                                     (when (some #(= (:field binding) (:name %))
-                                                 (:fields n))
-                                       (:name n)))
-                                   (m/walk-nodes doc)))
-            label-text   (if owner-name
-                           (str "↔ " owner-name "." (field-name-str (:field binding)))
-                           (str "↔ " (field-name-str (:field binding))))
-            field-label  (u/set-text!
-                          (u/el :span {:class "inspector-bind-field"})
-                          label-text)
-            unbind-btn   (u/set-text!
-                          (u/el :x-button {:variant "ghost" :size "sm"
-                                           :class "inspector-bind-btn"})
-                          "×")]
-        (u/on! unbind-btn :press
-               (fn [_] (commit-unbind! (:id node) prop-name)))
-        (.appendChild container field-label)
-        (.appendChild container unbind-btn))
-      (let [btn (u/set-text!
-                 (u/el :x-button {:variant "ghost" :size "sm"
-                                  :class "inspector-bind-btn"
-                                  :title "Bind to a field"})
-                 "🔗")]
-        (u/on! btn :press
-               (fn [_]
-                 (.replaceChildren container)
-                 (let [pick! (fn [field-kw owner]
-                               (commit-binding! (:id node) prop-name
-                                                (name field-kw)
-                                                owner
-                                                (infer-direction (:kind prop)
-                                                                 (:tag node))))
-                       panel (build-bind-picker-panel doc tmpl-name
-                                                      (:kind prop) pick!)]
-                   (.appendChild container panel))))
-        (.appendChild container btn)))
-    container))
+(defn- bind-chip-and-popover
+  "Returns `[chip-el popover-el]`. The chip lives inline on the
+   field-label row (rounded 🔗 button when unbound, pill with the
+   bound field + × when bound). The popover is the picker panel —
+   hidden by default, expanded below the widget when the chip is
+   clicked, dismissed when a field is picked. Used for both attribute
+   bindings and text-content bindings, so the visual language is one.
+   `opts` carries `:bound? :label-text :prop-kind :on-pick :on-unbind
+   :title`; `on-pick` is invoked with `[field-kw owner-name]`."
+  [doc tmpl-name {:keys [bound? label-text prop-kind on-pick on-unbind title]}]
+  (let [popover (u/el :div {:class "inspector-bind-popover" :hidden ""})
+        close!  (fn [] (.setAttribute popover "hidden" ""))
+        open!   (fn []
+                  (.replaceChildren popover)
+                  (let [pick! (fn [field-kw owner]
+                                (close!)
+                                (on-pick field-kw owner))
+                        panel (build-bind-picker-panel doc tmpl-name
+                                                       prop-kind pick!)]
+                    (.appendChild popover panel)
+                    (.removeAttribute popover "hidden")))
+        toggle! (fn []
+                  (if (.hasAttribute popover "hidden")
+                    (open!)
+                    (close!)))]
+    (if bound?
+      (let [chip   (u/el :span {:class "inspector-bind-chip inspector-bind-chip--bound"
+                                :title (or title "Edit binding")})
+            label  (u/set-text!
+                    (u/el :span {:class "inspector-bind-chip-label"})
+                    label-text)
+            unbind (u/set-text!
+                    (u/el :button {:class "inspector-bind-chip-x"
+                                   :type  "button"
+                                   :title "Unbind"})
+                    "×")]
+        (u/on! label :click (fn [_] (toggle!)))
+        (u/on! unbind :click (fn [^js e]
+                               (.stopPropagation e)
+                               (close!)
+                               (on-unbind)))
+        (.appendChild chip label)
+        (.appendChild chip unbind)
+        [chip popover])
+      (let [chip (u/set-text!
+                  (u/el :button {:class "inspector-bind-chip"
+                                 :type  "button"
+                                 :title (or title "Bind to a field")})
+                  "🔗")]
+        (u/on! chip :click (fn [_] (toggle!)))
+        [chip popover]))))
 
-(defn- field-row-with-binding [label widget node prop all-fields]
-  (let [label-el (u/set-text! (u/el :div {:class "inspector-field-label"}) label)]
+(defn attr-binding-label
+  "Display text for a bound attribute. Walks `doc` to recover the
+   owning group name when the binding doesn't carry one (legacy
+   docs). Public so unit tests can pin the label format without
+   building a chip."
+  [doc binding]
+  (let [owner (or (:owner binding)
+                  (some (fn [n]
+                          (when (some #(= (:field binding) (:name %))
+                                      (:fields n))
+                            (:name n)))
+                        (m/walk-nodes doc)))]
+    (if owner
+      (str "↔ " owner "." (field-name-str (:field binding)))
+      (str "↔ " (field-name-str (:field binding))))))
+
+(defn- field-row-with-binding [label widget node prop _all-fields]
+  (let [doc       (:document @state/app-state)
+        prop-name (:name prop)
+        tmpl      (enclosing-template-group doc (:id node))
+        binding   (get-in node [:bindings prop-name])
+        [chip popover]
+        (bind-chip-and-popover
+         doc (:name tmpl)
+         {:bound?     (some? binding)
+          :label-text (when binding (attr-binding-label doc binding))
+          :prop-kind  (:kind prop)
+          :title      (when-not binding "Bind to a field")
+          :on-pick    (fn [field-kw owner]
+                        (commit-binding! (:id node) prop-name
+                                         (name field-kw) owner
+                                         (infer-direction (:kind prop)
+                                                          (:tag node))))
+          :on-unbind  #(commit-unbind! (:id node) prop-name)})
+        label-el  (u/set-text! (u/el :div {:class "inspector-field-label"}) label)
+        head      (u/el :div {:class "inspector-field-head"} [label-el chip])]
     (when-let [scrub (read-scrub-meta widget)]
       (pointer-scrub! label-el widget
                       (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
-    (u/el :div {:class "inspector-field"}
-          [label-el
-           widget
-           (build-bind-toggle node prop all-fields)])))
+    (u/el :div {:class "inspector-field"} [head widget popover])))
 
 ;; --- section builders ----------------------------------------------------
 
@@ -1000,65 +1030,53 @@
    (state/commit! (ops/set-text-field (:document @state/app-state)
                                       node-id field-kw owner))))
 
-(defn- build-text-content-bind
-  "🔗 bind UI for a node's text slot content. Mirrors build-bind-toggle
-   but reads/writes :text-field instead of the attribute :bindings map.
-   Opens the same grouped picker as attribute bindings — pinned
-   'Record fields' when the node is inside a template, plus a section
-   per named group that declares fields. `:text-field-owner` records
-   which group the user picked from so the display label is stable
-   when two groups share a field name."
+(defn text-bind-label
+  "Display text for a bound text-field. Walks `doc` to recover the
+   owning group name when the node doesn't carry one (legacy docs).
+   Public so unit tests can pin the label format without building
+   a chip."
+  [doc node bound]
+  (let [owner (or (:text-field-owner node)
+                  (some (fn [n]
+                          (when (some #(= bound (:name %)) (:fields n))
+                            (:name n)))
+                        (m/walk-nodes doc)))]
+    (if owner
+      (str "↔ " owner "." (field-name-str bound))
+      (str "↔ " (field-name-str bound)))))
+
+(defn- text-row
+  "Text editor + inline binding chip on the same label row. The chip
+   uses :string-short for type compatibility (every scalar renders as
+   text) and writes via `set-text-field` instead of the attribute
+   `:bindings` map."
   [node]
-  (let [doc       (:document @state/app-state)
-        tmpl      (enclosing-template-group doc (:id node))
-        tmpl-name (:name tmpl)
-        bound     (:text-field node)
-        container (u/el :div {:class "inspector-bind-row"})]
-    (if bound
-      (let [owner-name (or (:text-field-owner node)
-                           (some (fn [n]
-                                   (when (some #(= bound (:name %)) (:fields n))
-                                     (:name n)))
-                                 (m/walk-nodes doc)))
-            label-text (if owner-name
-                         (str "↔ " owner-name "." (field-name-str bound))
-                         (str "↔ " (field-name-str bound)))
-            field-lbl  (u/set-text!
-                        (u/el :span {:class "inspector-bind-field"})
-                        label-text)
-            unbind-btn (u/set-text!
-                        (u/el :x-button {:variant "ghost" :size "sm"
-                                         :class "inspector-bind-btn"})
-                        "×")]
-        (u/on! unbind-btn :press
-               (fn [_] (commit-text-field! (:id node) nil)))
-        (.appendChild container field-lbl)
-        (.appendChild container unbind-btn))
-      (let [btn (u/set-text!
-                 (u/el :x-button {:variant "ghost" :size "sm"
-                                  :class "inspector-bind-btn"
-                                  :title "Bind text to a field"})
-                 "🔗")]
-        (u/on! btn :press
-               (fn [_]
-                 (.replaceChildren container)
-                 (let [pick! (fn [field-kw owner]
-                               (commit-text-field! (:id node) field-kw owner))
-                       ;; :string-short keeps type-compatibility permissive —
-                       ;; every scalar field can render as text.
-                       panel (build-bind-picker-panel doc tmpl-name
-                                                      :string-short pick!)]
-                   (.appendChild container panel))))
-        (.appendChild container btn)))
-    container))
+  (let [doc        (:document @state/app-state)
+        tmpl       (enclosing-template-group doc (:id node))
+        bound      (:text-field node)
+        [chip popover]
+        (bind-chip-and-popover
+         doc (:name tmpl)
+         {:bound?     (some? bound)
+          :label-text (when bound (text-bind-label doc node bound))
+          :prop-kind  :string-short
+          :title      "Bind text to a field"
+          :on-pick    (fn [field-kw owner]
+                        (commit-text-field! (:id node) field-kw owner))
+          :on-unbind  #(commit-text-field! (:id node) nil)})
+        widget   (build-text-field node)
+        label-el (u/set-text! (u/el :div {:class "inspector-field-label"}) "text")
+        head     (u/el :div {:class "inspector-field-head"} [label-el chip])]
+    (when-let [scrub (read-scrub-meta widget)]
+      (pointer-scrub! label-el widget
+                      (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
+    (u/el :div {:class "inspector-field"} [head widget popover])))
 
 (defn- text-section [{:keys [node]}]
   (when (or (some? (:text node))
             ;; show the text editor for typography even if empty
             (contains? #{"x-typography" "x-button"} (:tag node)))
-    (section "Text"
-             [(field-row "text" (build-text-field node))
-              (field-row "bind" (build-text-content-bind node))])))
+    (section "Text" [(text-row node)])))
 
 (defn- inner-html-section
   "Textarea editor for components whose default slot is raw HTML

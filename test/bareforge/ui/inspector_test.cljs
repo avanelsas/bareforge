@@ -150,3 +150,51 @@
       (is (some? model))
       (is (nil? (:multi model)))
       (is (= id (get-in model [:node :id]))))))
+
+;; --- inline binding chip — label formatting (A1) ----------------------
+
+(deftest attr-binding-label-with-explicit-owner
+  (testing "binding carrying its own :owner produces qualified label
+            without walking the doc"
+    (let [doc (:document (state/initial-state))
+          binding {:field :cart-count :owner "cart" :direction :read}]
+      (is (= "↔ cart.cart-count"
+             (insp/attr-binding-label doc binding))))))
+
+(deftest attr-binding-label-walks-doc-when-owner-missing
+  (testing "legacy bindings without :owner recover the group name by
+            walking the doc for a matching field declaration"
+    (let [s0 (state/initial-state)
+          {d1 :doc cart-id :id} (ops/insert-new (:document s0) "root" "default" 0 "x-container")
+          d2 (ops/set-name d1 cart-id "cart")
+          d3 (ops/add-field d2 cart-id {:name :cart-count :type :int :default 0})
+          binding {:field :cart-count :direction :read}]
+      (is (= "↔ cart.cart-count"
+             (insp/attr-binding-label d3 binding))))))
+
+(deftest attr-binding-label-bare-when-no-owner-found
+  (testing "a stray binding pointing at a field no group declares
+            falls back to the bare ↔ field form"
+    (let [doc (:document (state/initial-state))
+          binding {:field :ghost :direction :read}]
+      (is (= "↔ ghost"
+             (insp/attr-binding-label doc binding))))))
+
+(deftest text-bind-label-uses-explicit-owner
+  (testing "node carrying :text-field-owner skips the doc walk and
+            produces the qualified text-field label"
+    (let [doc  (:document (state/initial-state))
+          node {:text-field :title :text-field-owner "post"}]
+      (is (= "↔ post.title"
+             (insp/text-bind-label doc node :title))))))
+
+(deftest text-bind-label-walks-doc-when-owner-missing
+  (testing "legacy text-field without :text-field-owner recovers the
+            owning group name by scanning the doc"
+    (let [s0 (state/initial-state)
+          {d1 :doc post-id :id} (ops/insert-new (:document s0) "root" "default" 0 "x-container")
+          d2 (ops/set-name d1 post-id "post")
+          d3 (ops/add-field d2 post-id {:name :title :type :string :default ""})
+          node {:text-field :title}]
+      (is (= "↔ post.title"
+             (insp/text-bind-label d3 node :title))))))
