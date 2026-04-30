@@ -1,10 +1,11 @@
 (ns bareforge.ui.templates
-  "Nine built-in starter documents. Eight are realistic landing-page
-   scaffolds (no kinetic / animated components by design); the ninth,
-   `:kinetic-showcase`, is the explicit demo of BareDOM's animated
-   surface — kinetic typography, particle buttons, animated organic
-   dividers, gaussian-blur background. Splitting the demo concern
-   from the realistic-starter concern keeps the kinetic surface
+  "Built-in starter documents. Each template carries a `:category`
+   so the panel can group them — `:landing` (marketing-site
+   scaffolds, the original eight), `:docs` (documentation /
+   long-form pages), `:dashboard` (data-heavy admin layouts), or
+   `:demo` (the kinetic-showcase, an explicit feature demo of
+   BareDOM's animated surface). Splitting demo concerns from
+   realistic-starter concerns keeps the kinetic surface
    discoverable without making every template feel like a feature
    demo.
 
@@ -747,45 +748,239 @@
                                                       "mode" "burst"}})]
     d))
 
+(defn- docs-home []
+  (let [d0           (m/empty-document)
+        {d1 :doc nb :id}  (ops/insert-new d0 "root" "default" 0 "x-navbar"
+                                          {:attrs {"title" "Bareforge Docs"}})
+        {d2 :doc}     (add-button d1 nb "actions" 0 "GitHub" "ghost" "sm")
+        {d3 :doc cnt :id} (ops/insert-new d2 "root" "default" 1 "x-container"
+                                          {:attrs {"max-width" "960px" "padding" "lg"}})
+        {d4 :doc}     (add-text+align d3 cnt "default" 0 "h1"
+                                      "Bareforge documentation"
+                                      "left")
+        {d5 :doc}     (add-text d4 cnt "default" 1 "subtitle1"
+                                "Visual landing-page builder for BareDOM. Pick a topic to get started.")
+        {d6 :doc grid :id} (ops/insert-new d5 cnt "default" 2 "x-grid"
+                                           {:attrs {"columns" "repeat(3, 1fr)" "gap" "16px"}})
+        cards         [["Getting started" "Install, run the dev server, ship your first page in fifteen minutes."]
+                       ["Recipes"         "End-to-end walkthrough that builds a filterable cart with bindings + actions."]
+                       ["Architecture"    "Pure / effectful zones, the document model, the reconciler, exports."]]
+        d-final       (reduce
+                       (fn [d [i [title body]]]
+                         (let [{dn :doc card :id} (ops/insert-new d grid "default" i "x-card"
+                                                                  {:attrs {"variant" "outlined" "padding" "md"}})
+                               {dn :doc}      (add-text dn card "default" 0 "h3" title)
+                               {dn :doc}      (add-text dn card "default" 1 "body2" body)]
+                           dn))
+                       d6 (map-indexed vector cards))]
+    d-final))
+
+(defn- changelog []
+  (let [d0           (m/empty-document)
+        {d1 :doc cnt :id} (ops/insert-new d0 "root" "default" 0 "x-container"
+                                          {:attrs {"max-width" "720px" "padding" "lg"}})
+        {d2 :doc}     (add-text d1 cnt "default" 0 "h1" "Changelog")
+        {d3 :doc}     (add-text d2 cnt "default" 1 "subtitle1"
+                                "Releases, in reverse chronological order.")
+        releases      [["0.2.0" "2026-04-29"
+                        "Authoring shortcuts: multi-select, drag-to-scrub, Cmd-K command palette, ? cheat sheet, palette pattern flyout, per-tag empty-slot hints."]
+                       ["0.1.1" "2026-04-28"
+                        "Patch release. Hosted-demo path fixes, BareDOM 2.4.0 → 2.4.1, README polish."]
+                       ["0.1.0" "2026-04-27"
+                        "First public release. Visual editor, four export plugins at full feature parity, nine starter templates."]]
+        d-final       (reduce
+                       (fn [d [i [version date body]]]
+                         (let [idx           (+ 2 i)
+                               {dn :doc grp :id} (ops/insert-new d cnt "default" idx "x-card"
+                                                                 {:attrs {"variant" "elevated" "padding" "md"}})
+                               {dn :doc hdr :id} (ops/insert-new dn grp "default" 0 "x-grid"
+                                                                 {:attrs {"columns" "auto auto" "gap" "12px"}})
+                               {dn :doc}     (add-text dn hdr "default" 0 "h3" (str "v" version))
+                               {dn :doc}     (add-text dn hdr "default" 1 "caption" date)
+                               {dn :doc}     (add-text dn grp "default" 1 "body2" body)]
+                           dn))
+                       d3 (map-indexed vector releases))]
+    d-final))
+
+(defn- status-page []
+  (let [d0           (m/empty-document)
+        {d1 :doc cnt :id} (ops/insert-new d0 "root" "default" 0 "x-container"
+                                          {:attrs {"max-width" "880px" "padding" "lg"}})
+        {d2 :doc}     (add-text d1 cnt "default" 0 "h1" "System status")
+        {d3 :doc}     (ops/insert-new d2 cnt "default" 1 "x-alert"
+                                      {:attrs {"text" "All systems operational"
+                                               "type" "success"}})
+        {d4 :doc}     (add-text+align d3 cnt "default" 2 "h3"
+                                      "Services" "left")
+        {d5 :doc grid :id} (ops/insert-new d4 cnt "default" 3 "x-grid"
+                                           {:attrs {"columns" "1fr auto" "gap" "12px"}})
+        services      [["Web app"       "Operational"]
+                       ["API"           "Operational"]
+                       ["Background jobs" "Operational"]
+                       ["CDN"           "Operational"]]
+        d6            (reduce
+                       (fn [d [i [name status]]]
+                         (let [base       (* i 2)
+                               {dn :doc}  (add-text d grid "default" base "body1" name)
+                               {dn :doc}  (ops/insert-new dn grid "default" (inc base) "x-badge"
+                                                          {:attrs {"text"    status
+                                                                   "variant" "success"}})]
+                           dn))
+                       d5 (map-indexed vector services))
+        {d7 :doc}     (add-text+align d6 cnt "default" 4 "h3"
+                                      "Recent incidents" "left")
+        {d8 :doc}     (add-text d7 cnt "default" 5 "body2"
+                                "No incidents reported in the last 30 days.")]
+    d8))
+
+(defn- blog-post []
+  (let [d0           (m/empty-document)
+        {d1 :doc cnt :id} (ops/insert-new d0 "root" "default" 0 "x-container"
+                                          {:attrs {"max-width" "680px" "padding" "lg"}})
+        {d2 :doc}     (add-text d1 cnt "default" 0 "overline" "Engineering · 6 min read")
+        {d3 :doc}     (add-text d2 cnt "default" 1 "h1"
+                                "Why we picked plain web components over a framework")
+        {d4 :doc meta :id} (ops/insert-new d3 cnt "default" 2 "x-grid"
+                                           {:attrs {"columns" "auto 1fr auto" "gap" "12px"}})
+        {d5 :doc}     (ops/insert-new d4 meta "default" 0 "x-avatar"
+                                      {:attrs {"size" "sm" "fallback" "AV"}})
+        {d6 :doc}     (add-text d5 meta "default" 1 "body2" "Alex van Elsas")
+        {d7 :doc}     (add-text d6 meta "default" 2 "caption" "Apr 30, 2026")
+        {d8 :doc}     (ops/insert-new d7 cnt "default" 3 "x-divider" {})
+        body          ["Frameworks ship a lot of code. For a 200-page documentation site, the runtime tax is hard to justify when the content is mostly static and the interactivity is mostly local."
+                       "Web components answer the encapsulation question at the platform level. The browser already understands custom elements, shadow DOM, slots, and CSS variables — there's no shim layer between you and the rendered output."
+                       "We started with one component, then a dozen, then ninety. The pattern held: each component owns its own visual surface, the page composes them, no global state machine in sight."]
+        d-final       (reduce
+                       (fn [d [i para]]
+                         (let [idx (+ 4 i)
+                               {dn :doc} (add-text d cnt "default" idx "body1" para)]
+                           dn))
+                       d8 (map-indexed vector body))]
+    d-final))
+
+(defn- dashboard-skeleton []
+  (let [d0           (m/empty-document)
+        {d1 :doc nb :id}  (ops/insert-new d0 "root" "default" 0 "x-navbar"
+                                          {:attrs {"title" "Dashboard"}})
+        {d2 :doc}     (add-button d1 nb "actions" 0 "Settings" "ghost" "sm")
+        {d3 :doc cnt :id} (ops/insert-new d2 "root" "default" 1 "x-container"
+                                          {:attrs {"max-width" "1200px" "padding" "lg"}})
+        {d4 :doc}     (add-text d3 cnt "default" 0 "h2" "Overview")
+        {d5 :doc grid :id} (ops/insert-new d4 cnt "default" 1 "x-grid"
+                                           {:attrs {"columns" "repeat(4, 1fr)" "gap" "16px"}})
+        stats         [["Active users" "12,438" "+8% week"]
+                       ["Revenue"      "$84.2k" "+12% month"]
+                       ["Conversion"   "3.4%"   "−0.2pt"]
+                       ["Errors"       "0.02%"  "stable"]]
+        d6            (reduce
+                       (fn [d [i [label value delta]]]
+                         (:doc (ops/insert-new d grid "default" i "x-stat"
+                                               {:attrs {"label" label
+                                                        "value" value
+                                                        "trend" delta}})))
+                       d5 (map-indexed vector stats))
+        {d7 :doc tbl :id} (ops/insert-new d6 cnt "default" 2 "x-card"
+                                          {:attrs {"variant" "outlined" "padding" "md"}})
+        {d8 :doc}     (add-text d7 tbl "default" 0 "h3" "Recent activity")
+        {d9 :doc}     (add-text d8 tbl "default" 1 "body2"
+                                "Drop a chart, table, or x-timeline here to fill out the activity feed.")]
+    d9))
+
 ;; --- registry ---------------------------------------------------------------
+
+(def category-order
+  "Display order for the templates panel's category tabs. The
+   `:all` pseudo-category renders every template; the four real
+   categories below partition the registry."
+  [:all :landing :docs :dashboard :demo])
+
+(def category-labels
+  {:all       "All"
+   :landing   "Landing"
+   :docs      "Docs"
+   :dashboard "Dashboard"
+   :demo      "Demo"})
 
 (def templates
   [{:id    :saas-hero
     :label "SaaS Hero"
+    :category :landing
     :description "Navbar + hero headline + CTAs + social proof stats"
     :build saas-hero}
    {:id    :bento-features
     :label "Bento Features"
+    :category :landing
     :description "Section heading + bento grid with varied feature cards"
     :build bento-features}
    {:id    :scroll-story
     :label "Our Story"
+    :category :landing
     :description "Narrative cards separated by organic dividers"
     :build scroll-story}
    {:id    :pricing-table
     :label "Pricing Table"
+    :category :landing
     :description "Three-tier pricing cards with feature lists"
     :build pricing-table}
    {:id    :testimonials
     :label "Testimonials"
+    :category :landing
     :description "Grid of customer quotes with avatars"
     :build testimonials}
    {:id    :timeline
     :label "How It Works"
+    :category :landing
     :description "Step-by-step timeline with descriptive content"
     :build timeline-how-it-works}
    {:id    :contact
     :label "Contact"
+    :category :landing
     :description "Two-column layout with form and contact details"
     :build contact-enhanced}
    {:id    :full-landing-page
     :label "Full Landing Page"
+    :category :landing
     :description "Complete page with navbar, hero, features, testimonial, and CTA"
     :build full-landing-page}
+   {:id    :docs-home
+    :label "Docs home"
+    :category :docs
+    :description "Three-card landing for a documentation site — getting started / recipes / architecture"
+    :build docs-home}
+   {:id    :changelog
+    :label "Changelog"
+    :category :docs
+    :description "Reverse-chronological release notes with version + date headers"
+    :build changelog}
+   {:id    :status-page
+    :label "Status page"
+    :category :docs
+    :description "All-systems-operational banner + service grid + recent incidents"
+    :build status-page}
+   {:id    :blog-post
+    :label "Blog post"
+    :category :docs
+    :description "Article header with avatar / date + body paragraphs in a read-friendly width"
+    :build blog-post}
+   {:id    :dashboard-skeleton
+    :label "Dashboard skeleton"
+    :category :dashboard
+    :description "Navbar + stat row + recent-activity card — drop in your own chart and table"
+    :build dashboard-skeleton}
    {:id    :kinetic-showcase
     :label "Kinetic Launch"
+    :category :demo
     :description "Animated hero, particle CTAs, organic dividers — the full kinetic surface in one demo"
     :build kinetic-showcase}])
+
+(defn templates-in-category
+  "Pure: filter `templates` by category. `:all` returns every entry
+   in declared order; any other category returns only its members.
+   Used by the panel's tab filter and unit-tested independently."
+  [cat]
+  (if (= cat :all)
+    (vec templates)
+    (filterv #(= cat (:category %)) templates)))
 
 ;; --- apply ------------------------------------------------------------------
 
@@ -820,15 +1015,49 @@
              (.setAttribute panel-el "data-hidden" "")))
     card))
 
+(defn- render-cards! [^js list-el cat panel-el]
+  (.replaceChildren list-el)
+  (doseq [t (templates-in-category cat)]
+    (.appendChild list-el (template-card t panel-el))))
+
+(defn- tab-button [cat label list-el panel-el get-active set-active!]
+  (let [btn (u/el :div {:class (str "templates-tab"
+                                    (when (= cat (get-active)) " is-active"))
+                        :data-category (name cat)}
+                  [(u/set-text! (u/el :span) label)])]
+    (u/on! btn :click
+           (fn [_]
+             (set-active! cat)
+             ;; Update the active class on every sibling tab so the
+             ;; visual selection moves without rebuilding the bar.
+             (doseq [^js sib (array-seq (.-children (.-parentNode btn)))]
+               (if (= (.getAttribute sib "data-category") (name cat))
+                 (.. sib -classList (add "is-active"))
+                 (.. sib -classList (remove "is-active"))))
+             (render-cards! list-el cat panel-el)))
+    btn))
+
 (defn create
   "Build the templates panel (hidden by default). Returns the DOM
-   element ready to place into the chrome."
+   element ready to place into the chrome. Active-category state
+   lives in a JS-object closure local to the panel — transient UI
+   state with no need to enter `state/app-state`."
   []
-  (let [panel (u/el :div {:class "templates-panel" :data-hidden ""})
-        title (u/set-text! (u/el :div {:class "templates-title"}) "Templates")]
+  (let [panel       (u/el :div {:class "templates-panel" :data-hidden ""})
+        title       (u/set-text! (u/el :div {:class "templates-title"}) "Templates")
+        tab-bar     (u/el :div {:class "templates-tabs"})
+        list-el     (u/el :div {:class "templates-list"})
+        local       #js {:active :all}
+        get-active  (fn [] (.-active local))
+        set-active! (fn [cat] (set! (.-active local) cat))]
     (.appendChild panel title)
-    (doseq [t templates]
-      (.appendChild panel (template-card t panel)))
+    (doseq [cat category-order]
+      (.appendChild tab-bar
+                    (tab-button cat (get category-labels cat)
+                                list-el panel get-active set-active!)))
+    (.appendChild panel tab-bar)
+    (.appendChild panel list-el)
+    (render-cards! list-el :all panel)
     panel))
 
 (defn toggle!

@@ -716,6 +716,36 @@
       color: var(--x-color-text-muted, rgba(127, 127, 127, 0.7));
       margin-bottom: 4px;
     }
+    .templates-tabs {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+    }
+    .templates-tab {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      color: var(--x-color-text-muted, rgba(127, 127, 127, 0.75));
+      border: 1px solid transparent;
+      user-select: none;
+    }
+    .templates-tab:hover {
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.1));
+    }
+    .templates-tab.is-active {
+      background: var(--x-color-primary, #4f46e5);
+      color: var(--x-color-bg, #fff);
+      border-color: var(--x-color-primary, #4f46e5);
+    }
+    .templates-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
     .template-card {
       padding: 10px 12px;
       border-radius: 6px;
