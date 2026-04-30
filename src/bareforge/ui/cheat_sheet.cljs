@@ -39,10 +39,11 @@
         (cons (typography "overline" label)
               (mapv row-el entries))))
 
-(defn- group-rows
+(defn group-rows
   "Pure: split shortcut-info into ordered category groups. Returns
    `[[label-string entries] …]` matching `category-labels`'
-   ordering, dropping empty groups."
+   ordering, dropping empty groups. Public so unit tests can pin
+   the grouping shape without going through the modal lifecycle."
   [info categories]
   (let [by-cat (group-by :category info)]
     (->> categories

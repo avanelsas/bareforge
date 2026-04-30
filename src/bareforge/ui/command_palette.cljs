@@ -52,7 +52,11 @@
    palette accept the same set."
   ["x-container" "x-grid" "x-card" "x-navbar"])
 
-(defn- wrap-commands []
+(defn wrap-commands
+  "One entry per `wrap-tags` tag. Public so unit tests can pin the
+   shape (count, fields, callable `:run!`) without spinning up the
+   modal lifecycle."
+  []
   (mapv (fn [tag]
           {:label    (str "Wrap selection in " tag)
            :group    "Selection"
@@ -75,7 +79,11 @@
              :run!     #(palette/insert-at-selection! tag)}))
         (registry/all-tags)))
 
-(defn- curated-commands []
+(defn curated-commands
+  "Static short-list shown when the query is empty. Public so unit
+   tests can assert the shape (label / group / run! present, no
+   duplicate labels) without going through the modal."
+  []
   [{:label "Save project"             :group "File"      :keywords "save"
     :run! pf/save!}
    {:label "Open project…"            :group "File"      :keywords "open load"
@@ -124,11 +132,12 @@
   (or (some-> (js/document.getElementById "app") .-parentNode)
       js/document.body))
 
-(defn- ->item
+(defn ->item
   "Pure: project a Clojure command map into the JS shape
    `x-command-palette` consumes. The synthetic `id` is the index
    string; `keywords` flow through the component's filter so labels
-   stay short while typed terms resolve broadly."
+   stay short while typed terms resolve broadly. Public so unit
+   tests can pin the field mapping."
   [i {:keys [label group keywords]}]
   #js {:id    (str "cmd-" i)
        :label label
