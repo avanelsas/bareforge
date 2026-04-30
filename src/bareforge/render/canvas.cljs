@@ -143,8 +143,23 @@
    is new, create the element, stamp it with `data-bareforge-id` so
    drag-drop can map DOM back to document ids, and index it. Does
    NOT touch children — `arrange-slots!` handles DOM ordering in a
-   later pass."
+   later pass.
+
+   When the index already holds an element for `id` BUT its tag
+   differs from the new node's tag, drop the stale element first
+   so we recreate fresh. This is what happens after a project-file
+   load: both docs start their id counter at 0, so `n_5` may have
+   been an `x-particle-button` in the kinetic template and is now
+   an `x-button` in the just-loaded file. Without this guard the
+   old custom element keeps its tag (and animations / particles /
+   internal effect state), and only its attrs get diffed — visible
+   as residue from the previous document inside the new one."
   [^js node old-by-id]
+  (let [id        (:id node)
+        prior     (.get node-index id)]
+    (when (and prior (not= (:tag node) (.-localName prior)))
+      (rec/remove-el! prior)
+      (.delete node-index id)))
   (let [id        (:id node)
         existing  (.get node-index id)
         ;; Raw-html nodes own their children via :inner-html. Structured
