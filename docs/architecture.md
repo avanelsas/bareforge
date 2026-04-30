@@ -166,6 +166,42 @@ build-time codegen beyond shadow-cljs. The design stays
 philosophically aligned with BareDOM: `DOM = f(state)` applied
 by a hand-written reconciler.
 
+## Project layout
+
+```
+bareforge/
+├── CLAUDE.md                  Architecture & development rules
+├── docs/architecture.md       Architecture overview for new contributors
+├── docs/plugins.md            Export plugin authoring guide
+├── docs/recipes.md            End-to-end walkthrough + quick reference
+├── docs/adding-components.md  Onboarding a new BareDOM component
+├── deps.edn                   Clojure dependencies + :scaffold alias
+├── shadow-cljs.edn            Build config
+├── public/
+│   ├── index.html             Static shell + editor CSS
+│   ├── assets/                Logo + static assets
+│   └── js/                    Compiled output (git-ignored)
+├── scripts/
+│   └── scaffold_component.clj The new-component scaffolder
+└── src/bareforge/
+    ├── main.cljs              Entry point
+    ├── state.cljs             Single app-state atom + history
+    ├── doc/                   Pure document model + ops + spec
+    ├── meta/                  Component metadata
+    │   ├── public_api.cljs    Tag → observed attrs (from BareDOM)
+    │   ├── augment.cljs       Hand-curated property kinds + CSS vars
+    │   ├── categories.cljs    Palette grouping
+    │   ├── slots.cljs         Container slot descriptors
+    │   ├── placement.cljs     Snap hints
+    │   ├── heuristics.cljc    Shared label / kind inference
+    │   └── registry.cljs      Merged get-meta lookup
+    ├── render/                Hand-written DOM reconciler + selection overlay
+    ├── ui/                    Editor chrome (palette, layers, inspector, …)
+    ├── dnd/                   Drag-drop state machine
+    ├── storage/               IndexedDB autosave + project files
+    └── export/                Pluggable exports — HTML, bundle, CLJS, vanilla-JS
+```
+
 ## Where to read next
 
 - [`docs/plugins.md`](./plugins.md) — export plugin authoring.
