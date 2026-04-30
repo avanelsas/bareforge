@@ -499,23 +499,15 @@
 
 (def ^:private find-sub-groups em/find-sub-groups)
 
-(defn- generate-views
-  "Generate the views.cljs content for a group using hiccup.
-
-   A template group's view takes the record as a single arg and
-   destructures its fully-qualified keys. A stateful group's view
-   takes no arg; it `rf/query`s every field it reads via attribute
-   bindings or trigger payloads.
-
-   Triggers emit `:on-<event>` handlers that dispatch an action by
-   its fully qualified action-ref keyword. The view's :require list
-   includes every sub/action/db/child-views ns it actually touches.
-
-   Sub-groups are rendered two ways:
-   - Singleton sub-groups → a plain `(<ns>.views/<ns>)` call.
-   - Template sub-groups → a `(for [p (rf/query [<sub>])] ...)`
-     loop, where `<sub>` comes from `:source-sub` (explicit) or
-     `:source-field` (resolved via the field-owner index)."
+(defn- view-context
+  "Pure: derive every datum `generate-views` needs to emit a view
+   file for `group`. Returns a bundle map: `:fn-name :ns-path
+   :fn-sig :require-entries :hiccup-ctx :node :root-slot
+   :let-fields :field->owner :has-let?`. Splitting this out keeps
+   `generate-views` itself a thin orchestrator over a known-shape
+   data bundle — the data assembly is large enough to read as a
+   small program of its own, and the formatting step is easier to
+   audit when it stops sharing scope with 25 derived locals."
   [doc group all-groups app-ns]
   (let [node            (m/get-node doc (:id group))
         fn-name         (:ns-name group)
@@ -628,10 +620,6 @@
                             (str "[" app-ns "." a " :as " a "]"))
                           (for [sg (distinct (map :ns-name sub-groups))]
                             (str "[" app-ns "." sg ".views :as " sg ".views]"))))
-        ns-clause       (if (seq require-entries)
-                          (str "(ns " ns-path "\n"
-                               "  (:require " (str/join "\n            " require-entries) "))\n")
-                          (str "(ns " ns-path ")\n"))
         hiccup-ctx      {:doc                doc
                          :field->sym         field->sym
                          :sub-group-ids      sub-group-ids
@@ -641,6 +629,45 @@
                          :tmpl-record-sym    tmpl-record-sym
                          :name->ns           name->ns
                          :own-ns-name        own-ns-name}]
+    {:fn-name         fn-name
+     :ns-path         ns-path
+     :fn-sig          fn-sig
+     :require-entries require-entries
+     :hiccup-ctx      hiccup-ctx
+     :node            node
+     :root-slot       root-slot
+     :let-fields      let-fields
+     :field->owner    field->owner
+     :has-let?        (boolean has-let?)}))
+
+(defn- generate-views
+  "Generate the views.cljs content for a group using hiccup.
+
+   A template group's view takes the record as a single arg and
+   destructures its fully-qualified keys. A stateful group's view
+   takes no arg; it `rf/query`s every field it reads via attribute
+   bindings or trigger payloads.
+
+   Triggers emit `:on-<event>` handlers that dispatch an action by
+   its fully qualified action-ref keyword. The view's :require list
+   includes every sub/action/db/child-views ns it actually touches.
+
+   Sub-groups are rendered two ways:
+   - Singleton sub-groups → a plain `(<ns>.views/<ns>)` call.
+   - Template sub-groups → a `(for [p (rf/query [<sub>])] ...)`
+     loop, where `<sub>` comes from `:source-sub` (explicit) or
+     `:source-field` (resolved via the field-owner index).
+
+   Data assembly lives in `view-context`; this fn formats the file
+   string from that bundle."
+  [doc group all-groups app-ns]
+  (let [{:keys [fn-name ns-path fn-sig require-entries hiccup-ctx
+                node root-slot let-fields field->owner has-let?]}
+        (view-context doc group all-groups app-ns)
+        ns-clause (if (seq require-entries)
+                    (str "(ns " ns-path "\n"
+                         "  (:require " (str/join "\n            " require-entries) "))\n")
+                    (str "(ns " ns-path ")\n"))]
     (str ns-clause
          "\n"
          "(defn " fn-name " " fn-sig "\n"
