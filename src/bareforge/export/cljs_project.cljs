@@ -376,6 +376,76 @@
 
 (declare stateful-host-for-template)
 
+(declare node->hiccup-with-events)
+
+(defn- emit-sub-group-child
+  "Render one sub-group child of a node into its hiccup string.
+   Returns `[rendered-or-nil rendered-tpls']` so the caller can
+   dedupe templates within a parent slot — the first encounter
+   of a template sub-group renders its iteration call; later
+   encounters return nil so a parent with N seed-backed clones
+   still emits one iteration. Singleton sub-groups return the
+   plain `(<ns>.views/<ns>)` call."
+  [ctx child gname tpl? rendered-tpls kid-pad]
+  (let [{:keys [doc all-groups field-owner-ns-map]} ctx]
+    (cond
+      (and tpl? (contains? rendered-tpls gname))
+      [nil rendered-tpls]
+
+      tpl?
+      (let [;; Fall back to the (single) collection field that
+            ;; points at this template when the instance has no
+            ;; explicit :source-field / :source-sub set. Lets the
+            ;; user declare a collection + name the template
+            ;; without also having to manually wire the
+            ;; 'Rendered from' source in the inspector.
+            fallback  (when (and (nil? (:source-sub child))
+                                 (nil? (:source-field child)))
+                        (stateful-host-for-template
+                         doc all-groups gname))
+            src-field (or (:source-field child)
+                          (when fallback (keyword (:field-name fallback))))
+            field-ns  (or (get field-owner-ns-map (:source-field child))
+                          (when fallback (:ns-name fallback)))]
+        [(collection-iteration-call gname kid-pad
+                                    (:source-sub child)
+                                    src-field
+                                    field-ns)
+         (conj rendered-tpls gname)])
+
+      :else
+      [(kid-pad (str "(" gname ".views/" gname ")"))
+       rendered-tpls])))
+
+(defn- walk-slotted-children
+  "Render every child of `node` across all its slots. Sub-group
+   children dispatch to `emit-sub-group-child`; non-group children
+   recurse via `node->hiccup-with-events`. Returns a vector of
+   hiccup strings in document order, with template-group
+   iterations deduped per slot."
+  [ctx node depth]
+  (let [{:keys [sub-group-ids all-groups template-groups]} ctx
+        sub-set (set sub-group-ids)
+        kid-pad (fn [s] (indent (+ depth 1) s))]
+    (first
+     (reduce
+      (fn [[acc rendered-tpls] [sname child]]
+        (if (contains? sub-set (:id child))
+          (let [g (first (filter #(some #{(:id child)} (:instance-ids %))
+                                 all-groups))
+                gname (:ns-name g)
+                tpl?  (contains? template-groups gname)
+                [rendered tpls']
+                (emit-sub-group-child ctx child gname tpl?
+                                      rendered-tpls kid-pad)]
+            [(cond-> acc rendered (conj rendered)) tpls'])
+          [(conj acc (node->hiccup-with-events ctx child sname (+ depth 1)))
+           rendered-tpls]))
+      [[] #{}]
+      (for [[sname kids] (m/slot-entries node)
+            child kids]
+        [sname child])))))
+
 (defn- node->hiccup-with-events
   "Like node->hiccup but also adds :on-* handlers for event triggers
    and honours `:text-field` on nodes by emitting a local symbol when
@@ -400,13 +470,16 @@
                            resolve a binding's `:owner`)
      :own-ns-name        — enclosing view's group ns-name; default
                            owner for write bindings with no `:owner`
-                           and no field-owner match"
-  [{:keys [doc field->sym sub-group-ids all-groups template-groups
-           field-owner-ns-map tmpl-record-sym name->ns own-ns-name]
+                           and no field-owner match
+
+   Children walking + sub-group dispatch live in
+   `walk-slotted-children` / `emit-sub-group-child`; this fn
+   handles props + text + final output assembly."
+  [{:keys [field->sym tmpl-record-sym field-owner-ns-map name->ns own-ns-name]
     :as ctx}
    node slot-name depth]
-  (let [tag        (str ":" (:tag node))
-        base-props (node->prop-strings node slot-name)
+  (let [tag         (str ":" (:tag node))
+        base-props  (node->prop-strings node slot-name)
         event-props (for [t (:events node)]
                       (trigger->event-prop t field->sym tmpl-record-sym))
         write-props (for [[k {:keys [field direction owner]}] (:bindings node)
@@ -418,67 +491,18 @@
                                           (:tag node) k field owner-ns)]
                           :when prop]
                       prop)
-        props      (format-props-map (concat base-props event-props write-props)
-                                     (:tag node) depth)
-        tf         (:text-field node)
-        text       (cond
-                     (and tf (contains? field->sym tf))
-                     (get field->sym tf)
+        props       (format-props-map (concat base-props event-props write-props)
+                                      (:tag node) depth)
+        tf          (:text-field node)
+        text        (cond
+                      (and tf (contains? field->sym tf))
+                      (get field->sym tf)
 
-                     (and (:text node) (not= "" (:text node)))
-                     (str "\"" (h2h/escape-cljs-str (:text node)) "\""))
-        inner-html (:inner-html node)
-        pad        (fn [s] (indent depth s))
-        kid-pad    (fn [s] (indent (+ depth 1) s))
-        children
-        (first
-         (reduce
-          (fn [[acc rendered-tpls] [sname child]]
-            (if (contains? (set sub-group-ids) (:id child))
-              (let [g (first (filter #(some #{(:id child)}
-                                            (:instance-ids %))
-                                     all-groups))
-                    gname (:ns-name g)
-                    tpl?  (contains? template-groups gname)]
-                (cond
-                  (and tpl? (contains? rendered-tpls gname))
-                  [acc rendered-tpls]
-
-                  tpl?
-                  (let [;; Fall back to the (single) collection field that
-                          ;; points at this template when the instance has no
-                          ;; explicit :source-field / :source-sub set. Lets the
-                          ;; user declare a collection + name the template
-                          ;; without also having to manually wire the
-                          ;; 'Rendered from' source in the inspector.
-                        fallback  (when (and (nil? (:source-sub child))
-                                             (nil? (:source-field child)))
-                                    (stateful-host-for-template
-                                     doc all-groups gname))
-                        src-field (or (:source-field child)
-                                      (when fallback
-                                        (keyword (:field-name fallback))))
-                        field-ns  (or (get field-owner-ns-map
-                                           (:source-field child))
-                                      (when fallback (:ns-name fallback)))]
-                    [(conj acc (collection-iteration-call
-                                gname kid-pad
-                                (:source-sub child)
-                                src-field
-                                field-ns))
-                     (conj rendered-tpls gname)])
-
-                  :else
-                  [(conj acc
-                         (kid-pad (str "(" gname ".views/" gname ")")))
-                   rendered-tpls]))
-              [(conj acc
-                     (node->hiccup-with-events ctx child sname (+ depth 1)))
-               rendered-tpls]))
-          [[] #{}]
-          (for [[sname kids] (m/slot-entries node)
-                child kids]
-            [sname child])))]
+                      (and (:text node) (not= "" (:text node)))
+                      (str "\"" (h2h/escape-cljs-str (:text node)) "\""))
+        inner-html  (:inner-html node)
+        pad         (fn [s] (indent depth s))
+        children    (walk-slotted-children ctx node depth)]
     (cond
       inner-html
       (let [inner-hiccup (h2h/html->hiccup-str inner-html (+ depth 1))]
