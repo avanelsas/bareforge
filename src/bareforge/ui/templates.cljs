@@ -946,41 +946,49 @@
   [{:id    :saas-hero
     :label "SaaS Hero"
     :category :landing
+    :theme-preset "default"
     :description "Navbar + hero headline + CTAs + social proof stats"
     :build saas-hero}
    {:id    :bento-features
     :label "Bento Features"
     :category :landing
+    :theme-preset "default"
     :description "Section heading + bento grid with varied feature cards"
     :build bento-features}
    {:id    :scroll-story
     :label "Our Story"
     :category :landing
+    :theme-preset "default"
     :description "Narrative cards separated by organic dividers"
     :build scroll-story}
    {:id    :pricing-table
     :label "Pricing Table"
     :category :landing
+    :theme-preset "default"
     :description "Three-tier pricing cards with feature lists"
     :build pricing-table}
    {:id    :testimonials
     :label "Testimonials"
     :category :landing
+    :theme-preset "default"
     :description "Grid of customer quotes with avatars"
     :build testimonials}
    {:id    :timeline
     :label "How It Works"
     :category :landing
+    :theme-preset "default"
     :description "Step-by-step timeline with descriptive content"
     :build timeline-how-it-works}
    {:id    :contact
     :label "Contact"
     :category :landing
+    :theme-preset "default"
     :description "Two-column layout with form and contact details"
     :build contact-enhanced}
    {:id    :full-landing-page
     :label "Full Landing Page"
     :category :landing
+    :theme-preset "default"
     :description "Complete page with navbar, hero, features, testimonial, and CTA"
     :build full-landing-page}
    {:id    :docs-home
