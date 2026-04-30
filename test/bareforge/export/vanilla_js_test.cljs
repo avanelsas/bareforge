@@ -468,6 +468,38 @@
       (is (re-find #"const target = qualifyMap\(x, \"app\.cart-item\.db\"\);" events))
       (is (str/includes? events "v.filter(item => !deepEqual(item, target))")))))
 
+(defn- multi-step-cart-doc []
+  ;; cart node is at slot "default" index 1 (index 0 is the cart-item
+  ;; template group); patch its :fields and :actions in place.
+  (-> (cart-style-doc)
+      (update-in [:root :slots "default" 1 :fields]
+                 conj {:name :is-popover-open :type :boolean :default true})
+      (assoc-in [:root :slots "default" 1 :actions]
+                [{:name :add-and-close
+                  :steps
+                  [{:operation :add :target-field :cart-items}
+                   {:operation :set :target-field :is-popover-open
+                    :payload [{:literal false}]}]}])))
+
+(deftest vanilla-js-multi-step-action-threads-db
+  (let [files  (vjs/generate (multi-step-cart-doc) {:title "cart-demo"})
+        events (get files "cart/events.js")]
+    (is (some? events))
+    (testing "multi-step regEvent omits path() — full db lands in the handler"
+      (is (re-find #"regEvent\(\"app\.cart\.events/add-and-close\", \[trimV\],"
+                   events)
+          "trimV-only interceptor list — no path() entry")
+      (is (re-find #"\(db0, \[x\]\) =>" events)
+          "handler signature receives the full db and trimmed payload"))
+    (testing "first step :add still uses qualifyMap on x"
+      (is (str/includes? events
+                         "qualifyMap(x, \"app.cart-item.db\")")
+          "step 1 :add re-keys the dispatched record under the cart-item ns"))
+    (testing "second step :set with literal false lands the literal verbatim"
+      (is (str/includes? events
+                         "\"app.cart.db/is-popover-open\": false")
+          "literal payload bypasses x and emits the JSON-encoded false"))))
+
 (deftest template-iteration-wraps-in-display-contents-div
   ;; The doc above doesn't nest a template instance inside the stateful
   ;; cart, but iteration can still be exercised by adding a template-

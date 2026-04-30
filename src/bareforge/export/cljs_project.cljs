@@ -9,7 +9,8 @@
    Views use hiccup notation rendered by an included `renderer.cljs`
    (adapted from bare-demo). Each detected UI component group gets
    its own folder with db/subs/events/views files."
-  (:require [bareforge.doc.model :as m]
+  (:require [bareforge.doc.actions :as actions]
+            [bareforge.doc.model :as m]
             [bareforge.export.html-to-hiccup :as h2h]
             [bareforge.export.model :as em]
             [bareforge.meta.versions :as versions]
@@ -1125,25 +1126,83 @@
       :add       [" (fn [v [x]]\n"  (str "   (conj v " (wrap "x") ")))")]
       :remove    [" (fn [v [x]]\n"  (str "   (filterv #(not= % " (wrap "x") ") v)))")])))
 
+(defn- step-payload-expr
+  "Resolve a step's payload entry to the value expression used in its
+   db-update form. v1 honours only `{:literal v}` at the step level;
+   anything else (or no `:payload`) defaults to `x` — the trimmed
+   trigger arg."
+  [step]
+  (let [pe (some-> step :payload first)]
+    (cond
+      (and pe (contains? pe :literal)) (pr-str (:literal pe))
+      :else "x")))
+
+(defn- step->thread-form
+  "Emit one step's contribution to the `(-> db ...)` thread inside a
+   multi-step handler. Returns a string like
+   `(update ::cart.db/cart-items conj (rf/qualify-map x \"app.cart-item.db\"))`.
+   Honours `:of-group` payload re-keying for `:set` / `:add` / `:remove`."
+  [{:keys [operation target-field] :as step} db-alias fields app-ns]
+  (let [fname    (cljs.core/name target-field)
+        of-group (some (fn [fd]
+                         (when (= target-field (:name fd)) (:of-group fd)))
+                       fields)
+        of-ns    (when of-group (str app-ns "." of-group ".db"))
+        wrap     (fn [x] (if of-ns (str "(rf/qualify-map " x " \"" of-ns "\")") x))
+        vexpr    (step-payload-expr step)
+        fk       (str "::" db-alias "/" fname)]
+    (case operation
+      :set       (str "(assoc " fk " " (wrap vexpr) ")")
+      :toggle    (str "(update " fk " not)")
+      :increment (str "(update " fk " inc)")
+      :decrement (str "(update " fk " dec)")
+      :clear     (str "(assoc " fk " nil)")
+      :add       (str "(update " fk " conj " (wrap vexpr) ")")
+      :remove    (str "(update " fk
+                      " (fn [vs#] (filterv #(not= % "
+                      (wrap vexpr) ") vs#)))"))))
+
 (defn- emit-action-event
-  "Emit a declared action as a reg-event form with trim-v + path.
+  "Emit a declared action as a reg-event form. Two paths:
+
+   - **Single-step** (`{:operation :target-field}` or `:steps` of size
+     1): emit the legacy shape with `trim-v` + `path` interceptors,
+     a value-narrowed handler. Pinned by `cljs_project_test`.
+   - **Multi-step** (`:steps` length ≥ 2): emit a no-`path` handler
+     that threads the full db through each step's transformation,
+     so a single dispatch can update multiple fields in order. Each
+     step honours its own `:payload` (literal-only in v1).
+
    `db-alias` is the group's own db alias; `fields` is the group's
-   `:fields` (used to look up the target field's `:of-group` for
-   payload re-keying); `app-ns` is the root app namespace."
-  [{:keys [name operation target-field]} db-alias fields app-ns]
-  (let [ename        (cljs.core/name name)
-        fname        (cljs.core/name target-field)
-        of-group     (some (fn [fd]
-                             (when (= target-field (:name fd)) (:of-group fd)))
-                           fields)
-        of-group-ns  (when of-group (str app-ns "." of-group ".db"))
-        [fn-head body-tail] (action->handler operation of-group-ns)]
-    (str "(rf/reg-event\n"
-         " ::" ename "\n"
-         " [rf/trim-v\n"
-         "  (rf/path ::" db-alias "/" fname ")]\n"
-         fn-head
-         body-tail)))
+   `:fields` (used to look up `:of-group` for payload re-keying);
+   `app-ns` is the root app namespace."
+  [{:keys [name] :as action} db-alias fields app-ns]
+  (let [ename (cljs.core/name name)
+        steps (actions/step-list action)]
+    (if (= 1 (count steps))
+      (let [{:keys [operation target-field]} (first steps)
+            fname        (cljs.core/name target-field)
+            of-group     (some (fn [fd]
+                                 (when (= target-field (:name fd)) (:of-group fd)))
+                               fields)
+            of-group-ns  (when of-group (str app-ns "." of-group ".db"))
+            [fn-head body-tail] (action->handler operation of-group-ns)]
+        (str "(rf/reg-event\n"
+             " ::" ename "\n"
+             " [rf/trim-v\n"
+             "  (rf/path ::" db-alias "/" fname ")]\n"
+             fn-head
+             body-tail))
+      (let [thread (str/join
+                    "\n       "
+                    (for [s steps]
+                      (step->thread-form s db-alias fields app-ns)))]
+        (str "(rf/reg-event\n"
+             " ::" ename "\n"
+             " [rf/trim-v]\n"
+             " (fn [db [x]]\n"
+             "   (-> db\n"
+             "       " thread ")))")))))
 
 (defn- emit-setter-event
   "Emit an auto `<field>-changed` setter event using re-frame-style

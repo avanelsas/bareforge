@@ -81,4 +81,51 @@
     (is (= 1 (count changed))
         "only the declared action is kept")
     (is (= :declared (:source (first changed))))
-    (is (= :increment (:operation (first changed))))))
+    (is (= [{:operation :increment :target-field :x}]
+           (:steps (first changed)))
+        "single-step shape canonicalises to a one-element :steps list")))
+
+;; --- step-list canonicalisation (multi-step actions) -----------------
+
+(deftest step-list-single-step-shape
+  (testing "old shape `{:operation :target-field}` reads as a
+            one-element step list"
+    (is (= [{:operation :increment :target-field :x}]
+           (actions/step-list {:name :bump :operation :increment :target-field :x})))))
+
+(deftest step-list-multi-step-shape
+  (testing "new shape `{:steps [...]}` returns its steps verbatim"
+    (let [steps [{:operation :add :target-field :cart-items}
+                 {:operation :set :target-field :is-popover-open
+                  :payload [{:literal false}]}]]
+      (is (= steps (actions/step-list {:name :add-and-close :steps steps}))))))
+
+(deftest step-list-never-empty
+  (testing "even an action map missing both shapes returns a nil-filled
+            single-step rather than an empty vector — callers can treat
+            the return as guaranteed non-empty"
+    (is (= 1 (count (actions/step-list {:name :bare}))))))
+
+(deftest action-needs-payload?-flags-payload-consumers
+  (testing ":set / :add / :remove operations consume the trigger payload;
+            others ignore it"
+    (is (true?  (actions/action-needs-payload?
+                 {:name :a :operation :add :target-field :xs})))
+    (is (true?  (actions/action-needs-payload?
+                 {:name :a :operation :set :target-field :x})))
+    (is (false? (actions/action-needs-payload?
+                 {:name :a :operation :toggle :target-field :x})))
+    (is (false? (actions/action-needs-payload?
+                 {:name :a :operation :increment :target-field :x})))))
+
+(deftest action-needs-payload?-multi-step-mixes-flag
+  (testing "a multi-step action needs payload iff at least one step
+            actually consumes it"
+    (is (true?  (actions/action-needs-payload?
+                 {:name :a
+                  :steps [{:operation :add :target-field :xs}
+                          {:operation :toggle :target-field :flag}]})))
+    (is (false? (actions/action-needs-payload?
+                 {:name :a
+                  :steps [{:operation :toggle :target-field :flag}
+                          {:operation :clear :target-field :search}]})))))

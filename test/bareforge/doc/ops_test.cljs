@@ -411,3 +411,86 @@
     (is (:locked? (first fs)) "id is locked after rename")
     (is (= :id (:name (first fs))))
     (is (= :title (:name (second fs))))))
+
+;; --- multi-step action ops -------------------------------------------
+
+(defn- group-with-action [single-step-action]
+  (let [{d :doc id :id} (ops/insert-new (empty-doc) "root" "default" 0 "x-card")
+        d1 (ops/set-name d id "cart")
+        d2 (ops/add-field d1 id {:name :cart-items :type :vector :default []})
+        d3 (ops/add-field d2 id {:name :is-popover-open :type :boolean :default false})
+        d4 (ops/add-action d3 id single-step-action)]
+    {:doc d4 :id id}))
+
+(deftest add-action-step-normalises-single-step
+  (testing "appending a step to a single-step action converts it to
+            the multi-step `:steps` shape — never leaves both shapes
+            on the same map"
+    (let [{d :doc id :id} (group-with-action
+                           {:name :add-and-close :operation :add
+                            :target-field :cart-items})
+          d2  (ops/add-action-step d id 0
+                                   {:operation :set :target-field :is-popover-open
+                                    :payload [{:literal false}]})
+          a   (first (:actions (node-at d2 id)))]
+      (is (nil? (:operation a))    "single-step keys are stripped")
+      (is (nil? (:target-field a)) "single-step keys are stripped")
+      (is (= 2 (count (:steps a)))
+          "appended step shows up at the tail of :steps")
+      (is (= :add (:operation (first (:steps a))))
+          "original step is preserved at index 0")
+      (is (= [{:literal false}] (:payload (second (:steps a))))))))
+
+(deftest remove-action-step-refuses-last-step
+  (testing "an action with no steps is meaningless — remove-action-step
+            throws so callers reach for `remove-action` instead"
+    (let [{d :doc id :id} (group-with-action
+                           {:name :clear-cart :operation :clear
+                            :target-field :cart-items})]
+      (is (thrown? js/Error
+                   (ops/remove-action-step d id 0 0))))))
+
+(deftest remove-action-step-drops-by-index
+  (testing "a multi-step action drops the step at index, leaving the
+            others in their original order"
+    (let [{d :doc id :id} (group-with-action
+                           {:name :a :operation :add :target-field :cart-items})
+          d2 (ops/add-action-step d id 0
+                                  {:operation :toggle :target-field :is-popover-open})
+          d3 (ops/add-action-step d2 id 0
+                                  {:operation :clear :target-field :cart-items})
+          d4 (ops/remove-action-step d3 id 0 1)
+          a  (first (:actions (node-at d4 id)))]
+      (is (= 2 (count (:steps a))))
+      (is (= :add   (:operation (first  (:steps a)))))
+      (is (= :clear (:operation (second (:steps a))))))))
+
+(deftest move-action-step-reorders-with-clamp
+  (testing "delta moves the step by N positions, clamped at the bounds
+            so a runaway -1 on index 0 is a no-op rather than a throw"
+    (let [{d :doc id :id} (group-with-action
+                           {:name :a :operation :add :target-field :cart-items})
+          d2 (ops/add-action-step d id 0
+                                  {:operation :toggle :target-field :is-popover-open})
+          a-before (first (:actions (node-at d2 id)))
+          d3 (ops/move-action-step d2 id 0 0 +1)
+          d4 (ops/move-action-step d2 id 0 0 -1)
+          a-down (first (:actions (node-at d3 id)))]
+      (is (= [:add :toggle] (mapv :operation (:steps a-before)))
+          "baseline order")
+      (is (= [:toggle :add] (mapv :operation (:steps a-down)))
+          "+1 swaps step 0 down past step 1")
+      (is (= a-before (first (:actions (node-at d4 id))))
+          "-1 on the head clamps to no-op"))))
+
+(deftest update-action-step-replaces-in-place
+  (testing "update-action-step swaps a step's contents without changing
+            its index — used by the inspector when the user picks a
+            new operation or target on an existing step"
+    (let [{d :doc id :id} (group-with-action
+                           {:name :a :operation :add :target-field :cart-items})
+          d2 (ops/update-action-step d id 0 0
+                                     {:operation :clear :target-field :cart-items})
+          a  (first (:actions (node-at d2 id)))]
+      (is (= [{:operation :clear :target-field :cart-items}]
+             (:steps a))))))

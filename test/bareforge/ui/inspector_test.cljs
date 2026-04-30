@@ -198,3 +198,27 @@
           node {:text-field :title}]
       (is (= "↔ post.title"
              (insp/text-bind-label d3 node :title))))))
+
+;; --- multi-step action row formatting (A2) ----------------------------
+
+(deftest step-summary-no-payload
+  (is (= "adds to :cart-items"
+         (insp/step-summary {:operation :add :target-field :cart-items}))
+      "scalar verb + colon-prefixed field name when there's no payload"))
+
+(deftest step-summary-with-literal-payload
+  (testing "literal payloads surface inline as ` = <value>` so the
+            row reads as a single sentence"
+    (is (= "sets :is-popover-open = false"
+           (insp/step-summary {:operation :set :target-field :is-popover-open
+                               :payload [{:literal false}]})))
+    (is (= "sets :search = \"\""
+           (insp/step-summary {:operation :set :target-field :search
+                               :payload [{:literal ""}]})))))
+
+(deftest step-summary-falls-back-on-unknown-op
+  (testing "unknown operations show the keyword name verbatim — keeps
+            the row legible if the spec gains a new op before the verb
+            map catches up"
+    (is (= "frobnicate :x"
+           (insp/step-summary {:operation :frobnicate :target-field :x})))))

@@ -336,6 +336,46 @@
                    cart-events)
           "body conj's the rf/qualify-map'd payload onto the narrowed field"))))
 
+(deftest generated-events-multi-step-action-threads-db
+  ;; Patch the cart group's :add-to-cart action with a two-step :steps
+  ;; vector — :add the payload to :cart-items, then :set
+  ;; :is-popover-open false via a literal step payload. The generator
+  ;; should emit a no-`path` handler that threads the db through both
+  ;; steps in one dispatch.
+  (let [doc       (fixture-doc)
+        cart-path (m/path-to doc "13")
+        ;; Add the popover-open boolean field so the second step has a
+        ;; legitimate target.
+        with-flag (update-in doc (conj cart-path :fields)
+                             conj {:name :is-popover-open :type :boolean
+                                   :default true})
+        patched   (assoc-in with-flag (conj cart-path :actions)
+                            [{:name :add-and-close
+                              :steps
+                              [{:operation :add :target-field :cart-items}
+                               {:operation :set :target-field :is-popover-open
+                                :payload [{:literal false}]}]}])
+        files       (cp/generate patched {:app-ns "app"})
+        cart-events (get files "src/app/cart/events.cljs")]
+    (is (some? cart-events))
+    (testing "multi-step handler omits the path interceptor — db is full
+              so multiple fields can be touched in one dispatch"
+      (is (re-find #"::add-and-close\n\s+\[rf/trim-v\]\n"
+                   cart-events)
+          "trim-v only — no `(rf/path …)` line in the interceptor vec"))
+    (testing "handler threads db through one update form per step"
+      (is (re-find #"\(fn \[db \[x\]\]\n\s+\(-> db\n"
+                   cart-events)
+          "(-> db ...) thread head emitted"))
+    (testing "first step :add reuses x as the trigger payload"
+      (is (str/includes? cart-events
+                         "(update ::cart.db/cart-items conj (rf/qualify-map x \"app.cart-item.db\"))")
+          "of-group payload re-keying still applies inside a multi-step body"))
+    (testing "second step :set with :literal false emits the literal verbatim"
+      (is (str/includes? cart-events
+                         "(assoc ::cart.db/is-popover-open false)")
+          "literal payload bypasses x and lands as the boolean false"))))
+
 (deftest generated-collection-db-holds-records-on-owning-group
   ;; Seed records for the :products collection live on product-feed's
   ;; db (its owning field's :default), not on the product template.
