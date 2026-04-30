@@ -44,6 +44,14 @@
   [doc parent-id slot-name]
   (count (get-in (m/get-node doc parent-id) [:slots slot-name] [])))
 
+(defn- add-spacer
+  "Insert a vertical x-spacer of the given CSS length. Helper for
+   the section-rhythm spacers in the docs / dashboard / blog-post
+   templates — section breaks read better with explicit air."
+  [doc parent-id slot idx size]
+  (ops/insert-new doc parent-id slot idx "x-spacer"
+                  {:attrs {"size" size "axis" "vertical"}}))
+
 ;; --- builders --------------------------------------------------------------
 
 (defn- saas-hero []
@@ -753,14 +761,17 @@
         {d1 :doc nb :id}  (ops/insert-new d0 "root" "default" 0 "x-navbar"
                                           {:attrs {"title" "Bareforge Docs"}})
         {d2 :doc}     (add-button d1 nb "actions" 0 "GitHub" "ghost" "sm")
-        {d3 :doc cnt :id} (ops/insert-new d2 "root" "default" 1 "x-container"
+        {d3 :doc}     (add-spacer d2 "root" "default" 1 "2rem")
+        {d4 :doc cnt :id} (ops/insert-new d3 "root" "default" 2 "x-container"
                                           {:attrs {"max-width" "960px" "padding" "lg"}})
-        {d4 :doc}     (add-text+align d3 cnt "default" 0 "h1"
+        {d5 :doc}     (add-text+align d4 cnt "default" 0 "h1"
                                       "Bareforge documentation"
                                       "left")
-        {d5 :doc}     (add-text d4 cnt "default" 1 "subtitle1"
+        {d6 :doc}     (add-spacer d5 cnt "default" 1 "0.75rem")
+        {d7 :doc}     (add-text d6 cnt "default" 2 "subtitle1"
                                 "Visual landing-page builder for BareDOM. Pick a topic to get started.")
-        {d6 :doc grid :id} (ops/insert-new d5 cnt "default" 2 "x-grid"
+        {d8 :doc}     (add-spacer d7 cnt "default" 3 "2rem")
+        {d9 :doc grid :id} (ops/insert-new d8 cnt "default" 4 "x-grid"
                                            {:attrs {"columns" "repeat(3, 1fr)" "gap" "16px"}})
         cards         [["Getting started" "Install, run the dev server, ship your first page in fifteen minutes."]
                        ["Recipes"         "End-to-end walkthrough that builds a filterable cart with bindings + actions."]
@@ -770,9 +781,10 @@
                          (let [{dn :doc card :id} (ops/insert-new d grid "default" i "x-card"
                                                                   {:attrs {"variant" "outlined" "padding" "md"}})
                                {dn :doc}      (add-text dn card "default" 0 "h3" title)
-                               {dn :doc}      (add-text dn card "default" 1 "body2" body)]
+                               {dn :doc}      (add-spacer dn card "default" 1 "0.5rem")
+                               {dn :doc}      (add-text dn card "default" 2 "body2" body)]
                            dn))
-                       d6 (map-indexed vector cards))]
+                       d9 (map-indexed vector cards))]
     d-final))
 
 (defn- changelog []
@@ -780,8 +792,10 @@
         {d1 :doc cnt :id} (ops/insert-new d0 "root" "default" 0 "x-container"
                                           {:attrs {"max-width" "720px" "padding" "lg"}})
         {d2 :doc}     (add-text d1 cnt "default" 0 "h1" "Changelog")
-        {d3 :doc}     (add-text d2 cnt "default" 1 "subtitle1"
+        {d3 :doc}     (add-spacer d2 cnt "default" 1 "0.5rem")
+        {d4 :doc}     (add-text d3 cnt "default" 2 "subtitle1"
                                 "Releases, in reverse chronological order.")
+        {d5 :doc}     (add-spacer d4 cnt "default" 3 "2rem")
         releases      [["0.2.0" "2026-04-29"
                         "Authoring shortcuts: multi-select, drag-to-scrub, Cmd-K command palette, ? cheat sheet, palette pattern flyout, per-tag empty-slot hints."]
                        ["0.1.1" "2026-04-28"
@@ -790,16 +804,24 @@
                         "First public release. Visual editor, four export plugins at full feature parity, nine starter templates."]]
         d-final       (reduce
                        (fn [d [i [version date body]]]
-                         (let [idx           (+ 2 i)
-                               {dn :doc grp :id} (ops/insert-new d cnt "default" idx "x-card"
+                         (let [base          (slot-count d cnt "default")
+                               {dn :doc grp :id} (ops/insert-new d cnt "default" base "x-card"
                                                                  {:attrs {"variant" "elevated" "padding" "md"}})
                                {dn :doc hdr :id} (ops/insert-new dn grp "default" 0 "x-grid"
                                                                  {:attrs {"columns" "auto auto" "gap" "12px"}})
                                {dn :doc}     (add-text dn hdr "default" 0 "h3" (str "v" version))
                                {dn :doc}     (add-text dn hdr "default" 1 "caption" date)
-                               {dn :doc}     (add-text dn grp "default" 1 "body2" body)]
+                               {dn :doc}     (add-spacer dn grp "default" 1 "0.5rem")
+                               {dn :doc}     (add-text dn grp "default" 2 "body2" body)
+                               ;; gap between releases — except after the last
+                               last? (= i (dec (count releases)))
+                               {dn :doc}     (if last?
+                                               {:doc dn}
+                                               (add-spacer dn cnt "default"
+                                                           (slot-count dn cnt "default")
+                                                           "1rem"))]
                            dn))
-                       d3 (map-indexed vector releases))]
+                       d5 (map-indexed vector releases))]
     d-final))
 
 (defn- status-page []
@@ -807,18 +829,21 @@
         {d1 :doc cnt :id} (ops/insert-new d0 "root" "default" 0 "x-container"
                                           {:attrs {"max-width" "880px" "padding" "lg"}})
         {d2 :doc}     (add-text d1 cnt "default" 0 "h1" "System status")
-        {d3 :doc}     (ops/insert-new d2 cnt "default" 1 "x-alert"
+        {d3 :doc}     (add-spacer d2 cnt "default" 1 "1rem")
+        {d4 :doc}     (ops/insert-new d3 cnt "default" 2 "x-alert"
                                       {:attrs {"text" "All systems operational"
                                                "type" "success"}})
-        {d4 :doc}     (add-text+align d3 cnt "default" 2 "h3"
+        {d5 :doc}     (add-spacer d4 cnt "default" 3 "2.5rem")
+        {d6 :doc}     (add-text+align d5 cnt "default" 4 "h3"
                                       "Services" "left")
-        {d5 :doc grid :id} (ops/insert-new d4 cnt "default" 3 "x-grid"
+        {d7 :doc}     (add-spacer d6 cnt "default" 5 "0.75rem")
+        {d8 :doc grid :id} (ops/insert-new d7 cnt "default" 6 "x-grid"
                                            {:attrs {"columns" "1fr auto" "gap" "12px"}})
         services      [["Web app"       "Operational"]
                        ["API"           "Operational"]
                        ["Background jobs" "Operational"]
                        ["CDN"           "Operational"]]
-        d6            (reduce
+        d9            (reduce
                        (fn [d [i [name status]]]
                          (let [base       (* i 2)
                                {dn :doc}  (add-text d grid "default" base "body1" name)
@@ -826,36 +851,48 @@
                                                           {:attrs {"text"    status
                                                                    "variant" "success"}})]
                            dn))
-                       d5 (map-indexed vector services))
-        {d7 :doc}     (add-text+align d6 cnt "default" 4 "h3"
+                       d8 (map-indexed vector services))
+        {d10 :doc}    (add-spacer d9 cnt "default" 7 "2.5rem")
+        {d11 :doc}    (add-text+align d10 cnt "default" 8 "h3"
                                       "Recent incidents" "left")
-        {d8 :doc}     (add-text d7 cnt "default" 5 "body2"
+        {d12 :doc}    (add-spacer d11 cnt "default" 9 "0.75rem")
+        {d13 :doc}    (add-text d12 cnt "default" 10 "body2"
                                 "No incidents reported in the last 30 days.")]
-    d8))
+    d13))
 
 (defn- blog-post []
   (let [d0           (m/empty-document)
         {d1 :doc cnt :id} (ops/insert-new d0 "root" "default" 0 "x-container"
                                           {:attrs {"max-width" "680px" "padding" "lg"}})
         {d2 :doc}     (add-text d1 cnt "default" 0 "overline" "Engineering · 6 min read")
-        {d3 :doc}     (add-text d2 cnt "default" 1 "h1"
+        {d3 :doc}     (add-spacer d2 cnt "default" 1 "0.5rem")
+        {d4 :doc}     (add-text d3 cnt "default" 2 "h1"
                                 "Why we picked plain web components over a framework")
-        {d4 :doc meta :id} (ops/insert-new d3 cnt "default" 2 "x-grid"
+        {d5 :doc}     (add-spacer d4 cnt "default" 3 "1.5rem")
+        {d6 :doc meta :id} (ops/insert-new d5 cnt "default" 4 "x-grid"
                                            {:attrs {"columns" "auto 1fr auto" "gap" "12px"}})
-        {d5 :doc}     (ops/insert-new d4 meta "default" 0 "x-avatar"
+        {d7 :doc}     (ops/insert-new d6 meta "default" 0 "x-avatar"
                                       {:attrs {"size" "sm" "fallback" "AV"}})
-        {d6 :doc}     (add-text d5 meta "default" 1 "body2" "Alex van Elsas")
-        {d7 :doc}     (add-text d6 meta "default" 2 "caption" "Apr 30, 2026")
-        {d8 :doc}     (ops/insert-new d7 cnt "default" 3 "x-divider" {})
+        {d8 :doc}     (add-text d7 meta "default" 1 "body2" "Alex van Elsas")
+        {d9 :doc}     (add-text d8 meta "default" 2 "caption" "Apr 30, 2026")
+        {d10 :doc}    (add-spacer d9 cnt "default" 5 "1.5rem")
+        {d11 :doc}    (ops/insert-new d10 cnt "default" 6 "x-divider" {})
+        {d12 :doc}    (add-spacer d11 cnt "default" 7 "1.5rem")
         body          ["Frameworks ship a lot of code. For a 200-page documentation site, the runtime tax is hard to justify when the content is mostly static and the interactivity is mostly local."
                        "Web components answer the encapsulation question at the platform level. The browser already understands custom elements, shadow DOM, slots, and CSS variables — there's no shim layer between you and the rendered output."
                        "We started with one component, then a dozen, then ninety. The pattern held: each component owns its own visual surface, the page composes them, no global state machine in sight."]
         d-final       (reduce
                        (fn [d [i para]]
-                         (let [idx (+ 4 i)
-                               {dn :doc} (add-text d cnt "default" idx "body1" para)]
+                         (let [last?     (= i (dec (count body)))
+                               base      (slot-count d cnt "default")
+                               {dn :doc} (add-text d cnt "default" base "body1" para)
+                               {dn :doc} (if last?
+                                           {:doc dn}
+                                           (add-spacer dn cnt "default"
+                                                       (slot-count dn cnt "default")
+                                                       "1rem"))]
                            dn))
-                       d8 (map-indexed vector body))]
+                       d12 (map-indexed vector body))]
     d-final))
 
 (defn- dashboard-skeleton []
@@ -863,28 +900,32 @@
         {d1 :doc nb :id}  (ops/insert-new d0 "root" "default" 0 "x-navbar"
                                           {:attrs {"title" "Dashboard"}})
         {d2 :doc}     (add-button d1 nb "actions" 0 "Settings" "ghost" "sm")
-        {d3 :doc cnt :id} (ops/insert-new d2 "root" "default" 1 "x-container"
+        {d3 :doc}     (add-spacer d2 "root" "default" 1 "1.5rem")
+        {d4 :doc cnt :id} (ops/insert-new d3 "root" "default" 2 "x-container"
                                           {:attrs {"max-width" "1200px" "padding" "lg"}})
-        {d4 :doc}     (add-text d3 cnt "default" 0 "h2" "Overview")
-        {d5 :doc grid :id} (ops/insert-new d4 cnt "default" 1 "x-grid"
+        {d5 :doc}     (add-text d4 cnt "default" 0 "h2" "Overview")
+        {d6 :doc}     (add-spacer d5 cnt "default" 1 "1rem")
+        {d7 :doc grid :id} (ops/insert-new d6 cnt "default" 2 "x-grid"
                                            {:attrs {"columns" "repeat(4, 1fr)" "gap" "16px"}})
         stats         [["Active users" "12,438" "+8% week"]
                        ["Revenue"      "$84.2k" "+12% month"]
                        ["Conversion"   "3.4%"   "−0.2pt"]
                        ["Errors"       "0.02%"  "stable"]]
-        d6            (reduce
+        d8            (reduce
                        (fn [d [i [label value delta]]]
                          (:doc (ops/insert-new d grid "default" i "x-stat"
                                                {:attrs {"label" label
                                                         "value" value
                                                         "trend" delta}})))
-                       d5 (map-indexed vector stats))
-        {d7 :doc tbl :id} (ops/insert-new d6 cnt "default" 2 "x-card"
-                                          {:attrs {"variant" "outlined" "padding" "md"}})
-        {d8 :doc}     (add-text d7 tbl "default" 0 "h3" "Recent activity")
-        {d9 :doc}     (add-text d8 tbl "default" 1 "body2"
+                       d7 (map-indexed vector stats))
+        {d9 :doc}     (add-spacer d8 cnt "default" 3 "2rem")
+        {d10 :doc tbl :id} (ops/insert-new d9 cnt "default" 4 "x-card"
+                                           {:attrs {"variant" "outlined" "padding" "md"}})
+        {d11 :doc}    (add-text d10 tbl "default" 0 "h3" "Recent activity")
+        {d12 :doc}    (add-spacer d11 tbl "default" 1 "0.5rem")
+        {d13 :doc}    (add-text d12 tbl "default" 2 "body2"
                                 "Drop a chart, table, or x-timeline here to fill out the activity feed.")]
-    d9))
+    d13))
 
 ;; --- registry ---------------------------------------------------------------
 
