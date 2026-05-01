@@ -18,7 +18,8 @@
    NOT meant as a general-purpose JS-codegen library — this is
    Bareforge-specific glue between `bareforge.export.model` and
    the vanilla-JS runtime/renderer."
-  (:require [bareforge.doc.model :as m]
+  (:require [bareforge.doc.actions :as actions]
+            [bareforge.doc.model :as m]
             [bareforge.doc.sanitize :as sanitize]
             [bareforge.export.html-to-hiccup :as h2h]
             [bareforge.export.model :as em]
@@ -355,60 +356,132 @@
     (str "regEvent(\"" ev-id "\", [trimV, path(\"" key "\")], "
          "(_, [v]) => v);")))
 
+(defn- step-payload-js
+  "Resolve a step's payload entry to a JS value expression. v1 honours
+   `{:literal v}` only — falls back to `x`, the trimmed trigger arg,
+   when no payload override is set. Literals are JSON-encoded so
+   Bareforge's primitive payload kinds (booleans, numbers, strings,
+   nil/null) all round-trip cleanly."
+  [step]
+  (let [pe (some-> step :payload first)]
+    (cond
+      (and pe (contains? pe :literal)) (js/JSON.stringify (clj->js (:literal pe)))
+      :else "x")))
+
+(defn- step-mutator-expr
+  "JS expression that returns the new db given the prior `db`, with
+   one step applied. Used inside the multi-step handler's `(db => …)`
+   reducer."
+  [app-ns group doc all-groups step prev-db]
+  (let [{:keys [operation target-field]} step
+        fk    (field-key app-ns (:ns-name group) target-field)
+        og    (field-of-group doc group all-groups target-field)
+        vexpr (step-payload-js step)
+        q-v   (qualify-expr app-ns og vexpr)
+        cur   (str prev-db "[\"" fk "\"]")]
+    (case operation
+      :set       (str "{ ..." prev-db ", \"" fk "\": " q-v " }")
+      :toggle    (str "{ ..." prev-db ", \"" fk "\": !" cur " }")
+      :increment (str "{ ..." prev-db ", \"" fk "\": (" cur " || 0) + 1 }")
+      :decrement (str "{ ..." prev-db ", \"" fk "\": (" cur " || 0) - 1 }")
+      :clear     (str "{ ..." prev-db ", \"" fk "\": null }")
+      :add       (str "{ ..." prev-db ", \"" fk "\": [..." cur ", " q-v "] }")
+      :remove    (str "{ ..." prev-db ", \"" fk "\": ("
+                      cur ").filter(item => !deepEqual(item, " q-v ")) }")
+      (throw (ex-info (str "unknown action op: " operation)
+                      {:op operation})))))
+
 (defn- emit-action
   "Declared action: set / toggle / increment / decrement / clear /
    add / remove. `:add` and `:remove` pass their payload through
    `qualifyMap` when the target field is `:of-group` — same
    re-keying contract the CLJS plugin honours so a payload
    dispatched from one record shape (e.g. a product record) lands
-   under the target collection's template ns (e.g. cart-item.db/*)."
+   under the target collection's template ns (e.g. cart-item.db/*).
+
+   Two emission shapes:
+   - **Single-step** (1 entry in `:steps`): legacy `regEvent(id,
+     [trimV, path(field)], handler)` — value-narrowed handler. Pinned
+     by existing tests; bytewise unchanged.
+   - **Multi-step** (≥ 2 entries): `regEvent(id, [trimV],
+     handler-over-full-db)`. The handler reduces over the steps,
+     applying each step's transformation to the rolling db. Each step
+     respects its own `:payload` (literal-only in v1) so a step like
+     `:set is-popover-open false` lands the literal verbatim while a
+     `:add` step still consumes the dispatched record."
   [app-ns group action doc all-groups]
-  (let [{:keys [name operation target-field]} action
-        aname    (cljs.core/name name)
-        ev-id    (str app-ns "." (:ns-name group) ".events/" aname)
-        fk       (field-key app-ns (:ns-name group) target-field)
-        og       (field-of-group doc group all-groups target-field)
-        q-x      (qualify-expr app-ns og "x")]
-    (case operation
-      :set
-      (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-           "(_, [v]) => " (qualify-expr app-ns og "v") ");")
-      :toggle
-      (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-           "(v) => !v);")
-      :increment
-      (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-           "(v) => (v || 0) + 1);")
-      :decrement
-      (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-           "(v) => (v || 0) - 1);")
-      :clear
-      (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-           "() => null);")
-      :add
-      (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-           "(v, [x]) => [...v, " q-x "]);")
-      :remove
-      (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-           "(v, [x]) => { const target = " q-x "; "
-           "return v.filter(item => !deepEqual(item, target)); });")
-      (throw (ex-info (str "unknown action op: " operation)
-                      {:op operation})))))
+  (let [{:keys [name]} action
+        aname (cljs.core/name name)
+        ev-id (str app-ns "." (:ns-name group) ".events/" aname)
+        steps (actions/step-list action)]
+    (if (= 1 (count steps))
+      (let [{:keys [operation target-field]} (first steps)
+            fk  (field-key app-ns (:ns-name group) target-field)
+            og  (field-of-group doc group all-groups target-field)
+            q-x (qualify-expr app-ns og "x")]
+        (case operation
+          :set
+          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
+               "(_, [v]) => " (qualify-expr app-ns og "v") ");")
+          :toggle
+          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
+               "(v) => !v);")
+          :increment
+          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
+               "(v) => (v || 0) + 1);")
+          :decrement
+          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
+               "(v) => (v || 0) - 1);")
+          :clear
+          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
+               "() => null);")
+          :add
+          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
+               "(v, [x]) => [...v, " q-x "]);")
+          :remove
+          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
+               "(v, [x]) => { const target = " q-x "; "
+               "return v.filter(item => !deepEqual(item, target)); });")
+          (throw (ex-info (str "unknown action op: " operation)
+                          {:op operation}))))
+      ;; Multi-step: thread db through each step's mutator.
+      (let [body (reduce
+                  (fn [acc step]
+                    (str "(db => " (step-mutator-expr app-ns group doc all-groups
+                                                      step "db")
+                         ")(" acc ")"))
+                  "db0"
+                  steps)]
+        (str "regEvent(\"" ev-id "\", [trimV], "
+             "(db0, [x]) => " body ");")))))
+
+(defn- step-needs-qualify?
+  "True when a single step's operation + target combination forces
+   `qualifyMap` in the emitted JS."
+  [doc group all-groups step]
+  (and (contains? #{:add :remove :set} (:operation step))
+       (field-of-group doc group all-groups (:target-field step))))
 
 (defn- uses-qualify?
   "Does any declared action need `qualifyMap` — i.e. :add or :remove
-   (or :set) on an :of-group target?"
+   (or :set) on an :of-group target? Iterates step-by-step so
+   multi-step actions surface as needing qualifyMap if any one of
+   their steps does."
   [doc group all-groups actions]
   (boolean
-   (some (fn [{:keys [operation target-field]}]
-           (and (contains? #{:add :remove :set} operation)
-                (field-of-group doc group all-groups target-field)))
+   (some (fn [a]
+           (some (partial step-needs-qualify? doc group all-groups)
+                 (actions/step-list a)))
          actions)))
 
 (defn- uses-deep-equal?
-  "Does any declared action need the deep-equal helper — i.e. :remove."
+  "Does any declared action need the deep-equal helper — i.e. :remove
+   anywhere in any step."
   [actions]
-  (boolean (some #(= :remove (:operation %)) actions)))
+  (boolean
+   (some (fn [a]
+           (some #(= :remove (:operation %)) (actions/step-list a)))
+         actions)))
 
 (defn emit-group-events
   "JS module registering every event handler the group owns — auto
@@ -498,7 +571,18 @@
   [trigger {:keys [template-record-sym template-field-syms]
             :as   ctx}]
   (let [aref    (:action-ref trigger)
-        alias   (namespace aref)
+        ;; Canonicalise the action-ref's group segment: an older doc
+        ;; can carry `:app.Dashboard.events/tick` (raw user-typed
+        ;; name) while the registry id was built from the lowercased
+        ;; `:ns-name` — without this, `dispatch` fires on a key the
+        ;; registry doesn't know.
+        alias   (let [ns        (namespace aref)
+                      first-dot (.indexOf ns ".")
+                      last-dot  (.lastIndexOf ns ".")
+                      app-pref  (subs ns 0 (inc first-dot))
+                      grp       (subs ns (inc first-dot) last-dot)
+                      suffix    (subs ns last-dot)]
+                  (str app-pref (actions/name->ns-segment grp) suffix))
         ename   (cljs.core/name aref)
         payload (:payload trigger)
         args    (cond

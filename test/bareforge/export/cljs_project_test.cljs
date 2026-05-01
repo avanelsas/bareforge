@@ -14,6 +14,79 @@
 
 ;; --- group detection -------------------------------------------------------
 
+(deftest mixed-case-group-emits-lowercase-paths-and-ns
+  ;; Regression for "Resource does not have expected namespace":
+  ;; a Dashboard x-card must produce a self-consistent project — file
+  ;; paths AND (ns …) forms AND action-ref-derived requires all
+  ;; lowercase. shadow-cljs rejects any drift between path and ns.
+  (let [doc {:next-id 3
+             :root    {:id "root" :tag "x-container"
+                       :attrs {} :props {} :layout {:placement :flow}
+                       :slots {"default"
+                               [{:id "dash" :tag "x-card" :name "Dashboard"
+                                 :attrs {} :props {} :layout {:placement :flow}
+                                 :fields  [{:name :id :type :number :default 0
+                                            :locked? true}
+                                           {:name :clicks :type :number :default 0}]
+                                 :actions [{:name :tick :operation :increment
+                                            :target-field :clicks}]
+                                 :slots
+                                 {"default"
+                                  [{:id "btn" :tag "x-button"
+                                    :attrs {} :props {} :layout {:placement :flow}
+                                    :slots {}
+                                    :events [{:trigger "press"
+                                              :action-ref :app.dashboard.events/tick}]}]}}]}}}
+        files (cp/generate doc {:app-ns "app"})]
+    (testing "no path leaks the original capital-D name"
+      (is (not-any? #(re-find #"Dashboard" %) (keys files))))
+    (testing "events file at the lowercase path with the lowercase ns"
+      (let [evs (get files "src/app/dashboard/events.cljs")]
+        (is (some? evs))
+        (is (str/starts-with? evs "(ns app.dashboard.events"))))
+    (testing "views file requires the events ns under the lowercase alias"
+      (let [vs (get files "src/app/dashboard/views.cljs")]
+        (is (some? vs))
+        (is (not (re-find #"\[app\.Dashboard\.events" vs))
+            "no Dashboard-cased require")
+        (is (re-find #"\[app\.dashboard\.events :as dashboard\.events\]" vs)
+            "lowercase require alias matches the events file's path/ns")))))
+
+(deftest legacy-miscased-action-ref-export-is-defensively-lowercased
+  ;; Older docs (saved before the actions/action-ref canonicalisation
+  ;; fix) carry triggers whose stored `:action-ref` is in the raw
+  ;; user-typed namespace, e.g. `:app.Dashboard.events/tick`. The
+  ;; export pipeline must still emit lowercase requires + dispatches
+  ;; for those — the user shouldn't have to re-pick every trigger.
+  (let [doc {:next-id 3
+             :root    {:id "root" :tag "x-container"
+                       :attrs {} :props {} :layout {:placement :flow}
+                       :slots {"default"
+                               [{:id "dash" :tag "x-card" :name "Dashboard"
+                                 :attrs {} :props {} :layout {:placement :flow}
+                                 :fields  [{:name :id :type :number :default 0
+                                            :locked? true}
+                                           {:name :clicks :type :number :default 0}]
+                                 :actions [{:name :tick :operation :increment
+                                            :target-field :clicks}]
+                                 :slots
+                                 {"default"
+                                  [{:id "btn" :tag "x-button"
+                                    :attrs {} :props {} :layout {:placement :flow}
+                                    :slots {}
+                                    ;; legacy stored ref — capital D
+                                    :events [{:trigger "press"
+                                              :action-ref :app.Dashboard.events/tick}]}]}}]}}}
+        files (cp/generate doc {:app-ns "app"})
+        vs    (get files "src/app/dashboard/views.cljs")]
+    (is (some? vs))
+    (testing "require lands in lowercase even though the stored ref is mixed-case"
+      (is (re-find #"\[app\.dashboard\.events :as dashboard\.events\]" vs))
+      (is (not (re-find #"\[app\.Dashboard\.events" vs))))
+    (testing "dispatch keyword is autoresolved through the lowercase alias"
+      (is (str/includes? vs "::dashboard.events/tick"))
+      (is (not (str/includes? vs "::Dashboard.events/tick"))))))
+
 (deftest detect-groups-finds-named-nodes-only
   (let [{:keys [groups root-order]} (cp/detect-groups (fixture-doc))
         ns-names (set (map :ns-name groups))]
@@ -97,6 +170,22 @@
         html  (get files "public/index.html")]
     (is (str/includes? html "<x-theme"))
     (is (str/includes? html "Demo Store"))))
+
+(deftest generated-index-html-csp-allows-shadow-cljs-dev
+  ;; Regression for: a strict script-src without `'unsafe-eval'` made
+  ;; `shadow-cljs watch` crash on first load — its dev hot-reload
+  ;; runtime evals modules. Same with the websocket connection back
+  ;; to the dev server (connect-src ws:/wss:). The exported project
+  ;; should boot cleanly under `watch` without the user editing CSP.
+  (let [files (cp/generate (fixture-doc) {:title "Demo Store"})
+        html  (get files "public/index.html")]
+    (testing "script-src includes 'unsafe-eval' for dev hot-reload"
+      (is (re-find #"script-src[^;]*'unsafe-eval'" html)))
+    (testing "connect-src allows ws:/wss: for the dev server's hot-reload socket"
+      (is (re-find #"connect-src[^;]*\bws:" html))
+      (is (re-find #"connect-src[^;]*\bwss:" html)))
+    (testing "production-tightening guidance is in the source for the deployer"
+      (is (str/includes? html "Content-Security-Policy")))))
 
 (deftest generated-core-requires-all-groups
   (let [files (cp/generate (fixture-doc) {:app-ns "app"})
@@ -335,6 +424,46 @@
       (is (re-find #"\(fn \[v \[x\]\]\n\s+\(conj v \(rf/qualify-map x \"app\.cart-item\.db\"\)\)\)"
                    cart-events)
           "body conj's the rf/qualify-map'd payload onto the narrowed field"))))
+
+(deftest generated-events-multi-step-action-threads-db
+  ;; Patch the cart group's :add-to-cart action with a two-step :steps
+  ;; vector — :add the payload to :cart-items, then :set
+  ;; :is-popover-open false via a literal step payload. The generator
+  ;; should emit a no-`path` handler that threads the db through both
+  ;; steps in one dispatch.
+  (let [doc       (fixture-doc)
+        cart-path (m/path-to doc "13")
+        ;; Add the popover-open boolean field so the second step has a
+        ;; legitimate target.
+        with-flag (update-in doc (conj cart-path :fields)
+                             conj {:name :is-popover-open :type :boolean
+                                   :default true})
+        patched   (assoc-in with-flag (conj cart-path :actions)
+                            [{:name :add-and-close
+                              :steps
+                              [{:operation :add :target-field :cart-items}
+                               {:operation :set :target-field :is-popover-open
+                                :payload [{:literal false}]}]}])
+        files       (cp/generate patched {:app-ns "app"})
+        cart-events (get files "src/app/cart/events.cljs")]
+    (is (some? cart-events))
+    (testing "multi-step handler omits the path interceptor — db is full
+              so multiple fields can be touched in one dispatch"
+      (is (re-find #"::add-and-close\n\s+\[rf/trim-v\]\n"
+                   cart-events)
+          "trim-v only — no `(rf/path …)` line in the interceptor vec"))
+    (testing "handler threads db through one update form per step"
+      (is (re-find #"\(fn \[db \[x\]\]\n\s+\(-> db\n"
+                   cart-events)
+          "(-> db ...) thread head emitted"))
+    (testing "first step :add reuses x as the trigger payload"
+      (is (str/includes? cart-events
+                         "(update ::cart.db/cart-items conj (rf/qualify-map x \"app.cart-item.db\"))")
+          "of-group payload re-keying still applies inside a multi-step body"))
+    (testing "second step :set with :literal false emits the literal verbatim"
+      (is (str/includes? cart-events
+                         "(assoc ::cart.db/is-popover-open false)")
+          "literal payload bypasses x and lands as the boolean false"))))
 
 (deftest generated-collection-db-holds-records-on-owning-group
   ;; Seed records for the :products collection live on product-feed's

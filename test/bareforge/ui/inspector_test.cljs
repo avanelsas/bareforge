@@ -198,3 +198,91 @@
           node {:text-field :title}]
       (is (= "↔ post.title"
              (insp/text-bind-label d3 node :title))))))
+
+;; --- multi-step action row formatting (A2) ----------------------------
+
+(deftest step-summary-no-payload
+  (is (= "adds to :cart-items"
+         (insp/step-summary {:operation :add :target-field :cart-items}))
+      "scalar verb + colon-prefixed field name when there's no payload"))
+
+(deftest step-summary-with-literal-payload
+  (testing "literal payloads surface inline as ` = <value>` so the
+            row reads as a single sentence"
+    (is (= "sets :is-popover-open = false"
+           (insp/step-summary {:operation :set :target-field :is-popover-open
+                               :payload [{:literal false}]})))
+    (is (= "sets :search = \"\""
+           (insp/step-summary {:operation :set :target-field :search
+                               :payload [{:literal ""}]})))))
+
+(deftest step-summary-falls-back-on-unknown-op
+  (testing "unknown operations show the keyword name verbatim — keeps
+            the row legible if the spec gains a new op before the verb
+            map catches up"
+    (is (= "frobnicate :x"
+           (insp/step-summary {:operation :frobnicate :target-field :x})))))
+
+;; --- trigger payload preview (A3) -------------------------------------
+
+(deftest resolve-payload-implicit-record-from-template
+  (testing "no :payload + template ancestor → single :implicit-record
+            entry summarising the template's :fields"
+    (let [doc  {:root {}}
+          tmpl {:id "t" :tag "x-card" :name "post"
+                :fields [{:name :id :type :number :default 0 :locked? true}
+                         {:name :title :type :string :default ""}
+                         {:name :body  :type :string :default ""}]}
+          out  (insp/resolve-payload-entries doc {:trigger "press"} tmpl)]
+      (is (= 1 (count out)))
+      (is (= :implicit-record (:source (first out))))
+      (is (= "post record"    (:label  (first out))))
+      (is (= "id, title, body" (:detail (first out)))))))
+
+(deftest resolve-payload-implicit-record-with-no-fields
+  (testing "template with no fields gets a placeholder detail rather
+            than the empty string — keeps the row from collapsing
+            visually"
+    (let [tmpl {:name "card" :fields []}
+          out  (insp/resolve-payload-entries {:root {}} {} tmpl)]
+      (is (= "(no fields declared)" (:detail (first out)))))))
+
+(deftest resolve-payload-no-template-no-payload-empty
+  (testing "no :payload + no template → empty vector → caller
+            renders no preview block"
+    (is (= [] (insp/resolve-payload-entries {:root {}} {} nil)))))
+
+(deftest resolve-payload-explicit-literal
+  (testing "{:literal v} entries surface as :literal with pr-str detail"
+    (let [trigger {:payload [{:literal false}
+                             {:literal "hello"}]}
+          out (insp/resolve-payload-entries {:root {}} trigger nil)]
+      (is (= [:literal :literal] (mapv :source out)))
+      (is (= "false"   (:detail (first out))))
+      (is (= "\"hello\"" (:detail (second out)))))))
+
+(deftest resolve-payload-explicit-event-detail
+  (testing "{:event-detail :checked} renders as event.detail.checked"
+    (let [trigger {:payload [{:event-detail :checked}]}
+          out (insp/resolve-payload-entries {:root {}} trigger nil)]
+      (is (= :event-detail (:source (first out))))
+      (is (= "event.detail.checked" (:detail (first out)))))))
+
+(deftest resolve-payload-explicit-field-with-explicit-owner
+  (testing "{:field :foo :owner \"cart\"} produces owner.field detail
+            without walking the doc"
+    (let [trigger {:payload [{:field :cart-count :owner "cart"}]}
+          out (insp/resolve-payload-entries {:root {}} trigger nil)]
+      (is (= "field"           (:label (first out))))
+      (is (= "cart.cart-count" (:detail (first out)))))))
+
+(deftest resolve-payload-explicit-field-walks-doc-when-owner-missing
+  (testing "legacy :field entry without :owner recovers the owning
+            group's name by scanning the doc's :fields"
+    (let [s0 (state/initial-state)
+          {d1 :doc cart-id :id} (ops/insert-new (:document s0) "root" "default" 0 "x-container")
+          d2 (ops/set-name d1 cart-id "cart")
+          d3 (ops/add-field d2 cart-id {:name :cart-count :type :number :default 0})
+          trigger {:payload [{:field :cart-count}]}
+          out (insp/resolve-payload-entries d3 trigger nil)]
+      (is (= "cart.cart-count" (:detail (first out)))))))

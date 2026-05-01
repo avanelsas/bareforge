@@ -14,7 +14,27 @@
 
    Used by the inspector to populate trigger action pickers, and by
    tests that want to introspect what a doc dispatches."
-  (:require [bareforge.doc.model :as m]))
+  (:require [bareforge.doc.model :as m]
+            [clojure.string :as str]))
+
+;; --- name normalisation --------------------------------------------------
+
+(defn name->ns-segment
+  "Convert a user-defined `:name` into a namespace segment: lower,
+   trim, collapse non-[a-z0-9] runs to single hyphens, trim leading
+   and trailing hyphens.
+
+   Lives here so action-ref construction (below) and the export
+   model's `:ns-name` derivation share one canonical form. Without
+   this, a group named \"Dashboard\" would mint action-refs in the
+   `app.Dashboard.events` namespace while every other generator path
+   (file paths, ns forms, db aliases) used the lowercased
+   `app.dashboard.events` — which is exactly the shadow-cljs
+   \"resource does not have expected namespace\" error."
+  [n]
+  (-> (or n "") str/lower-case str/trim
+      (str/replace #"[^a-z0-9]+" "-")
+      (str/replace #"^-|-$" "")))
 
 (defn computed?
   "True when a field-def is a computed (derived) field — i.e. carries
@@ -82,20 +102,56 @@
   (first (filter #(= gname (:name %)) (group-nodes doc))))
 
 (defn- action-ref
-  "Build the fully qualified action-ref keyword for a group's action."
+  "Build the fully qualified action-ref keyword for a group's action.
+   Canonicalises `group-name` via `name->ns-segment` so the namespace
+   matches the export pipeline's `:ns-name`-derived file paths and
+   `(ns …)` forms."
   [app-ns group-name action-name]
-  (keyword (str app-ns "." group-name ".events") (name action-name)))
+  (keyword (str app-ns "." (name->ns-segment group-name) ".events")
+           (name action-name)))
+
+(defn step-list
+  "Canonicalise either action shape to a vector of step maps.
+
+   Old single-step shape `{:name :operation :target-field}` reads as
+   a one-element list; new multi-step shape `{:name :steps [...]}`
+   returns its `:steps` directly. Always returns at least one step.
+
+   Pure: the original action map is never mutated. All consumers
+   (inspector picker, code generators, payload-required check) iterate
+   via this function so the on-disk representation can drift forward
+   without churn at the call sites."
+  [action]
+  (or (some-> (:steps action) vec)
+      [{:operation    (:operation action)
+        :target-field (:target-field action)}]))
+
+(defn payload-step?
+  "True when a step's operation consumes the trigger payload (i.e.
+   `:set`, `:add`, or `:remove`). Useful for trigger UIs that need
+   to know whether dispatching the action requires a record arg."
+  [step]
+  (contains? #{:set :add :remove} (:operation step)))
+
+(defn action-needs-payload?
+  "True when ANY step in this action consumes the trigger payload.
+   Multi-step actions can mix payload-consuming steps (`:add`) with
+   payload-ignoring ones (`:toggle`); the trigger only needs to
+   provide a payload if at least one step actually uses it."
+  [action]
+  (boolean (some payload-step? (step-list action))))
 
 (defn- declared-actions
-  "Action entries contributed by a group's `:actions` vector."
+  "Action entries contributed by a group's `:actions` vector. Each
+   entry exposes `:steps` (canonical) so callers iterate the same way
+   regardless of single- vs multi-step authoring."
   [app-ns group-node]
   (let [gname (:name group-node)]
-    (for [{:keys [name operation target-field]} (:actions group-node)]
+    (for [{:keys [name] :as a} (:actions group-node)]
       {:group-name   gname
        :action-name  name
        :action-ref   (action-ref app-ns gname name)
-       :operation    operation
-       :target-field target-field
+       :steps        (step-list a)
        :source       :declared})))
 
 (defn- auto-setter-actions
@@ -118,8 +174,7 @@
         {:group-name   gname
          :action-name  setter-kw
          :action-ref   (action-ref app-ns gname setter-kw)
-         :operation    :set
-         :target-field name
+         :steps        [{:operation :set :target-field name}]
          :source       :auto-setter}))))
 
 (defn all-actions
@@ -131,8 +186,7 @@
      {:group-name   \"cart\"
       :action-name  :add-to-cart
       :action-ref   :app.cart.events/add-to-cart
-      :operation    :add
-      :target-field :cart-items
+      :steps        [{:operation :add :target-field :cart-items}]
       :source       :declared}"
   ([doc] (all-actions doc "app"))
   ([doc app-ns]

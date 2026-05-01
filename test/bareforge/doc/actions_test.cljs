@@ -81,4 +81,86 @@
     (is (= 1 (count changed))
         "only the declared action is kept")
     (is (= :declared (:source (first changed))))
-    (is (= :increment (:operation (first changed))))))
+    (is (= [{:operation :increment :target-field :x}]
+           (:steps (first changed)))
+        "single-step shape canonicalises to a one-element :steps list")))
+
+;; --- step-list canonicalisation (multi-step actions) -----------------
+
+(deftest step-list-single-step-shape
+  (testing "old shape `{:operation :target-field}` reads as a
+            one-element step list"
+    (is (= [{:operation :increment :target-field :x}]
+           (actions/step-list {:name :bump :operation :increment :target-field :x})))))
+
+(deftest step-list-multi-step-shape
+  (testing "new shape `{:steps [...]}` returns its steps verbatim"
+    (let [steps [{:operation :add :target-field :cart-items}
+                 {:operation :set :target-field :is-popover-open
+                  :payload [{:literal false}]}]]
+      (is (= steps (actions/step-list {:name :add-and-close :steps steps}))))))
+
+(deftest step-list-never-empty
+  (testing "even an action map missing both shapes returns a nil-filled
+            single-step rather than an empty vector — callers can treat
+            the return as guaranteed non-empty"
+    (is (= 1 (count (actions/step-list {:name :bare}))))))
+
+(deftest action-needs-payload?-flags-payload-consumers
+  (testing ":set / :add / :remove operations consume the trigger payload;
+            others ignore it"
+    (is (true?  (actions/action-needs-payload?
+                 {:name :a :operation :add :target-field :xs})))
+    (is (true?  (actions/action-needs-payload?
+                 {:name :a :operation :set :target-field :x})))
+    (is (false? (actions/action-needs-payload?
+                 {:name :a :operation :toggle :target-field :x})))
+    (is (false? (actions/action-needs-payload?
+                 {:name :a :operation :increment :target-field :x})))))
+
+(deftest action-needs-payload?-multi-step-mixes-flag
+  (testing "a multi-step action needs payload iff at least one step
+            actually consumes it"
+    (is (true?  (actions/action-needs-payload?
+                 {:name :a
+                  :steps [{:operation :add :target-field :xs}
+                          {:operation :toggle :target-field :flag}]})))
+    (is (false? (actions/action-needs-payload?
+                 {:name :a
+                  :steps [{:operation :toggle :target-field :flag}
+                          {:operation :clear :target-field :search}]})))))
+
+;; --- name->ns-segment + action-ref canonicalisation -------------------
+
+(deftest name->ns-segment-lowercases-and-normalises
+  (testing "user-typed names always produce a lowercase ns segment"
+    (is (= "dashboard"     (actions/name->ns-segment "Dashboard")))
+    (is (= "user-profile"  (actions/name->ns-segment "User Profile")))
+    (is (= "cart-2"        (actions/name->ns-segment "  Cart 2  ")))
+    (is (= ""              (actions/name->ns-segment nil))
+        "nil is tolerated — empty input returns empty string"))
+  (testing "non-[a-z0-9] runs collapse to single hyphens, no
+            leading/trailing hyphens"
+    (is (= "abc-def" (actions/name->ns-segment "abc!!def")))
+    (is (= "abc-def" (actions/name->ns-segment "  abc-def--")))))
+
+(deftest action-ref-uses-canonical-segment
+  ;; Regression for: a Dashboard x-card produced action-refs in the
+  ;; `app.Dashboard.events` namespace while the events file was at
+  ;; `src/app/dashboard/events.cljs`. shadow-cljs rejected the build
+  ;; because the path-derived namespace didn't match the (ns …) form.
+  (let [doc {:root {:id "r" :tag "x-container"
+                    :attrs {} :props {} :layout {:placement :flow}
+                    :slots
+                    {"default"
+                     [{:id "g" :tag "x-card" :name "Dashboard"
+                       :attrs {} :props {} :layout {:placement :flow}
+                       :fields  [{:name :clicks :type :number :default 0}]
+                       :actions [{:name :tick :operation :increment
+                                  :target-field :clicks}]
+                       :slots {}}]}}}
+        entries (actions/all-actions doc "app")
+        tick    (first (filter #(= :tick (:action-name %)) entries))]
+    (is (= :app.dashboard.events/tick (:action-ref tick))
+        "the group segment is lowercased — matches what the export
+         pipeline emits for the file path and (ns …) form")))

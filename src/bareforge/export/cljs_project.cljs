@@ -9,7 +9,8 @@
    Views use hiccup notation rendered by an included `renderer.cljs`
    (adapted from bare-demo). Each detected UI component group gets
    its own folder with db/subs/events/views files."
-  (:require [bareforge.doc.model :as m]
+  (:require [bareforge.doc.actions :as actions]
+            [bareforge.doc.model :as m]
             [bareforge.export.html-to-hiccup :as h2h]
             [bareforge.export.model :as em]
             [bareforge.meta.versions :as versions]
@@ -187,11 +188,21 @@
 (defn- action-ref->alias
   "Turn an action-ref qualified keyword like :app.cart.events/add-to-cart
    into the require alias string: \"cart.events\". Matches the
-   dot-notation alias convention used elsewhere in the generator."
+   dot-notation alias convention used elsewhere in the generator.
+
+   The group segment is passed through `actions/name->ns-segment`
+   so an action-ref that was committed before the
+   `bareforge.doc.actions/action-ref` canonicalisation fix (e.g.
+   `:app.Dashboard.events/tick` in an older doc) still emits a
+   lowercase require — `[app.dashboard.events :as dashboard.events]`
+   matching the file at `src/app/dashboard/events.cljs`."
   [ref]
-  (let [ns (namespace ref)
-        app-prefix-len (inc (.indexOf ns "."))]
-    (subs ns app-prefix-len)))
+  (let [ns         (namespace ref)
+        first-dot  (.indexOf ns ".")
+        last-dot   (.lastIndexOf ns ".")
+        group-seg  (subs ns (inc first-dot) last-dot)
+        suffix     (subs ns last-dot)]   ;; ".events" or ".subs"
+    (str (actions/name->ns-segment group-seg) suffix)))
 
 ;; --- :write / :read-write binding → DOM event handler ---------------------
 ;;
@@ -1125,25 +1136,83 @@
       :add       [" (fn [v [x]]\n"  (str "   (conj v " (wrap "x") ")))")]
       :remove    [" (fn [v [x]]\n"  (str "   (filterv #(not= % " (wrap "x") ") v)))")])))
 
+(defn- step-payload-expr
+  "Resolve a step's payload entry to the value expression used in its
+   db-update form. v1 honours only `{:literal v}` at the step level;
+   anything else (or no `:payload`) defaults to `x` — the trimmed
+   trigger arg."
+  [step]
+  (let [pe (some-> step :payload first)]
+    (cond
+      (and pe (contains? pe :literal)) (pr-str (:literal pe))
+      :else "x")))
+
+(defn- step->thread-form
+  "Emit one step's contribution to the `(-> db ...)` thread inside a
+   multi-step handler. Returns a string like
+   `(update ::cart.db/cart-items conj (rf/qualify-map x \"app.cart-item.db\"))`.
+   Honours `:of-group` payload re-keying for `:set` / `:add` / `:remove`."
+  [{:keys [operation target-field] :as step} db-alias fields app-ns]
+  (let [fname    (cljs.core/name target-field)
+        of-group (some (fn [fd]
+                         (when (= target-field (:name fd)) (:of-group fd)))
+                       fields)
+        of-ns    (when of-group (str app-ns "." of-group ".db"))
+        wrap     (fn [x] (if of-ns (str "(rf/qualify-map " x " \"" of-ns "\")") x))
+        vexpr    (step-payload-expr step)
+        fk       (str "::" db-alias "/" fname)]
+    (case operation
+      :set       (str "(assoc " fk " " (wrap vexpr) ")")
+      :toggle    (str "(update " fk " not)")
+      :increment (str "(update " fk " inc)")
+      :decrement (str "(update " fk " dec)")
+      :clear     (str "(assoc " fk " nil)")
+      :add       (str "(update " fk " conj " (wrap vexpr) ")")
+      :remove    (str "(update " fk
+                      " (fn [vs#] (filterv #(not= % "
+                      (wrap vexpr) ") vs#)))"))))
+
 (defn- emit-action-event
-  "Emit a declared action as a reg-event form with trim-v + path.
+  "Emit a declared action as a reg-event form. Two paths:
+
+   - **Single-step** (`{:operation :target-field}` or `:steps` of size
+     1): emit the legacy shape with `trim-v` + `path` interceptors,
+     a value-narrowed handler. Pinned by `cljs_project_test`.
+   - **Multi-step** (`:steps` length ≥ 2): emit a no-`path` handler
+     that threads the full db through each step's transformation,
+     so a single dispatch can update multiple fields in order. Each
+     step honours its own `:payload` (literal-only in v1).
+
    `db-alias` is the group's own db alias; `fields` is the group's
-   `:fields` (used to look up the target field's `:of-group` for
-   payload re-keying); `app-ns` is the root app namespace."
-  [{:keys [name operation target-field]} db-alias fields app-ns]
-  (let [ename        (cljs.core/name name)
-        fname        (cljs.core/name target-field)
-        of-group     (some (fn [fd]
-                             (when (= target-field (:name fd)) (:of-group fd)))
-                           fields)
-        of-group-ns  (when of-group (str app-ns "." of-group ".db"))
-        [fn-head body-tail] (action->handler operation of-group-ns)]
-    (str "(rf/reg-event\n"
-         " ::" ename "\n"
-         " [rf/trim-v\n"
-         "  (rf/path ::" db-alias "/" fname ")]\n"
-         fn-head
-         body-tail)))
+   `:fields` (used to look up `:of-group` for payload re-keying);
+   `app-ns` is the root app namespace."
+  [{:keys [name] :as action} db-alias fields app-ns]
+  (let [ename (cljs.core/name name)
+        steps (actions/step-list action)]
+    (if (= 1 (count steps))
+      (let [{:keys [operation target-field]} (first steps)
+            fname        (cljs.core/name target-field)
+            of-group     (some (fn [fd]
+                                 (when (= target-field (:name fd)) (:of-group fd)))
+                               fields)
+            of-group-ns  (when of-group (str app-ns "." of-group ".db"))
+            [fn-head body-tail] (action->handler operation of-group-ns)]
+        (str "(rf/reg-event\n"
+             " ::" ename "\n"
+             " [rf/trim-v\n"
+             "  (rf/path ::" db-alias "/" fname ")]\n"
+             fn-head
+             body-tail))
+      (let [thread (str/join
+                    "\n       "
+                    (for [s steps]
+                      (step->thread-form s db-alias fields app-ns)))]
+        (str "(rf/reg-event\n"
+             " ::" ename "\n"
+             " [rf/trim-v]\n"
+             " (fn [db [x]]\n"
+             "   (-> db\n"
+             "       " thread ")))")))))
 
 (defn- emit-setter-event
   "Emit an auto `<field>-changed` setter event using re-frame-style
@@ -1519,14 +1588,20 @@
        "<head>\n"
        "  <meta charset=\"utf-8\">\n"
        ;; CLJS export self-hosts the shadow-cljs JS bundle; everything
-       ;; runs from same-origin. Strict CSP.
+       ;; runs from same-origin. `'unsafe-eval'` is included so
+       ;; `shadow-cljs watch` (dev hot-reload) works out of the box —
+       ;; the dev runtime relies on `eval` for module loading. For
+       ;; production deployments (`shadow-cljs release app`) the
+       ;; emitted bundle needs no eval; tighten the script-src by
+       ;; dropping `'unsafe-eval'` (and ideally serving the CSP via
+       ;; HTTP headers rather than this meta tag).
        "  <meta http-equiv=\"Content-Security-Policy\" content=\""
        "default-src 'self'; "
-       "script-src 'self' 'unsafe-inline'; "
+       "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
        "style-src 'self' 'unsafe-inline'; "
        "img-src 'self' data:; "
        "font-src 'self' data:; "
-       "connect-src 'self'; "
+       "connect-src 'self' ws: wss:; "
        "object-src 'none'; "
        "base-uri 'self'\">\n"
        "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"

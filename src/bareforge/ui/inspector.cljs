@@ -2110,11 +2110,14 @@
     (str grp "/" nm)))
 
 (defn- action-needs-record?
-  "True when the action's operation requires a record payload at
+  "True when ANY step on the action consumes a payload record at
    dispatch time. Used to dim actions whose implicit payload can't be
-   resolved at the selected node."
+   resolved at the selected node. Multi-step actions surface as
+   payload-needing iff at least one step actually consumes the
+   trigger's positional arg."
   [action-entry]
-  (contains? payload-required-ops (:operation action-entry)))
+  (some #(contains? payload-required-ops (:operation %))
+        (:steps action-entry)))
 
 (defn- build-action-picker-panel
   "Grouped picker panel for selecting an action-ref for an event row.
@@ -2187,22 +2190,113 @@
     (.appendChild wrap body)
     wrap))
 
+(defn resolve-payload-entries
+  "Pure: per-entry description of what a bound trigger will dispatch
+   at runtime.
+
+   Returns a vector of `{:source :label :detail}` maps:
+
+   - **Implicit payload** (the v1 default — no `:payload` on the
+     trigger, sitting inside a template instance): one
+     `:implicit-record` entry summarising the enclosing template's
+     record shape.
+   - **Explicit payload** (legacy / hand-edited docs): one entry
+     per `:payload` item — `{:literal v}`, `{:event-detail :k}`, or
+     `{:field :f :owner? \"g\"}`. The `:owner` is recovered via a
+     doc walk if absent.
+   - **No resolvable payload** (no `:payload`, no template ancestor):
+     empty vector.
+
+   Public so unit tests can pin the resolved shape without spinning
+   up a bound row."
+  [doc trigger tmpl]
+  (let [payload (:payload trigger)]
+    (cond
+      (seq payload)
+      (mapv
+       (fn [pe]
+         (cond
+           (contains? pe :literal)
+           {:source :literal
+            :label  "literal"
+            :detail (pr-str (:literal pe))}
+
+           (contains? pe :event-detail)
+           {:source :event-detail
+            :label  "event"
+            :detail (str "event.detail." (name (:event-detail pe)))}
+
+           (contains? pe :field)
+           (let [field-kw (:field pe)
+                 owner    (or (:owner pe)
+                              (some (fn [n]
+                                      (when (some #(= field-kw (:name %))
+                                                  (:fields n))
+                                        (:name n)))
+                                    (m/walk-nodes doc)))]
+             {:source :field
+              :label  "field"
+              :detail (if owner
+                        (str owner "." (name field-kw))
+                        (name field-kw))})
+
+           :else
+           {:source :unknown
+            :label  "unknown"
+            :detail (pr-str pe)}))
+       payload)
+
+      tmpl
+      (let [fields (vec (:fields tmpl))]
+        [{:source :implicit-record
+          :label  (str (:name tmpl) " record")
+          :detail (if (seq fields)
+                    (str/join ", " (map #(name (:name %)) fields))
+                    "(no fields declared)")}])
+
+      :else
+      [])))
+
+(defn- build-payload-preview
+  "Read-only block beneath a bound trigger row. Lists each resolved
+   payload entry as `<label>: <detail>`. Hidden when there's
+   nothing to show — keeps the row compact for triggers that fire
+   into actions outside any template ancestor."
+  [entries]
+  (when (seq entries)
+    (let [block (u/el :div {:class "inspector-payload-preview"})
+          head  (u/set-text! (u/el :div {:class "inspector-payload-head"})
+                             "Resolved payload")]
+      (.appendChild block head)
+      (doseq [{:keys [label detail]} entries]
+        (let [row (u/el :div {:class "inspector-payload-entry"})
+              k   (u/set-text! (u/el :span {:class "inspector-payload-label"})
+                               (str label ":"))
+              v   (u/set-text! (u/el :code {:class "inspector-payload-detail"})
+                               detail)]
+          (.appendChild row k)
+          (.appendChild row v)
+          (.appendChild block row)))
+      block)))
+
 (defn- build-event-row
   "Single row for one DOM event on the selected node. Shows the
    currently-bound action (if any) with a ✕ to unbind, or an action
-   picker button to bind. A passive hint below reports the implicit
-   payload the dispatch will receive."
-  [node event-name _doc all-actions tmpl-name]
+   picker button to bind. A `Resolved payload` block below the row
+   (when bound) lists each entry the dispatch will carry — implicit
+   record fields when inside a template, or explicit `:literal` /
+   `:event-detail` / `:field` entries from a hand-edited doc."
+  [node event-name doc all-actions tmpl-name]
   (let [existing-idx (first (keep-indexed (fn [i t]
                                             (when (= event-name (:trigger t)) i))
                                           (or (:events node) [])))
-        existing    (when existing-idx
-                      (nth (:events node) existing-idx))
-        wrap        (u/el :div {:class "inspector-event-row-wrap"})
-        row         (u/el :div {:class "inspector-event-row"})
-        label-el    (u/set-text! (u/el :span {:class "inspector-event-name"})
-                                 event-name)
-        hint        (u/el :div {:class "inspector-event-hint"})]
+        existing     (when existing-idx
+                       (nth (:events node) existing-idx))
+        tmpl         (enclosing-template-group doc (:id node))
+        wrap         (u/el :div {:class "inspector-event-row-wrap"})
+        row          (u/el :div {:class "inspector-event-row"})
+        label-el     (u/set-text! (u/el :span {:class "inspector-event-name"})
+                                  event-name)]
     (.appendChild row label-el)
     (if existing
       (let [picked (u/set-text!
@@ -2216,16 +2310,21 @@
                (fn [_] (commit-remove-trigger! (:id node) existing-idx)))
         (.appendChild row picked)
         (.appendChild row unbind)
-        (u/set-text! hint
-                     (if tmpl-name
-                       (str "payload: enclosing " tmpl-name)
-                       "payload: none")))
-      (let [btn (u/set-text!
-                 (u/el :x-button {:variant "ghost" :size "sm"
-                                  :class "inspector-bind-btn"
-                                  :title "Pick an action"
-                                  :data-tour "add-event"})
-                 "🔗")]
+        (.appendChild wrap row)
+        (when-let [block (build-payload-preview
+                          (resolve-payload-entries doc existing tmpl))]
+          (.appendChild wrap block)))
+      (let [btn  (u/set-text!
+                  (u/el :x-button {:variant "ghost" :size "sm"
+                                   :class "inspector-bind-btn"
+                                   :title "Pick an action"
+                                   :data-tour "add-event"})
+                  "🔗")
+            hint (u/set-text!
+                  (u/el :div {:class "inspector-event-hint"})
+                  (if tmpl-name
+                    (str "payload: enclosing " tmpl-name " (when action needs one)")
+                    "payload: none (no template ancestor)"))]
         (u/on! btn :press
                (fn [_]
                  (.replaceChildren row)
@@ -2236,12 +2335,8 @@
                        panel (build-action-picker-panel all-actions tmpl-name pick!)]
                    (.appendChild row panel))))
         (.appendChild row btn)
-        (u/set-text! hint
-                     (if tmpl-name
-                       (str "payload: enclosing " tmpl-name " (when action needs one)")
-                       "payload: none (no template ancestor)"))))
-    (.appendChild wrap row)
-    (.appendChild wrap hint)
+        (.appendChild wrap row)
+        (.appendChild wrap hint)))
     wrap))
 
 (defn- triggers-section [{:keys [node]}]
@@ -2274,6 +2369,18 @@
 (defn- commit-remove-action! [node-id idx]
   (state/commit! (ops/remove-action (:document @state/app-state) node-id idx)))
 
+(defn- commit-add-action-step! [node-id action-idx step]
+  (state/commit! (ops/add-action-step (:document @state/app-state)
+                                      node-id action-idx step)))
+
+(defn- commit-remove-action-step! [node-id action-idx step-idx]
+  (state/commit! (ops/remove-action-step (:document @state/app-state)
+                                         node-id action-idx step-idx)))
+
+(defn- commit-move-action-step! [node-id action-idx step-idx delta]
+  (state/commit! (ops/move-action-step (:document @state/app-state)
+                                       node-id action-idx step-idx delta)))
+
 (def ^:private operation-verb
   "English-verb phrasing for each operation. The verb is conjugated for
    an implied third-person subject (`<action-name>` adds to …) so the
@@ -2286,22 +2393,126 @@
    :decrement "decrements"
    :clear     "clears"})
 
-(defn- build-action-row [node a idx]
-  (let [row        (u/el :div {:class "inspector-data-row"})
-        verb       (get operation-verb (:operation a)
-                        (field-name-str (:operation a)))
-        label      (str (field-name-str (:name a))
-                        " (" verb " :" (field-name-str (:target-field a)) ")")
-        label-el   (u/set-text! (u/el :span {:class "inspector-data-field"})
-                                label)
-        remove-btn (u/set-text!
-                    (u/el :x-button {:variant "ghost" :size "sm"
-                                     :class "inspector-bind-btn"})
-                    "×")]
-    (u/on! remove-btn :press (fn [_] (commit-remove-action! (:id node) idx)))
-    (.appendChild row label-el)
-    (.appendChild row remove-btn)
+(defn step-summary
+  "Plain-English description of one step: `<verb> :<target>` plus an
+   inline literal value when the step pins one (e.g. `sets :open
+   = false`). Pure — used by the inspector row + exposed for tests."
+  [step]
+  (let [verb   (get operation-verb (:operation step)
+                    (field-name-str (:operation step)))
+        target (field-name-str (:target-field step))
+        lit    (some-> step :payload first :literal pr-str)]
+    (cond-> (str verb " :" target)
+      (some? lit) (str " = " lit))))
+
+(defn- build-action-step-row
+  "One row for a step inside an action. Shows the step summary plus
+   ↑/↓ reorder buttons and a × that removes the step. Reorder buttons
+   are disabled (visually + semantically) at the bounds. The remove
+   × is disabled when the action has only one step — the data layer
+   refuses to drop the last step, so the UI mirrors that constraint."
+  [node action-idx step-idx step n-steps]
+  (let [row     (u/el :div {:class "inspector-action-step"})
+        first?  (zero? step-idx)
+        last?   (= step-idx (dec n-steps))
+        only?   (= 1 n-steps)
+        label   (u/set-text! (u/el :span {:class "inspector-action-step-label"})
+                             (step-summary step))
+        up      (u/set-text!
+                 (u/el :x-button (cond-> {:variant "ghost" :size "sm"
+                                          :class "inspector-bind-btn"
+                                          :title "Move step up"}
+                                   first? (assoc :disabled "")))
+                 "↑")
+        down    (u/set-text!
+                 (u/el :x-button (cond-> {:variant "ghost" :size "sm"
+                                          :class "inspector-bind-btn"
+                                          :title "Move step down"}
+                                   last? (assoc :disabled "")))
+                 "↓")
+        remove* (u/set-text!
+                 (u/el :x-button (cond-> {:variant "ghost" :size "sm"
+                                          :class "inspector-bind-btn"
+                                          :title "Remove step"}
+                                   only? (assoc :disabled "")))
+                 "×")]
+    (when-not first?
+      (u/on! up :press
+             (fn [_] (commit-move-action-step! (:id node) action-idx step-idx -1))))
+    (when-not last?
+      (u/on! down :press
+             (fn [_] (commit-move-action-step! (:id node) action-idx step-idx +1))))
+    (when-not only?
+      (u/on! remove* :press
+             (fn [_] (commit-remove-action-step! (:id node) action-idx step-idx))))
+    (.appendChild row label)
+    (.appendChild row up)
+    (.appendChild row down)
+    (.appendChild row remove*)
     row))
+
+(defn- build-add-step-form
+  "Compact `+ add step` form for an existing action. Operation +
+   target-field pickers, mirroring the add-action form. On commit,
+   appends a step (which also normalises the action to multi-step
+   shape on first edit)."
+  [node action-idx]
+  (let [form        (u/el :div {:class "inspector-action-add-step"})
+        op-sel      (u/el :x-select {:class "inspector-field-widget"})
+        target-sel  (u/el :x-select {:class "inspector-field-widget"})
+        target-fields (remove actions/computed? (:fields node))
+        add-btn     (u/set-text!
+                     (u/el :x-button {:variant "secondary" :size "sm"})
+                     "+ add step")
+        target-rows (for [{nm :name} target-fields]
+                      {:value (cljs.core/name nm)})]
+    (populate-select! op-sel "— operation —"
+                      (for [{:keys [id label]} action-operations]
+                        {:value (cljs.core/name id) :label label}))
+    (populate-select! target-sel "— target field —" target-rows)
+    (on-select-change! op-sel     (fn [_] nil))
+    (on-select-change! target-sel (fn [_] nil))
+    (u/on! add-btn :press
+           (fn [_]
+             (let [op  (kw-value op-sel)
+                   tgt (kw-value target-sel)]
+               (when (and op tgt)
+                 (commit-add-action-step! (:id node) action-idx
+                                          {:operation op :target-field tgt})
+                 (u/set-attr! op-sel :value "")
+                 (u/set-attr! target-sel :value "")))))
+    (.appendChild form (field-row "operation" op-sel))
+    (.appendChild form (field-row "target field" target-sel))
+    (.appendChild form add-btn)
+    form))
+
+(defn- build-action-row
+  "Render one action: a header row with the action name + a × to
+   remove the whole action, then a step list (one row per step), then
+   an inline `+ add step` form. Single-step actions read as a
+   one-element step list — same UI either way."
+  [node a idx]
+  (let [steps    (actions/step-list a)
+        n        (count steps)
+        wrap     (u/el :div {:class "inspector-action"})
+        header   (u/el :div {:class "inspector-data-row"})
+        title    (u/set-text!
+                  (u/el :span {:class "inspector-data-field inspector-action-name"})
+                  (str (field-name-str (:name a))
+                       (when (> n 1) (str "  ·  " n " steps"))))
+        rm-act   (u/set-text!
+                  (u/el :x-button {:variant "ghost" :size "sm"
+                                   :class "inspector-bind-btn"
+                                   :title "Remove action"})
+                  "×")]
+    (u/on! rm-act :press (fn [_] (commit-remove-action! (:id node) idx)))
+    (.appendChild header title)
+    (.appendChild header rm-act)
+    (.appendChild wrap header)
+    (doseq [[i s] (map-indexed vector steps)]
+      (.appendChild wrap (build-action-step-row node idx i s n)))
+    (.appendChild wrap (build-add-step-form node idx))
+    wrap))
 
 (defn- build-add-action-form [node]
   (let [form          (u/el :div {:class "inspector-event-form"})

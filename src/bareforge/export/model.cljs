@@ -18,8 +18,7 @@
    Everything here is pure: no atom reads, no DOM, no side
    effects. Outputs are plain maps / vectors / keywords."
   (:require [bareforge.doc.actions :as actions]
-            [bareforge.doc.model :as m]
-            [clojure.string :as str]))
+            [bareforge.doc.model :as m]))
 
 ;; --- field-def predicates ------------------------------------------------
 ;; `computed?` / `collection-field?` are the load-bearing field-def
@@ -41,14 +40,14 @@
 
 ;; --- ns-name derivation + uniqueness -------------------------------------
 
-(defn name->ns-segment
-  "Convert a user-defined `:name` into a namespace segment: lower,
-   trim, collapse non-[a-z0-9] runs to single hyphens, trim leading
-   and trailing hyphens."
-  [n]
-  (-> n str/lower-case str/trim
-      (str/replace #"[^a-z0-9]+" "-")
-      (str/replace #"^-|-$" "")))
+(def name->ns-segment
+  "Convert a user-defined `:name` into a namespace segment. Single
+   source of truth lives in `bareforge.doc.actions` so action-ref
+   construction (in the doc layer) and `:ns-name` derivation (here)
+   produce identical strings — otherwise a `Dashboard` group ends up
+   with `app.Dashboard.events` action-refs but `app.dashboard.events`
+   file paths."
+  actions/name->ns-segment)
 
 (defn unique-ns-name
   "Pick a variant of `ns-name` not in `seen`, appending `_2`,

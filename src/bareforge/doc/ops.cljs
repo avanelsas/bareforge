@@ -377,9 +377,13 @@
                (fn [v] (into (subvec v 0 idx) (subvec v (inc idx)))))))
 
 (defn add-action
-  "Add an action declaration to a node's :actions vector. An action is
-   a named event handler that mutates a field in the same group.
-   `action` is `{:name :operation :target-field}`."
+  "Add an action declaration to a node's :actions vector. An action
+   is a named event handler that mutates a field in the same group.
+   Two valid shapes:
+   - Single-step: `{:name :operation :target-field}`
+   - Multi-step:  `{:name :steps [{:operation :target-field :payload?} …]}`
+   The mutating step ops below normalise to multi-step on first edit
+   so the on-disk shape converges as users iterate."
   [doc id action]
   (update-in doc (conj (at doc id) :actions)
              (fnil conj []) action))
@@ -390,6 +394,72 @@
   (let [p (conj (at doc id) :actions)]
     (update-in doc p
                (fn [v] (into (subvec v 0 idx) (subvec v (inc idx)))))))
+
+(defn- normalize-action
+  "Coerce an action to the multi-step shape so step-level ops can
+   manipulate `:steps` uniformly. Idempotent on already-multi-step
+   actions."
+  [action]
+  (if (:steps action)
+    action
+    (-> action
+        (dissoc :operation :target-field)
+        (assoc :steps [(select-keys action [:operation :target-field])]))))
+
+(defn add-action-step
+  "Append a step to an existing action. Normalises the action to
+   `:steps` shape if it was authored as single-step."
+  [doc id action-idx step]
+  (update-in doc (conj (at doc id) :actions action-idx)
+             (fn [a]
+               (let [a' (normalize-action a)]
+                 (update a' :steps (fnil conj []) step)))))
+
+(defn remove-action-step
+  "Remove the step at `step-idx` from an action. Refuses to drop the
+   last remaining step — an action with no steps is meaningless;
+   callers should `remove-action` instead."
+  [doc id action-idx step-idx]
+  (let [p (conj (at doc id) :actions action-idx)
+        a (get-in doc p)
+        a' (normalize-action a)
+        steps (:steps a')]
+    (when (<= (count steps) 1)
+      (throw (ex-info "remove-action-step: cannot drop last step"
+                      {:id id :action-idx action-idx :step-idx step-idx})))
+    (assoc-in doc p
+              (assoc a' :steps
+                     (into (subvec steps 0 step-idx)
+                           (subvec steps (inc step-idx)))))))
+
+(defn move-action-step
+  "Reorder a step within an action by `delta` (e.g. -1 to move up,
+   +1 down). Out-of-range deltas clamp to the bounds of the steps
+   vector."
+  [doc id action-idx step-idx delta]
+  (let [p (conj (at doc id) :actions action-idx)
+        a (get-in doc p)
+        a' (normalize-action a)
+        steps (:steps a')
+        new-idx (max 0 (min (dec (count steps)) (+ step-idx delta)))]
+    (if (= new-idx step-idx)
+      doc
+      (let [step (nth steps step-idx)
+            without (into (subvec steps 0 step-idx)
+                          (subvec steps (inc step-idx)))
+            reordered (into (subvec without 0 new-idx)
+                            (cons step (subvec without new-idx)))]
+        (assoc-in doc p (assoc a' :steps reordered))))))
+
+(defn update-action-step
+  "Replace the step at `step-idx` with `new-step`. Used by inspector
+   pickers when the user changes an operation or target-field on an
+   existing step."
+  [doc id action-idx step-idx new-step]
+  (let [p (conj (at doc id) :actions action-idx)
+        a (get-in doc p)
+        a' (normalize-action a)]
+    (assoc-in doc p (assoc-in a' [:steps step-idx] new-step))))
 
 ;; --- template instance wiring -------------------------------------------
 

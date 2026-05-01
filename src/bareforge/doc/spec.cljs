@@ -170,8 +170,35 @@
   #{:set :toggle :increment :decrement :clear :add :remove})
 (s/def :action/target-field keyword?)
 
+;; Multi-step action shape (v2). A step is one operation against one
+;; field; `:payload` overrides the dispatched trigger arg with a vector
+;; of payload entries (only `{:literal v}` is honoured at the step
+;; level for now — it covers the canonical "add to cart, then set
+;; popover-open false" use case). Single-step actions can continue to
+;; carry `:operation` + `:target-field` directly; both shapes are
+;; valid and the generators canonicalise via `actions/step-list`.
+(s/def :action-step/operation
+  #{:set :toggle :increment :decrement :clear :add :remove})
+(s/def :action-step/target-field keyword?)
+(s/def :action-step/payload (s/coll-of map? :kind vector?))
+
+(s/def ::action-step
+  (s/keys :req-un [:action-step/operation :action-step/target-field]
+          :opt-un [:action-step/payload]))
+
+(s/def :action/steps (s/coll-of ::action-step :kind vector? :min-count 1))
+
 (s/def ::action
-  (s/keys :req-un [:action/name :action/operation :action/target-field]))
+  (s/and
+   (s/keys :req-un [:action/name]
+           :opt-un [:action/operation :action/target-field :action/steps])
+   (fn [a]
+     ;; Either single-step (operation + target-field) OR multi-step (steps)
+     ;; — never both, never neither.
+     (let [single? (and (contains? a :operation) (contains? a :target-field))
+           multi?  (contains? a :steps)]
+       (and (or single? multi?)
+            (not (and single? multi?)))))))
 
 (s/def ::actions (s/nilable (s/coll-of ::action :kind vector?)))
 
