@@ -1201,6 +1201,50 @@
                       " (fn [vs#] (filterv #(not= % "
                       (wrap vexpr) ") vs#)))"))))
 
+(defn- reg-event-form
+  "Pure: assemble a `(rf/reg-event ::id <interceptors> <handler>)`
+   form as `clj-form` data. `interceptor-raw` and `handler-raw` are
+   the multi-line text bodies for the interceptor vector and the
+   handler `(fn …)` — they keep their hand-tuned indentation as
+   `:raw` text so the existing tests (which pin specific column
+   layouts like `(fn [_ [v]]\\n   v)` with 3-space body indent)
+   stay byte-identical. The outer reg-event call is structured
+   data so `clj-form` owns the assembly + the line-wise layout."
+  [ename interceptor-raw handler-raw]
+  [:invoke-block [:symbol 'rf/reg-event]
+   [:auto-keyword ename]
+   [:raw interceptor-raw]
+   [:raw handler-raw]])
+
+(defn- single-step-action-form
+  "Single-step branch of `emit-action-event`. Returns clj-form data."
+  [ename db-alias fname operation of-group-ns]
+  (let [interceptor (str "[rf/trim-v\n"
+                         "  (rf/path ::" db-alias "/" fname ")]")
+        [fn-head body-tail] (action->handler operation of-group-ns)
+        ;; `action->handler` returns a `[fn-head body-tail]` pair
+        ;; that historically composed with leading whitespace to
+        ;; sit under the reg-event's third arg; here we drop the
+        ;; leading space (clj-form's :invoke-block adds the
+        ;; arg-continuation indent) and the trailing `))` (which
+        ;; closed both the fn and reg-event in the old string-
+        ;; concat path; clj-form closes the outer reg-event itself,
+        ;; so we need just the fn's `)`).
+        head (str/triml fn-head)
+        tail (subs body-tail 0 (dec (count body-tail)))]
+    (reg-event-form ename interceptor (str head tail))))
+
+(defn- multi-step-action-form
+  "Multi-step branch of `emit-action-event`. Returns clj-form data."
+  [ename steps db-alias fields app-ns]
+  (let [thread (str/join "\n       "
+                         (for [s steps]
+                           (step->thread-form s db-alias fields app-ns)))
+        handler (str "(fn [db [x]]\n"
+                     "   (-> db\n"
+                     "       " thread "))")]
+    (reg-event-form ename "[rf/trim-v]" handler)))
+
 (defn- emit-action-event
   "Emit a declared action as a reg-event form. Two paths:
 
@@ -1214,34 +1258,25 @@
 
    `db-alias` is the group's own db alias; `fields` is the group's
    `:fields` (used to look up `:of-group` for payload re-keying);
-   `app-ns` is the root app namespace."
+   `app-ns` is the root app namespace.
+
+   Built as `clj-form` data and formatted at the edge — the
+   reg-event wrapper is structured; the interceptor + handler
+   bodies stay as `:raw` text so the test-pinned 3-space body
+   indent (`(fn [_ [v]]\\n   v)`) is preserved exactly."
   [{:keys [name] :as action} db-alias fields app-ns]
   (let [ename (cljs.core/name name)
         steps (actions/step-list action)]
-    (if (= 1 (count steps))
-      (let [{:keys [operation target-field]} (first steps)
-            fname        (cljs.core/name target-field)
-            of-group     (some (fn [fd]
+    (cf/format-form
+     (if (= 1 (count steps))
+       (let [{:keys [operation target-field]} (first steps)
+             fname       (cljs.core/name target-field)
+             of-group    (some (fn [fd]
                                  (when (= target-field (:name fd)) (:of-group fd)))
                                fields)
-            of-group-ns  (when of-group (str app-ns "." of-group ".db"))
-            [fn-head body-tail] (action->handler operation of-group-ns)]
-        (str "(rf/reg-event\n"
-             " ::" ename "\n"
-             " [rf/trim-v\n"
-             "  (rf/path ::" db-alias "/" fname ")]\n"
-             fn-head
-             body-tail))
-      (let [thread (str/join
-                    "\n       "
-                    (for [s steps]
-                      (step->thread-form s db-alias fields app-ns)))]
-        (str "(rf/reg-event\n"
-             " ::" ename "\n"
-             " [rf/trim-v]\n"
-             " (fn [db [x]]\n"
-             "   (-> db\n"
-             "       " thread ")))")))))
+             of-group-ns (when of-group (str app-ns "." of-group ".db"))]
+         (single-step-action-form ename db-alias fname operation of-group-ns))
+       (multi-step-action-form ename steps db-alias fields app-ns)))))
 
 (defn- emit-setter-event
   "Emit an auto `<field>-changed` setter event using re-frame-style
@@ -1259,13 +1294,12 @@
   [field-kw db-alias]
   (let [fname   (cljs.core/name field-kw)
         ename   (field-setter-event-name field-kw)
-        arg-sym (str "new-" fname)]
-    (str "(rf/reg-event\n"
-         " ::" ename "\n"
-         " [rf/trim-v\n"
-         "  (rf/path ::" db-alias "/" fname ")]\n"
-         " (fn [_ [" arg-sym "]]\n"
-         "   " arg-sym "))")))
+        arg-sym (str "new-" fname)
+        interceptor (str "[rf/trim-v\n"
+                         "  (rf/path ::" db-alias "/" fname ")]")
+        handler (str "(fn [_ [" arg-sym "]]\n"
+                     "   " arg-sym ")")]
+    (cf/format-form (reg-event-form ename interceptor handler))))
 
 (defn- generate-events
   "Generate events.cljs for a group. Emits two kinds of handlers:
