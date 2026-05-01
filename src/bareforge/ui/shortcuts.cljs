@@ -401,30 +401,13 @@
                (contains? wrap-tag-whitelist input))
       input)))
 
-(defonce ^:private show-shortcuts-fn (atom (constantly nil)))
-(defonce ^:private show-command-palette-fn (atom (constantly nil)))
-
-(defn set-show-shortcuts!
-  "Register the function called when `dispatch` returns :show-shortcuts.
-   Wired from main/init to avoid a circular `shortcuts ↔ cheat-sheet`
-   require — the cheat sheet itself requires shortcuts for the static
-   `shortcut-info` data, so the action callback flows the other way
-   via this atom."
-  [f]
-  (reset! show-shortcuts-fn f))
-
-(defn set-show-command-palette!
-  "Register the function called when `dispatch` returns
-   :show-command-palette. Same callback indirection as
-   `set-show-shortcuts!` to keep the namespace graph acyclic — the
-   command palette consumes shortcuts' public action helpers
-   (duplicate!, wrap-in!, copy-attrs!, paste-attrs!) plus
-   shortcut-info and category-labels, so the show callback flows
-   in the opposite direction."
-  [f]
-  (reset! show-command-palette-fn f))
-
-(defn- perform! [action ^js e]
+(defn- perform!
+  "Perform `action` against the current app state. `actions` carries
+   the UI-thunk bindings (`:show-shortcuts`, `:show-command-palette`)
+   that this namespace can't require directly without creating a
+   cycle — bound by closure at `install!` time, not via mutable
+   global state."
+  [actions action ^js e]
   (cond
     (vector? action)
     (let [[op & args] action]
@@ -459,16 +442,27 @@
                             (wrap-in! tag)))
       :copy-attrs  (do (.preventDefault e) (copy-attrs!))
       :paste-attrs (do (.preventDefault e) (paste-attrs!))
-      :show-shortcuts       (do (.preventDefault e) (@show-shortcuts-fn))
-      :show-command-palette (do (.preventDefault e) (@show-command-palette-fn))
+      :show-shortcuts       (do (.preventDefault e)
+                                ((:show-shortcuts actions)))
+      :show-command-palette (do (.preventDefault e)
+                                ((:show-command-palette actions)))
       :exit-text-edit (do (.preventDefault e) (inline-edit/teardown!))
       :deselect (do (.preventDefault e) (state/select-clear!))
       nil)))
 
-(defn- on-keydown! [^js e]
-  (perform! (dispatch (event-descriptor e)) e))
+(def ^:private noop-actions
+  {:show-shortcuts       (constantly nil)
+   :show-command-palette (constantly nil)})
 
 (defn install!
-  "Attach the keyboard listener. Call once at mount."
-  []
-  (.addEventListener js/document "keydown" on-keydown!))
+  "Attach the keyboard listener. `actions` is a map of UI-thunk
+   bindings:
+     {:show-shortcuts       fn   ;; called for the `?` cheat-sheet binding
+      :show-command-palette fn}  ;; called for the Cmd-K palette binding
+   Bound by closure at install time so no namespace requires the
+   modal-owning UI namespaces. Missing entries default to no-op."
+  [actions]
+  (let [actions' (merge noop-actions actions)]
+    (.addEventListener js/document "keydown"
+                       (fn [^js e]
+                         (perform! actions' (dispatch (event-descriptor e)) e)))))

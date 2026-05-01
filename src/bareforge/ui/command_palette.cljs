@@ -8,8 +8,10 @@
    Action helpers (`duplicate!`, `wrap-in!`, `copy-attrs!`,
    `paste-attrs!`) are reused from `shortcuts` so the palette and
    the keyboard surface share a single source of truth. Chrome-panel
-   toggles are passed in at `install!` time to avoid a circular
-   require with the chrome bootstrap."
+   toggles are passed in at `install!` time and bound by closure;
+   `install!` returns a handle map (`{:show! :hide! :toggle! :open?}`)
+   that callers thread to keyboard / toolbar surfaces — there is no
+   global registry of palette callbacks."
   (:require [bareforge.meta.registry :as registry]
             [bareforge.state :as state]
             [bareforge.storage.project-file :as pf]
@@ -17,27 +19,6 @@
             [bareforge.ui.palette :as palette]
             [bareforge.ui.shortcuts :as sh]
             [bareforge.util.dom :as u]))
-
-;; --- chrome wiring ------------------------------------------------------
-
-(defonce ^:private install-state
-  ;; Callbacks reaching into chrome panels (Theme, Templates, Tour).
-  ;; Wired from main/init via `install!` so the palette doesn't have
-  ;; to require the panels directly — keeps the namespace graph
-  ;; acyclic.
-  (atom {:on-theme-toggle     (constantly nil)
-         :on-templates-toggle (constantly nil)
-         :on-welcome-tour     (constantly nil)}))
-
-(defn install!
-  "Register chrome-panel toggle callbacks. `opts` is a map with
-   `:on-theme-toggle :on-templates-toggle :on-welcome-tour`. Called
-   from `ui.app/build-chrome` alongside the cheat-sheet wiring."
-  [opts]
-  (reset! install-state (merge {:on-theme-toggle     (constantly nil)
-                                :on-templates-toggle (constantly nil)
-                                :on-welcome-tour     (constantly nil)}
-                               opts)))
 
 ;; --- commands -----------------------------------------------------------
 
@@ -80,10 +61,12 @@
         (registry/all-tags)))
 
 (defn curated-commands
-  "Static short-list shown when the query is empty. Public so unit
-   tests can assert the shape (label / group / run! present, no
-   duplicate labels) without going through the modal."
-  []
+  "Static short-list shown when the query is empty. `chrome-thunks`
+   carries the panel-toggle callbacks bound at `install!` time
+   (`:on-theme-toggle :on-templates-toggle :on-welcome-tour`). Public
+   so unit tests can assert the shape (label / group / run! present,
+   no duplicate labels) without going through the modal."
+  [{:keys [on-theme-toggle on-templates-toggle on-welcome-tour]}]
   [{:label "Save project"             :group "File"      :keywords "save"
     :run! pf/save!}
    {:label "Open project…"            :group "File"      :keywords "open load"
@@ -94,11 +77,11 @@
    {:label "Toggle preview mode"      :group "View"      :keywords "preview"
     :run! toggle-preview!}
    {:label "Toggle theme editor"      :group "View"      :keywords "theme color"
-    :run! #((:on-theme-toggle @install-state))}
+    :run! on-theme-toggle}
    {:label "Open templates…"          :group "View"      :keywords "templates starter"
-    :run! #((:on-templates-toggle @install-state))}
+    :run! on-templates-toggle}
    {:label "Open welcome tour"        :group "View"      :keywords "tour onboarding"
-    :run! #((:on-welcome-tour @install-state))}
+    :run! on-welcome-tour}
    {:label "Show keyboard shortcuts"  :group "View"      :keywords "shortcuts cheat sheet help"
     :run! cheat-sheet/show!}
 
@@ -113,16 +96,12 @@
   "Curated commands followed by the per-tag insert commands. The
    palette's built-in fuzzy filter ranks them all together — the
    curated ones tend to win on shorter labels."
-  []
-  (concat (curated-commands) (wrap-commands) (insert-commands)))
+  [chrome-thunks]
+  (concat (curated-commands chrome-thunks)
+          (wrap-commands)
+          (insert-commands)))
 
 ;; --- modal --------------------------------------------------------------
-
-(defonce ^:private modal-state
-  ;; :el        the x-command-palette host
-  ;; :run-by-id map from each item's synthetic id back to its run!
-  ;;            thunk. The select event hands us the id only.
-  #js {:el nil :run-by-id {}})
 
 (defn- ^js theme-host
   "Same trick as the cheat sheet: mount inside the chrome's
@@ -145,59 +124,69 @@
        :keywords (or keywords "")})
 
 (defn- build-pool
-  "Returns `[js-items run-by-id]` from the current command pool."
-  []
-  (let [cmds (vec (all-commands))]
+  "Returns `[js-items run-by-id]` from the current command pool,
+   resolved against `chrome-thunks`."
+  [chrome-thunks]
+  (let [cmds (vec (all-commands chrome-thunks))]
     [(into-array
       (map-indexed ->item cmds))
      (into {}
            (map-indexed (fn [i c] [(str "cmd-" i) (:run! c)]))
            cmds)]))
 
-(defn- on-select! [^js e]
-  (let [^js detail (.-detail e)
-        ^js item   (.-item detail)
-        id         (.-id item)
-        f          (get (.-run-by-id modal-state) id)]
-    (when f
-      ;; Defer to next microtask so the palette finishes its own
-      ;; close-on-select work before we mutate state / focus.
-      (js/queueMicrotask
-       (fn [] (try (f) (catch :default _ nil)))))))
+(def ^:private noop-thunks
+  {:on-theme-toggle     (constantly nil)
+   :on-templates-toggle (constantly nil)
+   :on-welcome-tour     (constantly nil)})
 
-(defn- build-modal! []
-  (let [el (u/el :x-command-palette
-                 {:label       "Command palette"
-                  :placeholder "Search commands, components, or actions…"
-                  :empty-text  "No matching commands"
-                  :modal       ""})]
-    (u/on! el "x-command-palette-select" on-select!)
-    (.appendChild (theme-host) el)
-    (set! (.-el modal-state) el)
-    el))
-
-(defn open?
-  "True iff the palette is currently mounted and showing."
-  []
-  (when-let [^js m (.-el modal-state)]
-    (.hasAttribute m "open")))
-
-(defn show!
-  "Refresh the command pool and open the palette. Items are
-   recomputed each call so a newly registered chrome thunk or BareDOM
-   tag joins the list without restarting the app."
-  []
-  (let [^js el (or (.-el modal-state) (build-modal!))
-        [items run-by-id] (build-pool)]
-    (set! (.-items el) items)
-    (set! (.-run-by-id modal-state) run-by-id)
-    (.open el)))
-
-(defn hide! []
-  (when-let [^js m (.-el modal-state)]
-    (.close m)))
-
-(defn toggle!
-  "Show the palette if hidden, hide it if shown."
-  []
-  (if (open?) (hide!) (show!)))
+(defn install!
+  "Build the palette and return a handle map
+   `{:show! :hide! :toggle! :open?}` whose entries close over
+   `chrome-thunks` (`{:on-theme-toggle :on-templates-toggle
+   :on-welcome-tour}`) and a private DOM cache. The handle is the
+   single point of contact — there is no global lookup, no setter."
+  [chrome-thunks]
+  (let [thunks (merge noop-thunks chrome-thunks)
+        ;; :el        the x-command-palette host (lazily mounted)
+        ;; :run-by-id map from each item's synthetic id back to its
+        ;;            run! thunk. The select event hands us the id only.
+        cache  #js {:el nil :run-by-id {}}
+        on-select! (fn [^js e]
+                     (let [^js detail (.-detail e)
+                           ^js item   (.-item detail)
+                           id         (.-id item)
+                           f          (get (.-run-by-id cache) id)]
+                       (when f
+                         ;; Defer to next microtask so the palette
+                         ;; finishes its own close-on-select work
+                         ;; before we mutate state / focus.
+                         (js/queueMicrotask
+                          (fn [] (try (f) (catch :default _ nil)))))))
+        build-modal! (fn []
+                       (let [el (u/el :x-command-palette
+                                      {:label       "Command palette"
+                                       :placeholder "Search commands, components, or actions…"
+                                       :empty-text  "No matching commands"
+                                       :modal       ""})]
+                         (u/on! el "x-command-palette-select" on-select!)
+                         (.appendChild (theme-host) el)
+                         (set! (.-el cache) el)
+                         el))
+        open? (fn []
+                (when-let [^js m (.-el cache)]
+                  (.hasAttribute m "open")))
+        show! (fn []
+                ;; Refresh the command pool each call so a newly
+                ;; registered BareDOM tag joins the list without
+                ;; restarting the app.
+                (let [^js el (or (.-el cache) (build-modal!))
+                      [items run-by-id] (build-pool thunks)]
+                  (set! (.-items el) items)
+                  (set! (.-run-by-id cache) run-by-id)
+                  (.open el)))
+        hide! (fn []
+                (when-let [^js m (.-el cache)]
+                  (.close m)))
+        toggle! (fn []
+                  (if (open?) (hide!) (show!)))]
+    {:show! show! :hide! hide! :toggle! toggle! :open? open?}))
