@@ -14,6 +14,79 @@
 
 ;; --- group detection -------------------------------------------------------
 
+(deftest mixed-case-group-emits-lowercase-paths-and-ns
+  ;; Regression for "Resource does not have expected namespace":
+  ;; a Dashboard x-card must produce a self-consistent project — file
+  ;; paths AND (ns …) forms AND action-ref-derived requires all
+  ;; lowercase. shadow-cljs rejects any drift between path and ns.
+  (let [doc {:next-id 3
+             :root    {:id "root" :tag "x-container"
+                       :attrs {} :props {} :layout {:placement :flow}
+                       :slots {"default"
+                               [{:id "dash" :tag "x-card" :name "Dashboard"
+                                 :attrs {} :props {} :layout {:placement :flow}
+                                 :fields  [{:name :id :type :number :default 0
+                                            :locked? true}
+                                           {:name :clicks :type :number :default 0}]
+                                 :actions [{:name :tick :operation :increment
+                                            :target-field :clicks}]
+                                 :slots
+                                 {"default"
+                                  [{:id "btn" :tag "x-button"
+                                    :attrs {} :props {} :layout {:placement :flow}
+                                    :slots {}
+                                    :events [{:trigger "press"
+                                              :action-ref :app.dashboard.events/tick}]}]}}]}}}
+        files (cp/generate doc {:app-ns "app"})]
+    (testing "no path leaks the original capital-D name"
+      (is (not-any? #(re-find #"Dashboard" %) (keys files))))
+    (testing "events file at the lowercase path with the lowercase ns"
+      (let [evs (get files "src/app/dashboard/events.cljs")]
+        (is (some? evs))
+        (is (str/starts-with? evs "(ns app.dashboard.events"))))
+    (testing "views file requires the events ns under the lowercase alias"
+      (let [vs (get files "src/app/dashboard/views.cljs")]
+        (is (some? vs))
+        (is (not (re-find #"\[app\.Dashboard\.events" vs))
+            "no Dashboard-cased require")
+        (is (re-find #"\[app\.dashboard\.events :as dashboard\.events\]" vs)
+            "lowercase require alias matches the events file's path/ns")))))
+
+(deftest legacy-miscased-action-ref-export-is-defensively-lowercased
+  ;; Older docs (saved before the actions/action-ref canonicalisation
+  ;; fix) carry triggers whose stored `:action-ref` is in the raw
+  ;; user-typed namespace, e.g. `:app.Dashboard.events/tick`. The
+  ;; export pipeline must still emit lowercase requires + dispatches
+  ;; for those — the user shouldn't have to re-pick every trigger.
+  (let [doc {:next-id 3
+             :root    {:id "root" :tag "x-container"
+                       :attrs {} :props {} :layout {:placement :flow}
+                       :slots {"default"
+                               [{:id "dash" :tag "x-card" :name "Dashboard"
+                                 :attrs {} :props {} :layout {:placement :flow}
+                                 :fields  [{:name :id :type :number :default 0
+                                            :locked? true}
+                                           {:name :clicks :type :number :default 0}]
+                                 :actions [{:name :tick :operation :increment
+                                            :target-field :clicks}]
+                                 :slots
+                                 {"default"
+                                  [{:id "btn" :tag "x-button"
+                                    :attrs {} :props {} :layout {:placement :flow}
+                                    :slots {}
+                                    ;; legacy stored ref — capital D
+                                    :events [{:trigger "press"
+                                              :action-ref :app.Dashboard.events/tick}]}]}}]}}}
+        files (cp/generate doc {:app-ns "app"})
+        vs    (get files "src/app/dashboard/views.cljs")]
+    (is (some? vs))
+    (testing "require lands in lowercase even though the stored ref is mixed-case"
+      (is (re-find #"\[app\.dashboard\.events :as dashboard\.events\]" vs))
+      (is (not (re-find #"\[app\.Dashboard\.events" vs))))
+    (testing "dispatch keyword is autoresolved through the lowercase alias"
+      (is (str/includes? vs "::dashboard.events/tick"))
+      (is (not (str/includes? vs "::Dashboard.events/tick"))))))
+
 (deftest detect-groups-finds-named-nodes-only
   (let [{:keys [groups root-order]} (cp/detect-groups (fixture-doc))
         ns-names (set (map :ns-name groups))]

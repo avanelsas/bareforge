@@ -14,7 +14,27 @@
 
    Used by the inspector to populate trigger action pickers, and by
    tests that want to introspect what a doc dispatches."
-  (:require [bareforge.doc.model :as m]))
+  (:require [bareforge.doc.model :as m]
+            [clojure.string :as str]))
+
+;; --- name normalisation --------------------------------------------------
+
+(defn name->ns-segment
+  "Convert a user-defined `:name` into a namespace segment: lower,
+   trim, collapse non-[a-z0-9] runs to single hyphens, trim leading
+   and trailing hyphens.
+
+   Lives here so action-ref construction (below) and the export
+   model's `:ns-name` derivation share one canonical form. Without
+   this, a group named \"Dashboard\" would mint action-refs in the
+   `app.Dashboard.events` namespace while every other generator path
+   (file paths, ns forms, db aliases) used the lowercased
+   `app.dashboard.events` — which is exactly the shadow-cljs
+   \"resource does not have expected namespace\" error."
+  [n]
+  (-> (or n "") str/lower-case str/trim
+      (str/replace #"[^a-z0-9]+" "-")
+      (str/replace #"^-|-$" "")))
 
 (defn computed?
   "True when a field-def is a computed (derived) field — i.e. carries
@@ -82,9 +102,13 @@
   (first (filter #(= gname (:name %)) (group-nodes doc))))
 
 (defn- action-ref
-  "Build the fully qualified action-ref keyword for a group's action."
+  "Build the fully qualified action-ref keyword for a group's action.
+   Canonicalises `group-name` via `name->ns-segment` so the namespace
+   matches the export pipeline's `:ns-name`-derived file paths and
+   `(ns …)` forms."
   [app-ns group-name action-name]
-  (keyword (str app-ns "." group-name ".events") (name action-name)))
+  (keyword (str app-ns "." (name->ns-segment group-name) ".events")
+           (name action-name)))
 
 (defn step-list
   "Canonicalise either action shape to a vector of step maps.

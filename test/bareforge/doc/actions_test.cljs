@@ -129,3 +129,38 @@
                  {:name :a
                   :steps [{:operation :toggle :target-field :flag}
                           {:operation :clear :target-field :search}]})))))
+
+;; --- name->ns-segment + action-ref canonicalisation -------------------
+
+(deftest name->ns-segment-lowercases-and-normalises
+  (testing "user-typed names always produce a lowercase ns segment"
+    (is (= "dashboard"     (actions/name->ns-segment "Dashboard")))
+    (is (= "user-profile"  (actions/name->ns-segment "User Profile")))
+    (is (= "cart-2"        (actions/name->ns-segment "  Cart 2  ")))
+    (is (= ""              (actions/name->ns-segment nil))
+        "nil is tolerated — empty input returns empty string"))
+  (testing "non-[a-z0-9] runs collapse to single hyphens, no
+            leading/trailing hyphens"
+    (is (= "abc-def" (actions/name->ns-segment "abc!!def")))
+    (is (= "abc-def" (actions/name->ns-segment "  abc-def--")))))
+
+(deftest action-ref-uses-canonical-segment
+  ;; Regression for: a Dashboard x-card produced action-refs in the
+  ;; `app.Dashboard.events` namespace while the events file was at
+  ;; `src/app/dashboard/events.cljs`. shadow-cljs rejected the build
+  ;; because the path-derived namespace didn't match the (ns …) form.
+  (let [doc {:root {:id "r" :tag "x-container"
+                    :attrs {} :props {} :layout {:placement :flow}
+                    :slots
+                    {"default"
+                     [{:id "g" :tag "x-card" :name "Dashboard"
+                       :attrs {} :props {} :layout {:placement :flow}
+                       :fields  [{:name :clicks :type :number :default 0}]
+                       :actions [{:name :tick :operation :increment
+                                  :target-field :clicks}]
+                       :slots {}}]}}}
+        entries (actions/all-actions doc "app")
+        tick    (first (filter #(= :tick (:action-name %)) entries))]
+    (is (= :app.dashboard.events/tick (:action-ref tick))
+        "the group segment is lowercased — matches what the export
+         pipeline emits for the file path and (ns …) form")))

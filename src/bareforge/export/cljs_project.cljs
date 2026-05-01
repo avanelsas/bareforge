@@ -188,11 +188,21 @@
 (defn- action-ref->alias
   "Turn an action-ref qualified keyword like :app.cart.events/add-to-cart
    into the require alias string: \"cart.events\". Matches the
-   dot-notation alias convention used elsewhere in the generator."
+   dot-notation alias convention used elsewhere in the generator.
+
+   The group segment is passed through `actions/name->ns-segment`
+   so an action-ref that was committed before the
+   `bareforge.doc.actions/action-ref` canonicalisation fix (e.g.
+   `:app.Dashboard.events/tick` in an older doc) still emits a
+   lowercase require — `[app.dashboard.events :as dashboard.events]`
+   matching the file at `src/app/dashboard/events.cljs`."
   [ref]
-  (let [ns (namespace ref)
-        app-prefix-len (inc (.indexOf ns "."))]
-    (subs ns app-prefix-len)))
+  (let [ns         (namespace ref)
+        first-dot  (.indexOf ns ".")
+        last-dot   (.lastIndexOf ns ".")
+        group-seg  (subs ns (inc first-dot) last-dot)
+        suffix     (subs ns last-dot)]   ;; ".events" or ".subs"
+    (str (actions/name->ns-segment group-seg) suffix)))
 
 ;; --- :write / :read-write binding → DOM event handler ---------------------
 ;;
