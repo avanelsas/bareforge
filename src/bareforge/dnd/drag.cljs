@@ -7,10 +7,15 @@
    Design note: drag state lives in a JS object (not a second atom) so
    the one-atom rule in CLAUDE.md stays intact. Drag is strictly
    effectful DOM plumbing — the only point that touches `state/*` is
-   `commit-drop!` at the end."
-  (:require [bareforge.doc.model :as m]
+   `commit-drop!` at the end. The pure parts of drop / move planning
+   (target resolution, snap, free-drag math) live in
+   `bareforge.dnd.resolve` and are unit-testable without a browser;
+   the `commit-*!` fns here are thin orchestrators that snapshot the
+   live JS state into a plain map, hand it to the planner, and apply
+   the result via `ops/*` + `state/commit!`."
+  (:require [bareforge.dnd.resolve :as resolve]
+            [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
-            [bareforge.meta.placement :as placement]
             [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
             [bareforge.render.slot-strips :as slot-strips]
@@ -424,43 +429,22 @@
 
 ;; --- commit drop ----------------------------------------------------------
 
-(defn- before-after-target
-  "Build a `{:parent-id :slot :index}` map for inserting `:before` or
-   `:after` an existing canvas node. Returns nil if the target is the
-   root or not found."
-  [doc target-id position]
-  (when-let [info (m/parent-of doc target-id)]
-    (case position
-      :before info
-      :after  (update info :index inc)
-      nil)))
-
-(defn- resolve-insertion-target
-  "Shared between insert (palette drop) and move (canvas drop). Reads
-   the drag-state slot/canvas target fields and returns a
-   `{:parent-id :slot :index}` map."
-  [doc]
-  (let [slot-node (slot-target-node)
-        slot-name (slot-target-name)
-        tid       (target-id)
-        pos       (target-position)]
-    (cond
-      slot-node
-      (let [node     (m/get-node doc slot-node)
-            children (get-in node [:slots slot-name] [])]
-        {:parent-id slot-node
-         :slot      slot-name
-         :index     (count children)})
-
-      ;; Canvas hover with explicit before/after position over a node
-      ;; that has a parent (i.e. not root).
-      (and tid (#{:before :after} pos))
-      (or (before-after-target doc tid pos)
-          ;; Root has no parent; fall back to inside.
-          (palette/insertion-target doc tid))
-
-      :else
-      (palette/insertion-target doc tid))))
+(defn- snapshot-drag-state
+  "Read the JS drag-state fields the planner cares about into a
+   plain Clojure map. The JS object stays as the live event-loop
+   state; this snapshot is the value handed across the pure
+   boundary at commit time."
+  []
+  {:source-tag       (source-tag)
+   :source-node-id   (source-node-id)
+   :slot-target-node (slot-target-node)
+   :slot-target-name (slot-target-name)
+   :target-id        (target-id)
+   :target-position  (target-position)
+   :start-x          (start-x)
+   :start-y          (start-y)
+   :free-initial-x   (unchecked-get drag-state "free-initial-x")
+   :free-initial-y   (unchecked-get drag-state "free-initial-y")})
 
 (defn- update-free-drag-position!
   "Visual feedback during a :free drag. Uses CSS transform so we
@@ -474,23 +458,19 @@
             (str "translate(" dx "px," dy "px)")))))
 
 (defn- commit-free-move!
-  "On drop, compute the new :x / :y from the cursor delta and the
-   pre-drag position, then commit in a single ops/set-layout pair.
-   The reconciler runs on rAF after commit; its apply-layout-style!
-   writes a fresh style attribute without the transform, so the
-   element lands cleanly at its new coordinates."
+  "On drop, compute the new :x / :y via `resolve/plan-free-move` and
+   commit in a single `ops/set-layout` pair. The reconciler runs on
+   rAF after commit; its `apply-layout-style!` writes a fresh style
+   attribute without the transform, so the element lands cleanly at
+   its new coordinates."
   [^js e]
-  (let [src-id (source-node-id)
-        init-x (unchecked-get drag-state "free-initial-x")
-        init-y (unchecked-get drag-state "free-initial-y")
-        dx     (- (.-clientX e) (start-x))
-        dy     (- (.-clientY e) (start-y))
-        new-x  (+ init-x dx)
-        new-y  (+ init-y dy)
-        doc    (:document @state/app-state)
-        doc'   (-> doc
-                   (ops/set-layout src-id :x new-x)
-                   (ops/set-layout src-id :y new-y))]
+  (let [doc (:document @state/app-state)
+        {:keys [src-id x y]}
+        (resolve/plan-free-move (snapshot-drag-state)
+                                (.-clientX e) (.-clientY e))
+        doc' (-> doc
+                 (ops/set-layout src-id :x x)
+                 (ops/set-layout src-id :y y))]
     (state/commit! doc')))
 
 (defn- clear-free-transform!
@@ -503,35 +483,9 @@
 
 (defn- commit-drop! [^js _e]
   (when (valid?)
-    (let [tag         (source-tag)
-          hint        (:hint (placement/hint-for tag))
-          background? (= :background hint)
-          doc         (:document @state/app-state)
-          base        (resolve-insertion-target doc)
-          ;; Snap order of precedence:
-          ;;   1. :background — index 0 of the cursor-targeted slot
-          ;;      plus a placement override. Painting order is set by
-          ;;      the stylesheet, not DOM document order.
-          ;;   2. :top-full-width / :bottom-full-width — apply-snap
-          ;;      redirects the insertion target to root and adds
-          ;;      a :width "100%" layout override.
-          ;;   3. Default — use the cursor-targeted slot as-is.
-          ;; Snap only fires at drop time; once placed, the node is
-          ;; a normal document node and the user can reparent,
-          ;; resize, and edit it without any snap-back.
-          snap        (when-not background?
-                        (placement/apply-snap hint doc base))
-          {:keys [parent-id slot index]}
-          (cond
-            background?         (assoc base :index 0)
-            (some? snap)        (:target snap)
-            :else               base)
-          overrides (cond-> (palette/seed-for-tag tag)
-                      background?
-                      (assoc-in [:layout :placement] :background)
-
-                      (some? snap)
-                      (update :layout merge (:layout snap)))
+    (let [doc  (:document @state/app-state)
+          {:keys [parent-id slot index tag overrides]}
+          (resolve/plan-drop doc (snapshot-drag-state))
           {doc' :doc id :id}
           (ops/insert-new doc parent-id slot index tag overrides)]
       (state/commit! doc')
@@ -539,9 +493,9 @@
 
 (defn- commit-move! [^js _e]
   (when (valid?)
-    (let [src-id (source-node-id)
-          doc    (:document @state/app-state)
-          {:keys [parent-id slot index]} (resolve-insertion-target doc)]
+    (let [doc (:document @state/app-state)
+          {:keys [src-id parent-id slot index]}
+          (resolve/plan-move doc (snapshot-drag-state))]
       ;; ops/move throws on cycles (moving a node under its own
       ;; descendant) and on stale ids. Swallow both silently so an
       ;; invalid drop is simply a no-op.
