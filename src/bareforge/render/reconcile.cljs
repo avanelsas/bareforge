@@ -133,16 +133,27 @@
           :when (and k v (not= "" v))]
       (str k ":" v))))
 
+(def ^:private numeric-string-re
+  ;; Optionally negative integer or decimal — `200`, `-7`, `1.5`. Used
+  ;; by `as-length` to recognise a bare numeric string (typed into an
+  ;; inspector input as text) and apply the same `px` default the
+  ;; numeric branch uses for actual numbers. Without this, a user who
+  ;; types `200` into a width field gets the invalid CSS `width:200;`
+  ;; and the browser silently drops it.
+  #"-?\d+(?:\.\d+)?")
+
 (defn- as-length
-  "Render a pixel length from either a number (→ 'Npx') or a string
-   like '50%' / '10rem' (passed through). Returns nil for nil or
-   empty input."
+  "Render a pixel length from either a number (→ 'Npx'), a bare
+   numeric string (also → 'Npx'), or a CSS-unit string like '50%' /
+   '10rem' (passed through). Returns nil for nil or empty input."
   [v]
   (cond
-    (nil? v)                          nil
-    (number? v)                       (str v "px")
-    (and (string? v) (not= "" v))     v
-    :else                             nil))
+    (nil? v)                      nil
+    (number? v)                   (str v "px")
+    (and (string? v) (not= "" v)) (if (re-matches numeric-string-re v)
+                                    (str v "px")
+                                    v)
+    :else                         nil))
 
 (defn layout->css
   "Pure: build the inline style string for a node from its `:layout`
@@ -182,12 +193,21 @@
         ;; :free owns the width/height axis via :w/:h, so skip the
         ;; generic :width/:height fields when placement is :free to
         ;; avoid double-setting. Padding / margin still apply.
+        ;;
+        ;; Width / height go through `as-length` so a user who types
+        ;; bare `200` into the inspector still gets `width:200px;`
+        ;; instead of `width:200;` (which the browser drops as
+        ;; invalid CSS). Padding / margin keep their string-only
+        ;; behaviour because their multi-value forms (`10px 20px`,
+        ;; `1em 2em 3em 4em`) don't fit `as-length`'s single-value
+        ;; contract — if needed, a future variant could split on
+        ;; whitespace.
         named (cond-> base
-                (and (not= :free placement) width   (not= "" width))
-                (conj (str "width:"   width))
+                (and (not= :free placement) (as-length width))
+                (conj (str "width:" (as-length width)))
 
-                (and (not= :free placement) height  (not= "" height))
-                (conj (str "height:"  height))
+                (and (not= :free placement) (as-length height))
+                (conj (str "height:" (as-length height)))
 
                 (and padding (not= "" padding)) (conj (str "padding:" padding))
                 (and margin  (not= "" margin))  (conj (str "margin:"  margin)))

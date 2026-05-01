@@ -165,7 +165,15 @@
         ;; Raw-html nodes own their children via :inner-html. Structured
         ;; text / child slots are ignored on these nodes so innerHTML
         ;; cannot be clobbered by a stray text node or appendChild pass.
-        raw-html? (some? (:inner-html node))]
+        ;;
+        ;; Derive from the tag's `:raw-html-slot?` meta (driven by
+        ;; `meta/augment` — `x-icon` is the canonical user). Reading
+        ;; from the *node's current* `:inner-html` would skip the
+        ;; reconciler's `set-inner-html!` call when the value is
+        ;; cleared (nil), leaving stale markup in the DOM — the
+        ;; field has been emptied in the doc but the previous SVG
+        ;; never gets wiped from the live element.
+        raw-html? (boolean (:raw-html-slot? (registry/get-meta (:tag node))))]
     (if existing
       (let [old-node (get old-by-id id)]
         (when old-node
