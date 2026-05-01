@@ -2190,22 +2190,113 @@
     (.appendChild wrap body)
     wrap))
 
+(defn resolve-payload-entries
+  "Pure: per-entry description of what a bound trigger will dispatch
+   at runtime.
+
+   Returns a vector of `{:source :label :detail}` maps:
+
+   - **Implicit payload** (the v1 default — no `:payload` on the
+     trigger, sitting inside a template instance): one
+     `:implicit-record` entry summarising the enclosing template's
+     record shape.
+   - **Explicit payload** (legacy / hand-edited docs): one entry
+     per `:payload` item — `{:literal v}`, `{:event-detail :k}`, or
+     `{:field :f :owner? \"g\"}`. The `:owner` is recovered via a
+     doc walk if absent.
+   - **No resolvable payload** (no `:payload`, no template ancestor):
+     empty vector.
+
+   Public so unit tests can pin the resolved shape without spinning
+   up a bound row."
+  [doc trigger tmpl]
+  (let [payload (:payload trigger)]
+    (cond
+      (seq payload)
+      (mapv
+       (fn [pe]
+         (cond
+           (contains? pe :literal)
+           {:source :literal
+            :label  "literal"
+            :detail (pr-str (:literal pe))}
+
+           (contains? pe :event-detail)
+           {:source :event-detail
+            :label  "event"
+            :detail (str "event.detail." (name (:event-detail pe)))}
+
+           (contains? pe :field)
+           (let [field-kw (:field pe)
+                 owner    (or (:owner pe)
+                              (some (fn [n]
+                                      (when (some #(= field-kw (:name %))
+                                                  (:fields n))
+                                        (:name n)))
+                                    (m/walk-nodes doc)))]
+             {:source :field
+              :label  "field"
+              :detail (if owner
+                        (str owner "." (name field-kw))
+                        (name field-kw))})
+
+           :else
+           {:source :unknown
+            :label  "unknown"
+            :detail (pr-str pe)}))
+       payload)
+
+      tmpl
+      (let [fields (vec (:fields tmpl))]
+        [{:source :implicit-record
+          :label  (str (:name tmpl) " record")
+          :detail (if (seq fields)
+                    (str/join ", " (map #(name (:name %)) fields))
+                    "(no fields declared)")}])
+
+      :else
+      [])))
+
+(defn- build-payload-preview
+  "Read-only block beneath a bound trigger row. Lists each resolved
+   payload entry as `<label>: <detail>`. Hidden when there's
+   nothing to show — keeps the row compact for triggers that fire
+   into actions outside any template ancestor."
+  [entries]
+  (when (seq entries)
+    (let [block (u/el :div {:class "inspector-payload-preview"})
+          head  (u/set-text! (u/el :div {:class "inspector-payload-head"})
+                             "Resolved payload")]
+      (.appendChild block head)
+      (doseq [{:keys [label detail]} entries]
+        (let [row (u/el :div {:class "inspector-payload-entry"})
+              k   (u/set-text! (u/el :span {:class "inspector-payload-label"})
+                               (str label ":"))
+              v   (u/set-text! (u/el :code {:class "inspector-payload-detail"})
+                               detail)]
+          (.appendChild row k)
+          (.appendChild row v)
+          (.appendChild block row)))
+      block)))
+
 (defn- build-event-row
   "Single row for one DOM event on the selected node. Shows the
    currently-bound action (if any) with a ✕ to unbind, or an action
-   picker button to bind. A passive hint below reports the implicit
-   payload the dispatch will receive."
-  [node event-name _doc all-actions tmpl-name]
+   picker button to bind. A `Resolved payload` block below the row
+   (when bound) lists each entry the dispatch will carry — implicit
+   record fields when inside a template, or explicit `:literal` /
+   `:event-detail` / `:field` entries from a hand-edited doc."
+  [node event-name doc all-actions tmpl-name]
   (let [existing-idx (first (keep-indexed (fn [i t]
                                             (when (= event-name (:trigger t)) i))
                                           (or (:events node) [])))
-        existing    (when existing-idx
-                      (nth (:events node) existing-idx))
-        wrap        (u/el :div {:class "inspector-event-row-wrap"})
-        row         (u/el :div {:class "inspector-event-row"})
-        label-el    (u/set-text! (u/el :span {:class "inspector-event-name"})
-                                 event-name)
-        hint        (u/el :div {:class "inspector-event-hint"})]
+        existing     (when existing-idx
+                       (nth (:events node) existing-idx))
+        tmpl         (enclosing-template-group doc (:id node))
+        wrap         (u/el :div {:class "inspector-event-row-wrap"})
+        row          (u/el :div {:class "inspector-event-row"})
+        label-el     (u/set-text! (u/el :span {:class "inspector-event-name"})
+                                  event-name)]
     (.appendChild row label-el)
     (if existing
       (let [picked (u/set-text!
@@ -2219,16 +2310,21 @@
                (fn [_] (commit-remove-trigger! (:id node) existing-idx)))
         (.appendChild row picked)
         (.appendChild row unbind)
-        (u/set-text! hint
-                     (if tmpl-name
-                       (str "payload: enclosing " tmpl-name)
-                       "payload: none")))
-      (let [btn (u/set-text!
-                 (u/el :x-button {:variant "ghost" :size "sm"
-                                  :class "inspector-bind-btn"
-                                  :title "Pick an action"
-                                  :data-tour "add-event"})
-                 "🔗")]
+        (.appendChild wrap row)
+        (when-let [block (build-payload-preview
+                          (resolve-payload-entries doc existing tmpl))]
+          (.appendChild wrap block)))
+      (let [btn  (u/set-text!
+                  (u/el :x-button {:variant "ghost" :size "sm"
+                                   :class "inspector-bind-btn"
+                                   :title "Pick an action"
+                                   :data-tour "add-event"})
+                  "🔗")
+            hint (u/set-text!
+                  (u/el :div {:class "inspector-event-hint"})
+                  (if tmpl-name
+                    (str "payload: enclosing " tmpl-name " (when action needs one)")
+                    "payload: none (no template ancestor)"))]
         (u/on! btn :press
                (fn [_]
                  (.replaceChildren row)
@@ -2239,12 +2335,8 @@
                        panel (build-action-picker-panel all-actions tmpl-name pick!)]
                    (.appendChild row panel))))
         (.appendChild row btn)
-        (u/set-text! hint
-                     (if tmpl-name
-                       (str "payload: enclosing " tmpl-name " (when action needs one)")
-                       "payload: none (no template ancestor)"))))
-    (.appendChild wrap row)
-    (.appendChild wrap hint)
+        (.appendChild wrap row)
+        (.appendChild wrap hint)))
     wrap))
 
 (defn- triggers-section [{:keys [node]}]
