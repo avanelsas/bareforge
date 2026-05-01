@@ -50,6 +50,43 @@
   (is (= "width:200px;"
          (r/layout->css {:placement :flow :width "200px"}))))
 
+(deftest layout-css-width-bare-numeric-string-gets-px
+  (testing "an inspector input that types `200` (no unit) lands in
+            the doc as the string \"200\" — historically the
+            reconciler would emit `width:200;` which the browser
+            silently drops. `as-length` now recognises a bare
+            numeric string and applies the same `px` default the
+            number branch uses, so legacy docs and inspector input
+            both render correctly."
+    (is (= "width:200px;"
+           (r/layout->css {:placement :flow :width "200"})))
+    (is (= "width:1.5px;"
+           (r/layout->css {:placement :flow :width "1.5"})))
+    (is (= "width:-10px;"
+           (r/layout->css {:placement :flow :width "-10"})))))
+
+(deftest layout-css-width-as-actual-number-also-gets-px
+  (testing "the existing inspector path that stores actual numbers
+            (free-coord scrubbing, parse-length-value's exact-
+            representation guard) keeps producing `Npx`"
+    (is (= "width:200px;"
+           (r/layout->css {:placement :flow :width 200})))))
+
+(deftest layout-css-width-with-unit-passes-through
+  (testing "non-numeric / unit'd strings stay verbatim — `as-length`
+            only adds px to bare numeric strings, so `50%` /
+            `10rem` / `auto` round-trip unchanged"
+    (is (= "width:50%;"
+           (r/layout->css {:placement :flow :width "50%"})))
+    (is (= "width:10rem;"
+           (r/layout->css {:placement :flow :width "10rem"})))
+    (is (= "width:auto;"
+           (r/layout->css {:placement :flow :width "auto"})))))
+
+(deftest layout-css-height-bare-numeric-string-gets-px
+  (is (= "height:120px;"
+         (r/layout->css {:placement :flow :height "120"}))))
+
 (deftest layout-css-padding-and-margin
   (is (= "padding:1rem;margin:0 auto;"
          (r/layout->css {:placement :flow :padding "1rem" :margin "0 auto"}))))
