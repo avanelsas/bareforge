@@ -11,6 +11,7 @@
    its own folder with db/subs/events/views files."
   (:require [bareforge.doc.actions :as actions]
             [bareforge.doc.model :as m]
+            [bareforge.export.clj-form :as cf]
             [bareforge.export.html-to-hiccup :as h2h]
             [bareforge.export.model :as em]
             [bareforge.meta.versions :as versions]
@@ -872,12 +873,16 @@
    :negation  "not"})
 
 (defn- emit-stored-sub
-  "Direct 3-arity `:->` sub pointing at a root-db key."
+  "Direct 3-arity `:->` sub pointing at a root-db key. Built as
+   `clj-form` data and formatted at the edge — `:pair` keeps the
+   `:-> ::field` directive on one line under the multi-line
+   reg-sub layout."
   [field db-alias]
   (let [fname (cljs.core/name field)]
-    (str "(rf/reg-sub\n"
-         " ::" fname "\n"
-         " :-> ::" db-alias "/" fname ")")))
+    (cf/format-form
+     [:invoke-block [:symbol 'rf/reg-sub]
+      [:auto-keyword fname]
+      [:pair [:keyword :->] [:auto-keyword (str db-alias "/" fname)]]])))
 
 (defn- sum-of-extractor
   "Extractor function for `:sum-of` with a :project-field: project
@@ -924,10 +929,11 @@
                                   :field     name
                                   :known-ops (into #{:any-of :join-on :filter-by}
                                                    (keys computed-op->fn))})))]
-    (str "(rf/reg-sub\n"
-         " ::" fname "\n"
-         " :<- [::" src "]\n"
-         " :-> " op-fn ")")))
+    (cf/format-form
+     [:invoke-block [:symbol 'rf/reg-sub]
+      [:auto-keyword fname]
+      [:pair [:keyword :<-] [:vector [:auto-keyword src]]]
+      [:pair [:keyword :->] [:raw op-fn]]])))
 
 (defn- emit-any-of-sub
   "Derived multi-signal sub that's truthy iff any listed source-field
@@ -940,12 +946,18 @@
   [{:keys [name computed]}]
   (let [fname   (cljs.core/name name)
         sources (:source-fields computed)]
-    (str "(rf/reg-sub\n"
-         " ::" fname "\n"
-         (str/join ""
-                   (for [s sources]
-                     (str " :<- [::" (cljs.core/name s) "]\n")))
-         " (fn [vs _] (boolean (some identity vs))))")))
+    (cf/format-form
+     (vec
+      (concat
+       [:invoke-block [:symbol 'rf/reg-sub]
+        [:auto-keyword fname]]
+       (for [s sources]
+         [:pair [:keyword :<-]
+          [:vector [:auto-keyword (cljs.core/name s)]]])
+       [[:fn [:vector [:symbol 'vs] [:symbol '_]]
+         [:invoke [:symbol 'boolean]
+          [:invoke [:symbol 'some]
+           [:symbol 'identity] [:symbol 'vs]]]]])))))
 
 (def ^:private stateful-host-for-template em/stateful-host-for-template)
 
@@ -958,7 +970,13 @@
 
    The target records live in the stateful group that owns the
    collection field pointing at the template group (resolved via
-   `stateful-host-for-template`)."
+   `stateful-host-for-template`).
+
+   The handler body's hand-formatted multi-line shape is kept as
+   `:raw` text — the shape (->> over keep + a nested when-fn over
+   `(= id (match-kw %))`) is more readable as a literal than as
+   over-decomposed clj-form data; the outer reg-sub stays as
+   structured data."
   [{:keys [name computed]} doc all-groups app-ns]
   (let [fname         (cljs.core/name name)
         src           (cljs.core/name (:source-field computed))
@@ -966,19 +984,21 @@
         host          (stateful-host-for-template doc all-groups group-name)
         host-sub-ref  (str "::" (:ns-name host) ".subs/" (:field-name host))
         match-kw      (str "::" group-name ".db/" (cljs.core/name match-field))
-        as-ns         (when of-group (str app-ns "." of-group ".db"))]
-    (str "(rf/reg-sub\n"
-         " ::" fname "\n"
-         " :<- [::" src "]\n"
-         " :<- [" host-sub-ref "]\n"
-         " (fn [[ids records] _]\n"
-         "   (->> ids\n"
-         "        (keep (fn [id]\n"
-         "                (some #(when (= id (" match-kw " %)) %)\n"
-         "                      records)))\n"
-         (if as-ns
-           (str "        (mapv #(rf/qualify-map % \"" as-ns "\")))))")
-           "        vec)))"))))
+        as-ns         (when of-group (str app-ns "." of-group ".db"))
+        handler-body  (str "(fn [[ids records] _]\n"
+                           "   (->> ids\n"
+                           "        (keep (fn [id]\n"
+                           "                (some #(when (= id (" match-kw " %)) %)\n"
+                           "                      records)))\n"
+                           (if as-ns
+                             (str "        (mapv #(rf/qualify-map % \"" as-ns "\"))))")
+                             "        vec))"))]
+    (cf/format-form
+     [:invoke-block [:symbol 'rf/reg-sub]
+      [:auto-keyword fname]
+      [:pair [:keyword :<-] [:vector [:auto-keyword src]]]
+      [:pair [:keyword :<-] [:vector [:raw host-sub-ref]]]
+      [:raw handler-body]])))
 
 (defn- join-target-subs-alias
   "Alias (e.g. `product-feed.subs`) to require for a join's target —
@@ -1016,7 +1036,13 @@
 
    Match-field values are read via the template group's namespaced
    keyword (e.g. `::product.db/title`) and defensively coerced to a
-   string so a nil/number record field doesn't blow up the handler."
+   string so a nil/number record field doesn't blow up the handler.
+
+   As with `emit-join-sub`, the handler body keeps its hand-formatted
+   multi-line shape as `:raw` text — the structure (`if` over
+   `str/blank?`, `let` over `needle`, `filterv` over `str/includes?`
+   on a lowercased projection) is more readable as a literal than
+   as decomposed clj-form data."
   [{:keys [name computed] :as fd} doc all-groups]
   (let [fname    (cljs.core/name name)
         src      (cljs.core/name (:source-field computed))
@@ -1024,21 +1050,24 @@
         search   (cljs.core/name (:search-field fs))
         match    (cljs.core/name (:match-field fs))
         tpl      (filter-by-of-group fd doc all-groups)
-        match-kw (str "::" tpl ".db/" match)]
-    (str "(rf/reg-sub\n"
-         " ::" fname "\n"
-         " :<- [::" src "]\n"
-         " :<- [::" search "]\n"
-         " (fn [[items term] _]\n"
-         "   (if (str/blank? term)\n"
-         "     items\n"
-         "     (let [needle (str/lower-case term)]\n"
-         "       (filterv\n"
-         "        (fn [r]\n"
-         "          (str/includes?\n"
-         "           (str/lower-case (str (" match-kw " r)))\n"
-         "           needle))\n"
-         "        items)))))")))
+        match-kw (str "::" tpl ".db/" match)
+        handler-body
+        (str "(fn [[items term] _]\n"
+             "   (if (str/blank? term)\n"
+             "     items\n"
+             "     (let [needle (str/lower-case term)]\n"
+             "       (filterv\n"
+             "        (fn [r]\n"
+             "          (str/includes?\n"
+             "           (str/lower-case (str (" match-kw " r)))\n"
+             "           needle))\n"
+             "        items))))")]
+    (cf/format-form
+     [:invoke-block [:symbol 'rf/reg-sub]
+      [:auto-keyword fname]
+      [:pair [:keyword :<-] [:vector [:auto-keyword src]]]
+      [:pair [:keyword :<-] [:vector [:auto-keyword search]]]
+      [:raw handler-body]])))
 
 (defn- generate-subs
   "Generate subs.cljs for a group. Skipped for template groups — they
