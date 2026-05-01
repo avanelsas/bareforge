@@ -256,6 +256,41 @@
       (is (not (str/includes? cart-subs "core.subs"))
           "no core.subs require anywhere"))))
 
+(deftest generated-subs-files-parse-as-edn
+  ;; Round-trip semantic test added when the sub emitters migrated to
+  ;; `bareforge.export.clj-form` data values. Pinning byte-identical
+  ;; substrings stays valuable, but we also need a check that the
+  ;; emitted text is structurally valid Clojure — the formatter's
+  ;; layout rules can't quietly produce a string that string-includes
+  ;; the right substring while still failing to read.
+  ;;
+  ;; `cljs.reader` is EDN-only and rejects two reader macros the
+  ;; emitted files lean on: `::` (auto-resolved keywords) and
+  ;; `#(…)` (anonymous-fn literals). The full Clojure reader is
+  ;; intentionally not on the test classpath (deps.edn keeps it
+  ;; dev-only). Two substitutions before parsing erase those macros
+  ;; without harming structural validity:
+  ;;   `::` → `:` — turns auto-resolved keywords into plain ones
+  ;;   `#(`  → `(` — turns anonymous-fn literals into bare invocations
+  ;; Resolved namespaces and `%` arity semantics are lost, but every
+  ;; paren / bracket / form structure still validates — which is the
+  ;; only invariant this test cares about.
+  (let [files (cp/generate (fixture-doc) {:app-ns "app"})
+        sub-files (filter (fn [[path _]] (re-find #"/subs\.cljs$" path))
+                          files)
+        edn-safe (fn [s]
+                   (-> s
+                       (str/replace "::" ":")
+                       (str/replace "#(" "(")))
+        reader-opts {:default (fn [_ v] v)}]
+    (is (pos? (count sub-files))
+        "fixture exercises at least one subs.cljs emission")
+    (doseq [[path content] sub-files]
+      (testing (str path " parses as a sequence of valid forms")
+        (is (some? (edn/read-string reader-opts
+                                    (str "(do " (edn-safe content) ")")))
+            (str path " must be readable as a (do …) form"))))))
+
 (deftest generated-subs-derived-for-computed
   (let [files     (cp/generate (fixture-doc) {:app-ns "app"})
         cart-subs (get files "src/app/cart/subs.cljs")

@@ -27,8 +27,17 @@
 
 ;; --- curated-commands ---------------------------------------------------
 
+(def ^:private noop-thunks
+  ;; Stand-in for the chrome-toggle thunks supplied to `install!` at
+  ;; runtime — what the palette would normally receive from
+  ;; `ui.app/build-chrome`. Tests don't exercise the panel toggles
+  ;; themselves, only the command-list shape.
+  {:on-theme-toggle     (constantly nil)
+   :on-templates-toggle (constantly nil)
+   :on-welcome-tour     (constantly nil)})
+
 (deftest curated-commands-shape
-  (let [cmds (cp/curated-commands)]
+  (let [cmds (cp/curated-commands noop-thunks)]
     (is (pos? (count cmds)) "curated list is non-empty")
     (is (every? :label cmds))
     (is (every? :group cmds))
@@ -36,7 +45,7 @@
         "every command's :run! is callable")))
 
 (deftest curated-commands-no-duplicate-labels
-  (let [labels (mapv :label (cp/curated-commands))]
+  (let [labels (mapv :label (cp/curated-commands noop-thunks))]
     (is (= (count labels) (count (distinct labels)))
         "labels are unique within the curated list")))
 
@@ -45,7 +54,7 @@
             groups so the palette's category headings stay
             consistent"
     (let [allowed #{"File" "View" "Selection"}]
-      (doseq [c (cp/curated-commands)]
+      (doseq [c (cp/curated-commands noop-thunks)]
         (is (contains? allowed (:group c))
             (str "command " (:label c) " has unknown group "
                  (:group c)))))))

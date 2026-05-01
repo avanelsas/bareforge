@@ -7,6 +7,7 @@
             [bareforge.render.selection :as selection]
             [bareforge.render.slot-strips :as slot-strips]
             [bareforge.state :as state]
+            [bareforge.ui.cheat-sheet :as cheat-sheet]
             [bareforge.ui.command-palette :as command-palette]
             [bareforge.ui.inspector :as inspector]
             [bareforge.ui.layers :as layers]
@@ -20,11 +21,11 @@
             [bareforge.util.dom :as u]))
 
 (defn- build-chrome
-  "Construct the chrome subtree. Returns the outer chrome element plus
-   both the canvas host (the drop region the dnd layer guards) and the
-   inner `<x-theme>` wrapper the reconciler renders into — keeping the
-   user's in-canvas theme isolated from the Bareforge editor chrome's
-   own theme."
+  "Construct the chrome subtree. Returns the outer chrome element,
+   the canvas host (the drop region the dnd layer guards), the
+   inner `<x-theme>` wrapper the reconciler renders into, and the
+   command-palette handle so `mount!` can wire it into the keyboard
+   layer."
   []
   ;; Panels are created before the toolbar so the toolbar's click
   ;; handlers can close over them directly. No global registry, no
@@ -38,7 +39,7 @@
         chrome-thunks   {:on-theme-toggle     #(theme-editor/toggle! theme-panel)
                          :on-templates-toggle #(templates/toggle! templates-panel)
                          :on-welcome-tour     welcome-tour/open!}
-        _               (command-palette/install! chrome-thunks)
+        cmd-palette     (command-palette/install! chrome-thunks)
         toolbar-el      (toolbar/create chrome-thunks)
         palette-el      (palette/create {:on-drag-start drag/start-from-palette!})
         layers-el       (layers/create)
@@ -56,7 +57,8 @@
     {:chrome       chrome-el
      :canvas-host  canvas-host
      :canvas-theme canvas-theme
-     :tour-el      tour-el}))
+     :tour-el      tour-el
+     :cmd-palette  cmd-palette}))
 
 (defn- install-mode-watch!
   "Reflect `:mode` from app-state onto a `data-mode` attribute on the
@@ -75,7 +77,8 @@
   "Build the chrome inside `mount-el` and mount the canvas reconciler
    inside the inner canvas theme wrapper."
   [^js mount-el]
-  (let [{:keys [chrome canvas-host canvas-theme tour-el]} (build-chrome)]
+  (let [{:keys [chrome canvas-host canvas-theme tour-el cmd-palette]}
+        (build-chrome)]
     (.replaceChildren mount-el chrome)
     (canvas/mount! canvas-theme)
     (selection/install! canvas-host)
@@ -83,6 +86,7 @@
     (theme-editor/install-watch!)
     (welcome-tour/install-watch! tour-el)
     (drag/install-window-listeners! canvas-host)
-    (shortcuts/install!)
+    (shortcuts/install! {:show-shortcuts       cheat-sheet/toggle!
+                         :show-command-palette (:toggle! cmd-palette)})
     (inline-edit/install! canvas-host)
     (install-mode-watch! chrome)))
