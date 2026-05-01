@@ -430,12 +430,17 @@
       opacity: 0.6;
     }
     .state-panel-field {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 2px 0;
+      font-size: 11px;
+    }
+    .state-panel-field-head {
       display: grid;
       grid-template-columns: minmax(80px, 1fr) auto auto minmax(0, 2fr);
       align-items: baseline;
       gap: 6px;
-      padding: 1px 0;
-      font-size: 11px;
     }
     .state-panel-name {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -452,9 +457,25 @@
     .state-panel-value {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 11px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      /* No truncation — short scalars render verbatim and wrap if
+         needed; collections render as a count summary in this slot
+         and pretty-print into the .state-panel-detail block below. */
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .state-panel-detail {
+      margin: 0;
+      padding: 6px 8px;
+      max-height: 240px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      line-height: 1.4;
+      white-space: pre;
+      background: var(--x-color-surface-hover, rgba(127, 127, 127, 0.06));
+      border-left: 2px solid var(--x-color-border, rgba(127, 127, 127, 0.3));
+      border-radius: 0 3px 3px 0;
+      opacity: 0.92;
     }
 
     .inspector-body { display: flex; flex-direction: column; gap: 16px; }

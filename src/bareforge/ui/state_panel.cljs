@@ -10,23 +10,11 @@
    don't perturb this view."
   (:require [bareforge.export.state-preview :as sp]
             [bareforge.state :as state]
-            [bareforge.util.dom :as u]))
+            [bareforge.util.dom :as u]
+            [clojure.pprint :as pprint]
+            [clojure.string :as str]))
 
 ;; --- pure label helpers --------------------------------------------------
-
-(defn value-label
-  "Pure: short string description of a field row's value, used in the
-   State panel rows. Stored fields show the value via `pr-str`;
-   computed fields show their evaluated value or a `(runtime)` hint
-   for ops the design-time evaluator can't resolve.
-
-   Public so unit tests can pin the label format without mounting
-   any DOM."
-  [{:keys [value runtime-only stored?] :as field}]
-  (cond
-    runtime-only "(runtime)"
-    (and (not stored?) (nil? (find field :value))) "(runtime)"
-    :else (pr-str value)))
 
 (defn type-label
   "Pure: short type label rendered after the field name. Computed
@@ -38,26 +26,89 @@
       computed? (str " ƒ")
       locked?   (->> (str "🔒 ")))))
 
+(defn- collection-value? [v]
+  (or (vector? v) (map? v) (set? v)))
+
+(defn- summary-text
+  "Compact one-liner shown alongside the field name when a value
+   spans multiple pretty-printed lines. Counts entries so the row
+   is informative even when the detail block is collapsed."
+  [v]
+  (cond
+    (vector? v) (str "[" (count v) (if (= 1 (count v)) " item]" " items]"))
+    (set?    v) (str "#{" (count v) (if (= 1 (count v)) " item}" " items}"))
+    (map?    v) (str "{" (count v) (if (= 1 (count v)) " key}" " keys}"))
+    :else       "?"))
+
+(defn- pprint-detail
+  "Pretty-print `v` to a string with one entry per line and a
+   trailing newline trimmed. `pprint` already wraps lines at a
+   sensible width — for vectors of records this gives one record
+   per line, for maps one key/value pair per line."
+  [v]
+  (str/trim-newline (with-out-str (pprint/pprint v))))
+
+(defn value-display
+  "Pure: classify a field value's render shape.
+
+   Returns one of:
+   - `{:kind :inline    :text \"42\"}` — short scalar; render in
+     the row's value column verbatim.
+   - `{:kind :runtime}`               — computed op the design-time
+     evaluator can't resolve; renderer shows a `(runtime)` hint.
+   - `{:kind :expanded  :summary \"[3 items]\" :detail \"…\"}`
+     — collection; the renderer puts the summary in the row and
+     the pretty-printed detail in a scrollable block beneath.
+
+   Public so unit tests can pin the shape decisions without
+   building DOM."
+  [{:keys [value runtime-only stored?] :as field}]
+  (let [no-value? (and (not stored?) (nil? (find field :value)))]
+    (cond
+      (or runtime-only no-value?)
+      {:kind :runtime}
+
+      (collection-value? value)
+      (if (zero? (count value))
+        {:kind :inline :text (pr-str value)}
+        {:kind    :expanded
+         :summary (summary-text value)
+         :detail  (pprint-detail value)})
+
+      :else
+      {:kind :inline :text (pr-str value)})))
+
 ;; --- DOM rendering -------------------------------------------------------
 
 (defn- field-row [field]
-  (let [row    (u/el :div {:class "state-panel-field"})
-        nm     (u/set-text!
-                (u/el :span {:class "state-panel-name"})
-                (cljs.core/name (:name field)))
-        ty     (u/set-text!
-                (u/el :span {:class "state-panel-type"})
-                (type-label field))
-        arrow  (u/set-text!
-                (u/el :span {:class "state-panel-arrow"})
-                "→")
-        v      (u/set-text!
-                (u/el :code {:class "state-panel-value"})
-                (value-label field))]
-    (.appendChild row nm)
-    (.appendChild row ty)
-    (.appendChild row arrow)
-    (.appendChild row v)
+  (let [display (value-display field)
+        row     (u/el :div {:class "state-panel-field"})
+        head    (u/el :div {:class "state-panel-field-head"})
+        nm      (u/set-text!
+                 (u/el :span {:class "state-panel-name"})
+                 (cljs.core/name (:name field)))
+        ty      (u/set-text!
+                 (u/el :span {:class "state-panel-type"})
+                 (type-label field))
+        arrow   (u/set-text!
+                 (u/el :span {:class "state-panel-arrow"})
+                 "→")
+        head-v  (u/set-text!
+                 (u/el :code {:class "state-panel-value"})
+                 (case (:kind display)
+                   :runtime  "(runtime)"
+                   :inline   (:text display)
+                   :expanded (:summary display)))]
+    (.appendChild head nm)
+    (.appendChild head ty)
+    (.appendChild head arrow)
+    (.appendChild head head-v)
+    (.appendChild row head)
+    (when (= :expanded (:kind display))
+      (let [detail (u/set-text!
+                    (u/el :pre {:class "state-panel-detail"})
+                    (:detail display))]
+        (.appendChild row detail)))
     row))
 
 (defn- group-section [{:keys [name template? fields] :as _entry}]

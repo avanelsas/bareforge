@@ -1,31 +1,71 @@
 (ns bareforge.ui.state-panel-test
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [bareforge.ui.state-panel :as sp]))
 
-;; --- value-label ---------------------------------------------------------
+;; --- value-display ------------------------------------------------------
 
-(deftest value-label-stored-field-uses-pr-str
-  (testing "stored fields surface their seed value via pr-str so
-            strings keep quotes, nil renders as nil, etc."
-    (is (= "0"          (sp/value-label {:stored? true :value 0})))
-    (is (= "\"hello\""  (sp/value-label {:stored? true :value "hello"})))
-    (is (= "nil"        (sp/value-label {:stored? true :value nil})))
-    (is (= "[1 2 3]"    (sp/value-label {:stored? true :value [1 2 3]})))))
+(deftest value-display-scalar-stays-inline
+  (testing "scalars render inline via pr-str — no truncation, no
+            multi-line block. The renderer drops :text into the row's
+            value column."
+    (is (= {:kind :inline :text "0"}
+           (sp/value-display {:stored? true :value 0})))
+    (is (= {:kind :inline :text "\"hello\""}
+           (sp/value-display {:stored? true :value "hello"})))
+    (is (= {:kind :inline :text "nil"}
+           (sp/value-display {:stored? true :value nil})))
+    (is (= {:kind :inline :text "true"}
+           (sp/value-display {:stored? true :value true})))))
 
-(deftest value-label-computed-field-uses-pr-str
-  (testing "evaluated computed fields render the same way as stored
-            fields — the row's value column is value-typed, not
-            stored/computed-typed"
-    (is (= "3"     (sp/value-label {:computed? true :stored? false :value 3})))
-    (is (= "true"  (sp/value-label {:computed? true :stored? false :value true})))))
+(deftest value-display-empty-collection-stays-inline
+  (testing "empty vector / map / set render inline — no detail block
+            for `[]` or `{}` since the one-liner is exhaustive"
+    (is (= {:kind :inline :text "[]"}
+           (sp/value-display {:stored? true :value []})))
+    (is (= {:kind :inline :text "{}"}
+           (sp/value-display {:stored? true :value {}})))))
 
-(deftest value-label-runtime-only-shows-hint
-  (testing "ops the design-time evaluator can't resolve render as
-            (runtime) so the user knows the value is real but
-            unavailable until the exported app is running"
-    (is (= "(runtime)"
-           (sp/value-label {:computed? true :stored? false
-                            :runtime-only true})))))
+(deftest value-display-non-empty-vector-expands
+  (testing "a non-empty vector reports a count summary + a pretty-
+            printed detail block; ellipsis is gone, the user sees
+            every element on its own line"
+    (let [out (sp/value-display {:stored? true :value [1 2 3]})]
+      (is (= :expanded (:kind out)))
+      (is (= "[3 items]" (:summary out)))
+      (is (str/includes? (:detail out) "1"))
+      (is (str/includes? (:detail out) "3"))))
+  (testing "singular count uses `item` (not `items`)"
+    (is (= "[1 item]"
+           (:summary (sp/value-display {:stored? true :value [{:id 1}]}))))))
+
+(deftest value-display-non-empty-map-expands
+  (testing "maps surface a `{N keys}` summary"
+    (let [out (sp/value-display {:stored? true :value {:a 1 :b 2}})]
+      (is (= :expanded (:kind out)))
+      (is (= "{2 keys}" (:summary out)))
+      (is (str/includes? (:detail out) ":a")))))
+
+(deftest value-display-runtime-only-flagged
+  (testing "computed ops the evaluator can't resolve return the
+            :runtime kind — the renderer shows `(runtime)` rather
+            than a misleading value"
+    (is (= {:kind :runtime}
+           (sp/value-display {:computed? true :stored? false
+                              :runtime-only true})))))
+
+(deftest value-display-vector-of-records-detail-format
+  (testing "the canonical vector-of-records case (cart-items) renders
+            one record per line — that's the whole point of dropping
+            ellipsis: the user sees all the seed records pretty-printed"
+    (let [v   [{:id 1 :title "Widget" :price 9.99}
+               {:id 2 :title "Gadget" :price 8.75}]
+          out (sp/value-display {:stored? true :value v})]
+      (is (= :expanded (:kind out)))
+      (is (str/includes? (:detail out) "Widget"))
+      (is (str/includes? (:detail out) "Gadget"))
+      (is (>= (count (str/split-lines (:detail out))) 2)
+          "at least two lines — pretty-print breaks records apart"))))
 
 ;; --- type-label ----------------------------------------------------------
 
