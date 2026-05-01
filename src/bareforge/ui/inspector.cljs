@@ -19,6 +19,7 @@
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]
             [bareforge.ui.state-panel :as state-panel]
+            [bareforge.util.coerce :as c]
             [bareforge.util.dom :as u]
             [clojure.string :as str]))
 
@@ -395,17 +396,13 @@
       numeric?
       (attach-scrub-meta!
        {:read-fn   (fn []
-                      ;; Empty / non-numeric attr starts the drag at 0
-                      ;; so unset fields are still scrubbable from
-                      ;; nothing — otherwise the gesture would silently
-                      ;; do nothing on a fresh component.
-                     (let [doc    (:document @state/app-state)
-                           n      (m/get-node doc node-id)
-                           raw    (current-value n prop)
-                           parsed (when (and raw (not= "" raw))
-                                    (let [p (js/parseFloat raw)]
-                                      (when-not (js/isNaN p) p)))]
-                       (or parsed 0)))
+                     ;; Empty / non-numeric attr starts the drag at 0
+                     ;; so unset fields are still scrubbable from
+                     ;; nothing — otherwise the gesture would silently
+                     ;; do nothing on a fresh component.
+                     (let [doc (:document @state/app-state)
+                           n   (m/get-node doc node-id)]
+                       (c/parse-number-or-zero (current-value n prop))))
         :commit-fn! (fn [new-val first?]
                       (let [doc  (:document @state/app-state)
                             doc' (ops/set-attr doc node-id attr-name (str new-val))]
@@ -472,7 +469,7 @@
              (let [v (read-event-value e)]
                (commit-with! ops/set-layout (:id node)
                              layout-key
-                             (when (and v (not= "" v)) v)))))
+                             (c/nil-if-empty v)))))
     el))
 
 (defn- build-placement-field
@@ -495,19 +492,6 @@
                  (commit-with! ops/set-layout (:id node) :placement (keyword v))))))
     el))
 
-(defn- parse-length-value
-  "Coerce an x-search-field string into a number when it parses
-   cleanly, otherwise pass the string through (so users can type
-   '50%' or '10rem' if they want). Empty string → nil (clear)."
-  [v]
-  (cond
-    (or (nil? v) (= "" v)) nil
-    :else                  (let [n (js/parseFloat v)]
-                             (if (and (number? n) (not (js/isNaN n))
-                                      (= (str n) v))
-                               n
-                               v))))
-
 (defn- build-free-coord-field
   "Numeric/length editor for one of the :layout :x :y :w :h fields.
    Most useful when the node's placement is :free, but shown
@@ -525,7 +509,7 @@
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)]
-               (commit-with! ops/set-layout node-id layout-key (parse-length-value v)))))
+               (commit-with! ops/set-layout node-id layout-key (c/parse-length-value v)))))
     (attach-scrub-meta!
      el
      {:read-fn    (fn []
@@ -536,11 +520,7 @@
                     (let [doc (:document @state/app-state)
                           v   (get-in (m/get-node doc node-id)
                                       [:layout layout-key])]
-                      (cond
-                        (number? v) v
-                        (string? v) (let [parsed (js/parseFloat v)]
-                                      (if (js/isNaN parsed) 0 parsed))
-                        :else       0)))
+                      (c/parse-number-or-zero v)))
       :commit-fn! (fn [new-val first?]
                     (let [doc  (:document @state/app-state)
                           doc' (ops/set-layout doc node-id layout-key new-val)]
@@ -568,7 +548,7 @@
              (let [v (read-event-value e)]
                (commit-with! ops/set-layout (:id node)
                              :extra-style
-                             (when (and v (not= "" v)) v)))))
+                             (c/nil-if-empty v)))))
     el))
 
 (defn- resolve-css-var
@@ -625,8 +605,7 @@
         (set! (.. probe -style -color) (str "var(" var-name ")"))
         (.appendChild host probe)
         (let [resolved (.-color (js/window.getComputedStyle probe))]
-          (when (and resolved (not= "" resolved))
-            resolved))
+          (c/nil-if-empty resolved))
         (finally
           (when (.-parentNode probe)
             (.removeChild (.-parentNode probe) probe)))))))
@@ -674,8 +653,7 @@
     (u/on! el :x-color-picker-input
            (fn [^js e]
              (let [v (some-> e .-detail .-value)]
-               (commit-css-var-from-event! node entry
-                                           (when (and v (not= "" v)) v)))))
+               (commit-css-var-from-event! node entry (c/nil-if-empty v)))))
     el))
 
 (defn- build-css-var-text [node {:keys [kind] :as entry}]
@@ -692,8 +670,7 @@
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)]
-               (commit-css-var-from-event! node entry
-                                           (when (and v (not= "" v)) v)))))
+               (commit-css-var-from-event! node entry (c/nil-if-empty v)))))
     el))
 
 (defn- build-css-var-widget [node {:keys [kind] :as entry}]
@@ -1477,10 +1454,9 @@
    target field's type."
   [type-kw s]
   (case type-kw
-    :number  (let [p (js/parseFloat (or s "0"))]
-               (if (js/isNaN p) 0 p))
+    :number  (c/parse-number-or-zero s)
     :boolean (= "true" s)
-    :keyword (when (and s (not= "" s)) (keyword s))
+    :keyword (c/keyword-or-nil s)
     :vector  []
     (or s "")))
 
@@ -1672,8 +1648,7 @@
 (defn- non-empty-value
   "Current value of `el`, or nil when blank/undefined."
   [^js el]
-  (let [v (.-value el)]
-    (when (and v (not= "" v)) v)))
+  (c/nil-if-empty (.-value el)))
 
 (defn- kw-value
   "Current value of `el` as a keyword, or nil when blank."
@@ -1790,10 +1765,9 @@
    `type-kw`. Pure."
   [type-kw raw]
   (case type-kw
-    :number  (let [p (js/parseFloat (or raw "0"))]
-               (if (js/isNaN p) 0 p))
+    :number  (c/parse-number-or-zero raw)
     :boolean (= "true" raw)
-    :keyword (when (and raw (not= "" raw)) (keyword raw))
+    :keyword (c/keyword-or-nil raw)
     :vector  []
     (or raw "")))
 
@@ -2052,9 +2026,8 @@
     (when current (set! (.-value sel) current))
     (u/on! sel :select-change
            (fn [^js e]
-             (let [v (read-event-value e)]
-               (commit-source-field! (:id node)
-                                     (when (and v (not= "" v)) (keyword v))))))
+             (commit-source-field! (:id node)
+                                   (c/keyword-or-nil (read-event-value e)))))
     (field-row "source field" sel)))
 
 (defn- build-source-sub-row [node]
