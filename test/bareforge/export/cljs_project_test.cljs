@@ -171,6 +171,22 @@
     (is (str/includes? html "<x-theme"))
     (is (str/includes? html "Demo Store"))))
 
+(deftest generated-index-html-csp-allows-shadow-cljs-dev
+  ;; Regression for: a strict script-src without `'unsafe-eval'` made
+  ;; `shadow-cljs watch` crash on first load — its dev hot-reload
+  ;; runtime evals modules. Same with the websocket connection back
+  ;; to the dev server (connect-src ws:/wss:). The exported project
+  ;; should boot cleanly under `watch` without the user editing CSP.
+  (let [files (cp/generate (fixture-doc) {:title "Demo Store"})
+        html  (get files "public/index.html")]
+    (testing "script-src includes 'unsafe-eval' for dev hot-reload"
+      (is (re-find #"script-src[^;]*'unsafe-eval'" html)))
+    (testing "connect-src allows ws:/wss: for the dev server's hot-reload socket"
+      (is (re-find #"connect-src[^;]*\bws:" html))
+      (is (re-find #"connect-src[^;]*\bwss:" html)))
+    (testing "production-tightening guidance is in the source for the deployer"
+      (is (str/includes? html "Content-Security-Policy")))))
+
 (deftest generated-core-requires-all-groups
   (let [files (cp/generate (fixture-doc) {:app-ns "app"})
         core  (get files "src/app/core.cljs")]

@@ -1588,14 +1588,20 @@
        "<head>\n"
        "  <meta charset=\"utf-8\">\n"
        ;; CLJS export self-hosts the shadow-cljs JS bundle; everything
-       ;; runs from same-origin. Strict CSP.
+       ;; runs from same-origin. `'unsafe-eval'` is included so
+       ;; `shadow-cljs watch` (dev hot-reload) works out of the box —
+       ;; the dev runtime relies on `eval` for module loading. For
+       ;; production deployments (`shadow-cljs release app`) the
+       ;; emitted bundle needs no eval; tighten the script-src by
+       ;; dropping `'unsafe-eval'` (and ideally serving the CSP via
+       ;; HTTP headers rather than this meta tag).
        "  <meta http-equiv=\"Content-Security-Policy\" content=\""
        "default-src 'self'; "
-       "script-src 'self' 'unsafe-inline'; "
+       "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
        "style-src 'self' 'unsafe-inline'; "
        "img-src 'self' data:; "
        "font-src 'self' data:; "
-       "connect-src 'self'; "
+       "connect-src 'self' ws: wss:; "
        "object-src 'none'; "
        "base-uri 'self'\">\n"
        "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
