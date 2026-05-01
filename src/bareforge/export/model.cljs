@@ -357,3 +357,52 @@
                           (:of-group f)))
                       (:fields n))))
             all-groups))))
+
+;; --- composed lowered representation -------------------------------------
+
+(defn lower-document
+  "Compose every per-document fact a plugin needs into one canonical
+   value, so generators stop re-deriving them. Pure: returns a map
+   shaped as
+
+     {:groups          [<lowered-group> ...]
+      :root-order      [{:id :group? :ns-name?} ...]
+      :template-names  #{<ns-name> ...}
+      :field-owner-ns  {<field-kw> <owner-ns-name>}
+      :name->ns-name   {<user-facing-name> <ns-name>}}
+
+   Each lowered-group is the original `detect-groups` entry plus
+
+     {:template?       boolean   ;; cheap (set lookup)
+      :data            <collect-group-data result, deduped + cached>}
+
+   so a downstream `(template-group? doc g)` becomes
+   `(:template? g)` (one keyword lookup instead of a re-walk per
+   instance-id) and a downstream `(collect-group-data doc ...)`
+   becomes `(:data g)` (one walk total per group instead of one
+   per generator).
+
+   This is the **single canonical lowered representation** plugins
+   should consume; the lower-level helpers stay public for cases
+   that genuinely need them (e.g. computing one fact about an
+   ad-hoc group not in the lowered set), but `lower-document` is
+   the right entry point for the per-target codegen pipeline."
+  [doc]
+  (let [{:keys [groups root-order]} (detect-groups doc)
+        template-names (into #{}
+                             (keep #(when (template-group? doc %)
+                                      (:ns-name %)))
+                             groups)
+        groups-with-data (mapv (fn [g]
+                                 (assoc g
+                                        :template?
+                                        (contains? template-names (:ns-name g))
+                                        :data
+                                        (collect-group-data
+                                         doc (:instance-ids g) groups)))
+                               groups)]
+    {:groups         groups-with-data
+     :root-order     root-order
+     :template-names template-names
+     :field-owner-ns (field-owner-index doc groups)
+     :name->ns-name  (name->ns-name-map doc groups)}))
