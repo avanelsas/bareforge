@@ -18,6 +18,7 @@
             [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]
+            [bareforge.ui.state-panel :as state-panel]
             [bareforge.util.dom :as u]
             [clojure.string :as str]))
 
@@ -2427,15 +2428,49 @@
     (doseq [s sections] (.appendChild host-el s))
     (set! (.-scrollTop scroll-el) scroll-top)))
 
+(defn- build-tab-bar
+  "Two-tab control at the top of the right panel: Inspector / State.
+   Clicking a tab toggles `[hidden]` on each body element so the
+   layout swap is pure DOM — no app-state churn, no second watcher.
+   The active tab carries `data-active=\"true\"` for CSS styling."
+  [inspector-body state-body]
+  (let [bar     (u/el :div {:class "right-panel-tabs" :role "tablist"})
+        ins-tab (u/set-text!
+                 (u/el :button {:class "right-panel-tab" :type "button"
+                                :role  "tab"
+                                :data-active "true"})
+                 "Inspector")
+        st-tab  (u/set-text!
+                 (u/el :button {:class "right-panel-tab" :type "button"
+                                :role  "tab"})
+                 "State")
+        show!   (fn [active hidden active-tab inactive-tab]
+                  (.removeAttribute active "hidden")
+                  (.setAttribute    hidden  "hidden" "")
+                  (.setAttribute    active-tab   "data-active" "true")
+                  (.removeAttribute inactive-tab "data-active"))]
+    (u/on! ins-tab :click
+           (fn [_] (show! inspector-body state-body ins-tab st-tab)))
+    (u/on! st-tab :click
+           (fn [_] (show! state-body inspector-body st-tab ins-tab)))
+    (.appendChild bar ins-tab)
+    (.appendChild bar st-tab)
+    bar))
+
 (defn create
-  "Build the inspector panel. Returns the panel element ready to place
-   into the chrome. Re-renders on every :document or :selection change."
+  "Build the right-hand panel: a two-tab control (Inspector / State)
+   with both bodies mounted, only one visible at a time. Inspector
+   is the default tab. Each tab body owns its own watcher; the tab
+   control itself is pure DOM, no app-state.
+
+   Returns the outer panel element ready to place into the chrome."
   []
-  (let [body    (u/el :div {:class "inspector-body"})
-        panel   (u/el :div {:id    "bareforge-inspector"
-                            :class "panel panel-inspector"}
-                      [(u/set-text! (u/el :div {:class "inspector-label"}) "Inspector")
-                       body])]
+  (let [body       (u/el :div {:class "inspector-body"})
+        state-body (state-panel/create)
+        tabs       (build-tab-bar body state-body)
+        panel      (u/el :div {:id    "bareforge-inspector"
+                               :class "panel panel-inspector"}
+                         [tabs body state-body])]
     (render! body (inspector-model @state/app-state))
     (add-watch state/app-state ::inspector
                (fn [_ _ old-state new-state]
