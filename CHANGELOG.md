@@ -10,6 +10,72 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 Nothing yet.
 
+## [0.3.0] — 2026-05-02
+
+Minor release. Three new editor authoring features, a templates
+panel revamp, the export pipeline's full Hickey-style refactor,
+and three reconciler bug fixes. Saved project files load
+identically; every export target stays at parity. 747 tests,
+zero release-build warnings.
+
+### Added
+
+- **Multi-step actions** — actions can be sequences of steps
+  rather than a single op. Inspector renders a step list with
+  reorder / remove / add; both export plugins emit threaded
+  multi-step handlers; single-step shape unchanged.
+- **Live State panel** in the inspector — design-time view of
+  the selected group's state, including computed fields.
+- **Inline binding chip** replaces the bind toggle on inspector
+  rows.
+- **Templates panel** — category tabs and five new starters
+  (docs-home, changelog, status-page, blog-post, dashboard-
+  skeleton), each with a theme preset.
+- **Inspector field-as-data foundation** — pure coerce helpers
+  in `bareforge.util.coerce`, plus a `field-spec` data shape
+  with a `render-field` interpreter. Four builders migrated as
+  proof-of-pattern.
+- **Hickey-style design lens** in CLAUDE.md — four pillars
+  (de-complecting, information-as-data, epochal time,
+  language-over-plumbing) + named anti-patterns + an audit
+  checklist for new code.
+
+### Changed
+
+- **Export pipeline refactor.** The cljs-project plugin's
+  sub / event / hiccup emitters migrate from string
+  concatenation to `bareforge.export.clj-form` data values;
+  both export plugins consume `bareforge.export.model/lower-
+  document` as the single canonical lowered representation
+  instead of re-deriving group facts per generator. Emitted
+  output is byte-identical.
+- **Pure dnd planner** extracted to `bareforge.dnd.resolve`;
+  snap rules are now unit-testable without a browser.
+- **Closure-bound shortcuts** replace two place-oriented
+  `defonce` callback buckets in `shortcuts` and
+  `command-palette`.
+- **README split** — leaner top page plus topic docs under
+  `docs/`.
+- **Generated CLJS export's CSP** loosens for `shadow-cljs
+  watch` (cljs-project export only; HTML / bundle / vanilla-JS
+  stay strict).
+
+### Fixed
+
+- Stale SVG markup after clearing an x-icon's inspector field.
+- Bare numeric width / height (`200`) ignored — now coerced to
+  `200px`.
+- Stale canvas elements when loading a new project over an open
+  one (id collision with different tag).
+
+### Verified
+
+- 747 tests / 2243 assertions / 0 failures / 0 errors.
+- `npx shadow-cljs release app` — 0 warnings under Closure Advanced.
+- `clj-kondo --lint src test scripts` — 0 errors, 0 warnings.
+- `cljfmt check` — all files formatted.
+- BareDOM 2.4.1, no upstream version bump in this release.
+
 ## [0.2.0] — 2026-04-29
 
 Minor release. Editor authoring quality-of-life. No document-model,
@@ -221,7 +287,8 @@ parity across four export targets.
 - Export round-trip: every starter template exports to all four
   targets and renders in a browser.
 
-[Unreleased]: https://github.com/avanelsas/bareforge/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/avanelsas/bareforge/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/avanelsas/bareforge/releases/tag/v0.3.0
 [0.2.0]: https://github.com/avanelsas/bareforge/releases/tag/v0.2.0
 [0.1.1]: https://github.com/avanelsas/bareforge/releases/tag/v0.1.1
 [0.1.0]: https://github.com/avanelsas/bareforge/releases/tag/v0.1.0
