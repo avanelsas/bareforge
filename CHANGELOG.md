@@ -10,6 +10,181 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 Nothing yet.
 
+## [0.3.0] — 2026-05-02
+
+Minor release. Three new editor authoring features (multi-step
+actions, live State panel, inline binding chip), a templates
+panel revamp with category tabs and five new starters, and the
+export pipeline's full Hickey-style refactor — every per-document
+fact now flows through one canonical lowered model, every codegen
+path builds `clj-form` data and renders once at the file boundary.
+Saved project files load identically; every export target stays
+at parity. Test count: 747 (up from 571), zero release-build
+warnings under Closure Advanced.
+
+### Added
+
+- **Multi-step actions.** An action can now be a sequence of
+  steps (`{:name :steps [{:operation :target-field :payload?} …]}`)
+  instead of a single op. The inspector renders each declared
+  action as an outlined block with a step list; ↑ / ↓ reorder,
+  × removes, `+ add step` extends. Old single-step shape
+  continues to load unchanged; mutating step ops normalise to
+  multi-step on first edit. Both export plugins (CLJS, vanilla-
+  JS) emit the right handler shape: single-step keeps the
+  legacy `[trim-v (path …)]` form; multi-step emits a
+  `[trim-v]`-only handler with a `(-> db ...)` thread, one
+  update form per step. `:of-group` `qualify-map` re-keying is
+  preserved across steps. The inspector also adds a read-only
+  "Resolved payload" block on bound triggers so the user sees
+  what each step will dispatch.
+- **Live State panel** in the inspector. New tab in the right
+  panel showing the selected group's design-time state — every
+  stored field's seed value plus every computed field
+  (`:count-of`, `:sum-of`, `:empty-of`, `:negation`, including
+  chained computeds) evaluated against the seeds. Updates on
+  every commit. Pure evaluation lives in
+  `bareforge.export.state-preview`; effectful rendering in
+  `bareforge.ui.state-panel`.
+- **Inline binding chip.** The bind toggle on inspector rows is
+  replaced by a small chip on each field-typed editor — click
+  to attach a read / write / read-write binding without leaving
+  the field's row. Two new pure formatters
+  (`attr-binding-label` / `text-bind-label`) replace the two
+  bespoke binding-UI helpers (`build-bind-toggle`,
+  `build-text-content-bind`).
+- **Templates panel revamp.** Category tabs (`:all`, `:landing`,
+  `:docs`, `:dashboard`, `:blog`) replace the flat list. Five
+  new starter templates: docs-home, changelog, status-page,
+  blog-post, dashboard-skeleton. Each starter carries a
+  `:theme-preset` applied at instantiation; landing starters
+  pin to the default preset. New `add-spacer` helper for
+  consistent vertical rhythm across builders.
+- **Inspector field-as-data foundation.** New
+  `bareforge.util.coerce` extracts five pure coercion helpers
+  (`nil-if-empty`, `keyword-or-nil`, `parse-number`,
+  `parse-number-or-zero`, `parse-length-value`) that were
+  inlined across `ui/inspector.cljs`. New `field-spec` data
+  shape describes an inspector widget without braiding DOM
+  construction, state-read, coerce, and commit into a single
+  closure; a single `render-field` interprets the spec into a
+  wired widget. Four builders (`build-text-field`,
+  `build-inner-html-field`, `build-layout-field`,
+  `build-layout-textarea`) migrated as proof-of-pattern; the
+  remaining ~15 keep their custom shape until the spec gains
+  the capabilities they currently express imperatively.
+- **Hickey-style design lens** in CLAUDE.md. The framework that
+  drove the export-pipeline refactor (PRs #20 / #23 / #24 /
+  #25) is now a standing project rule: four pillars
+  (de-complecting, information-as-data, epochal time,
+  language-over-plumbing) with named anti-patterns (PLOP,
+  totem, braided, complecting) and an audit checklist of four
+  review questions for new code.
+
+### Changed
+
+- **Export pipeline: data over strings.** The cljs-project
+  plugin's sub / event / hiccup emitters all migrate from
+  string concatenation to a hiccup-shaped intermediate
+  representation in a new `bareforge.export.clj-form` namespace
+  (~20 recognised tag keywords, including a `:hiccup` form
+  variant with column-aware multi-prop alignment). Every
+  emitter builds `clj-form` data and calls `format-form`
+  exactly once at the file-level call site — `format-props-map`
+  and the local string-padding `indent` helper are gone.
+  Output is byte-identical to the prior emission (existing
+  fixture-driven substring/regex tests pass unchanged).
+- **Export pipeline: one canonical lowered model.** Both export
+  plugins (CLJS, vanilla-JS) now consume a single
+  `bareforge.export.model/lower-document` value at their entry
+  point. Every per-group generator reads `(:data g)` /
+  `(:template? g)` and the precomputed `:field-owner-ns` /
+  `:name->ns-name` / `:template-names` maps instead of
+  re-deriving them per call. Five private aliases removed;
+  helper signatures simplified across both plugins. Same
+  emitted output; pipeline shape clearer; new plugin authors
+  consume `(:data g)` once instead of re-walking the document.
+- **`bareforge.dnd.resolve` extracted.** Pure planner returns
+  drop / move / free-move plans from a snapshot; the
+  `commit-*!` fns in `dnd/drag.cljs` become four-line
+  orchestrators that snapshot, plan, then apply via `ops/*` +
+  `state/commit!`. Snap rules become unit-testable without a
+  browser; 18 new tests cover the three snap branches,
+  seed-merge interaction, and free-drag delta arithmetic.
+- **Closure-bound shortcut wiring.** Two place-oriented
+  `defonce` callback buckets (`shortcuts/show-shortcuts-fn` /
+  `show-command-palette-fn`, `command-palette/install-state`)
+  replaced by closure-based `install!` fns that take the
+  chrome-toggle map as a data arg and return a handle. Acyclic
+  require story moves up to `ui.app/build-chrome` /
+  `ui.app/mount!`.
+- **`generate-views` and `node->hiccup-with-events`
+  decomposed.** `generate-views` shrank from ~160 lines to
+  ~45 via a `view-context` data-bundle helper; the recursive
+  hiccup walker split into `walk-slotted-children` /
+  `emit-sub-group-child` / `node->hiccup-with-events`.
+- **README split.** A leaner top page (down 64% from 677
+  lines) plus topic docs under `docs/` (`architecture.md`,
+  `recipes.md`, `plugins.md`, `adding-components.md`).
+  Marketing hook sections stayed on the README; deep-dives
+  moved out.
+- **Generated CLJS export's dev CSP loosened.** `script-src`
+  adds `'unsafe-eval'` and `connect-src` adds `ws: wss:` so
+  `shadow-cljs watch` works against the exported project out
+  of the box. Production releases (`shadow-cljs release app`)
+  emit a self-contained bundle that needs no eval; the
+  deployer can drop `'unsafe-eval'` and prefer HTTP-header CSP
+  for production. A regression test pins both directives so a
+  future tightening can't silently break dev. Scope is the
+  cljs-project export only — HTML, bundle, and vanilla-JS
+  exports remain strict.
+- **Action-ref namespace canonicalisation.** Action refs from
+  docs with capitalised group names
+  (`:app.Dashboard.events/tick`) emit lowercase requires
+  (`[app.dashboard.events :as dashboard.events]`) so the
+  resource path matches what shadow-cljs expects. Fixes a
+  "resource does not have expected namespace" error on docs
+  authored before the canonicalisation.
+
+### Fixed
+
+- **Stale SVG markup after clearing the inspector field.**
+  `patch-element!` derived its `raw-html?` flag from
+  `(some? (:inner-html node))` of the *new* node, so clearing
+  an x-icon's editor flipped the flag to false and skipped
+  the inner-html update branch — the live DOM kept the old
+  SVG. Now derived from the tag's `:raw-html-slot?` meta so
+  raw-html-slot tags are managed for their lifetime regardless
+  of the current value.
+- **Bare numeric width / height ignored.** `layout->css`
+  emitted the named width / height as raw `width:200;` without
+  unit coercion; the browser dropped the rule as invalid CSS.
+  `as-length` now recognises a bare numeric string and applies
+  the same `px` default the number branch uses;
+  `layout->css`'s named branch routes width / height through
+  `as-length`. Unit'd strings (`50%`, `10rem`, `auto`) still
+  pass through.
+- **Stale canvas elements on project load.** Loading a project
+  while another doc was open could leave residue from the
+  previous document — kinetic-typography animations,
+  particle-button effects, gaussian-blur layers — inside what
+  should be a fresh tree. Root cause: every doc's `:next-id`
+  starts at 0, so two docs share the same id space; the
+  reconciler's fast path diffed attrs / props / text on
+  matching ids without checking that the existing element's
+  tag matched the new node's tag. Fix: `upsert-node!` now
+  compares `(.-localName prior)` against `:tag` and on
+  mismatch removes the existing element so a fresh custom
+  element takes over.
+
+### Verified
+
+- 747 tests / 2243 assertions / 0 failures / 0 errors.
+- `npx shadow-cljs release app` — 0 warnings under Closure Advanced.
+- `clj-kondo --lint src test scripts` — 0 errors, 0 warnings.
+- `cljfmt check` — all files formatted.
+- BareDOM 2.4.1, no upstream version bump in this release.
+
 ## [0.2.0] — 2026-04-29
 
 Minor release. Editor authoring quality-of-life. No document-model,
@@ -221,7 +396,8 @@ parity across four export targets.
 - Export round-trip: every starter template exports to all four
   targets and renders in a browser.
 
-[Unreleased]: https://github.com/avanelsas/bareforge/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/avanelsas/bareforge/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/avanelsas/bareforge/releases/tag/v0.3.0
 [0.2.0]: https://github.com/avanelsas/bareforge/releases/tag/v0.2.0
 [0.1.1]: https://github.com/avanelsas/bareforge/releases/tag/v0.1.1
 [0.1.0]: https://github.com/avanelsas/bareforge/releases/tag/v0.1.0
