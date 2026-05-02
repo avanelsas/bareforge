@@ -129,20 +129,21 @@
    silently emit broken JS."
   [doc {:keys [title integrity-manifest]
         :or   {title "Bareforge Vanilla JS Export"}}]
-  (let [{:keys [groups]} (em/detect-groups doc)
-        _                (codegen/assert-supported! doc groups)]
+  (let [lowered (em/lower-document doc)
+        groups  (:groups lowered)
+        _       (codegen/assert-supported! groups)]
     (merge
      {"index.html"   (index-html doc title integrity-manifest)
       "package.json" (package-json title)
       "runtime.js"   runtime-js-template
       "renderer.js"  renderer-js-template
-      "app.js"       (codegen/emit-app-js doc groups)}
+      "app.js"       (codegen/emit-app-js doc lowered)}
      (into {}
            (for [g groups
-                 [suffix content] [["db.js"     (codegen/emit-group-db doc g groups)]
-                                   ["subs.js"   (codegen/emit-group-subs doc g groups)]
-                                   ["events.js" (codegen/emit-group-events doc g groups)]
-                                   ["views.js"  (codegen/emit-group-views doc g groups)]]
+                 [suffix content] [["db.js"     (codegen/emit-group-db doc g lowered)]
+                                   ["subs.js"   (codegen/emit-group-subs doc g lowered)]
+                                   ["events.js" (codegen/emit-group-events doc g lowered)]
+                                   ["views.js"  (codegen/emit-group-views doc g lowered)]]
                  :when content]
              [(str (:ns-name g) "/" suffix) content])))))
 

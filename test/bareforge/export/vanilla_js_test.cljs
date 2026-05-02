@@ -512,10 +512,10 @@
 ;; --- codegen helpers in isolation ---------------------------------------
 
 (deftest assert-supported-accepts-minimal-doc
-  (let [doc (scalar-only-doc)
-        groups (:groups (em/detect-groups doc))]
+  (let [doc    (scalar-only-doc)
+        groups (:groups (em/lower-document doc))]
     ;; No throw = pass.
-    (codegen/assert-supported! doc groups)
+    (codegen/assert-supported! groups)
     (is true "assert-supported! accepts scalar-only docs silently")))
 
 (defn- icon-doc [inner-html]
@@ -535,8 +535,8 @@
   ;; v0.3 parses the HTML into hiccup at codegen time and emits it
   ;; inline, so assert-supported! no longer rejects.
   (let [doc    (icon-doc "<svg viewBox=\"0 0 1 1\"><path d=\"M0\"/></svg>")
-        groups (:groups (em/detect-groups doc))]
-    (codegen/assert-supported! doc groups)
+        groups (:groups (em/lower-document doc))]
+    (codegen/assert-supported! groups)
     (is true "no throw on inner-html-bearing docs")))
 
 (deftest inner-html-emits-as-nested-hiccup

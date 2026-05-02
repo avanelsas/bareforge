@@ -65,7 +65,6 @@
 ;; go away.
 
 (def detect-groups em/detect-groups)
-(def ^:private collect-group-data em/collect-group-data)
 
 (defn- field-type->spec
   "Convert a field type keyword to a spec predicate string."
@@ -170,13 +169,9 @@
 
 ;; --- code generation: views ------------------------------------------------
 
-(def ^:private template-group?   em/template-group?)
-(def ^:private stateful-group?   em/stateful-group?)
 (def ^:private computed-field?   em/computed?)
 (def ^:private collection-field? em/collection-field?)
 
-(def ^:private field-owner-index              em/field-owner-index)
-(def ^:private name->ns-name-map               em/name->ns-name-map)
 (def ^:private explicit-field-owners           em/explicit-field-owners)
 (def ^:private collect-read-bindings           em/collect-read-bindings)
 (def ^:private collect-trigger-payload-fields  em/collect-trigger-payload-fields)
@@ -539,17 +534,18 @@
    data bundle — the data assembly is large enough to read as a
    small program of its own, and the formatting step is easier to
    audit when it stops sharing scope with 25 derived locals."
-  [doc group all-groups app-ns]
-  (let [node            (m/get-node doc (:id group))
+  [doc group lowered app-ns]
+  (let [all-groups      (:groups lowered)
+        template-groups (:template-names lowered)
+        owner-idx       (:field-owner-ns lowered)
+        name->ns        (:name->ns-name lowered)
+        node            (m/get-node doc (:id group))
         fn-name         (:ns-name group)
         parent-info     (m/parent-of doc (:id group))
         root-slot       (when parent-info (:slot parent-info))
         ns-path         (str app-ns "." (:ns-name group) ".views")
         own-ns-name     (:ns-name group)
-        template?       (template-group? doc group)
-        template-groups (into #{}
-                              (for [g all-groups :when (template-group? doc g)]
-                                (:ns-name g)))
+        template?       (:template? group)
         sub-groups      (find-sub-groups node all-groups)
         sub-group-ids   (set (map :id sub-groups))
         read-fields     (collect-read-bindings node sub-group-ids)
@@ -566,8 +562,6 @@
                              distinct
                              (remove own-field-set))
         has-let?        (seq let-fields)
-        owner-idx       (field-owner-index doc all-groups)
-        name->ns        (name->ns-name-map doc all-groups)
         explicit        (into {}
                               (for [[f owner] (explicit-field-owners node sub-group-ids)]
                                 [f (get name->ns owner owner)]))
@@ -691,10 +685,10 @@
 
    Data assembly lives in `view-context`; this fn formats the file
    string from that bundle."
-  [doc group all-groups app-ns]
+  [doc group lowered app-ns]
   (let [{:keys [fn-name ns-path fn-sig require-entries hiccup-ctx
                 node root-slot let-fields field->owner has-let?]}
-        (view-context doc group all-groups app-ns)
+        (view-context doc group lowered app-ns)
         hiccup-form (node->hiccup-with-events hiccup-ctx node root-slot)
         hiccup-str  (cf/format-form hiccup-form)
         ns-clause (if (seq require-entries)
@@ -820,10 +814,10 @@
      produce a `(s/coll-of ::<of-group>.db/record)` spec and carry
      their seed records in `:default` verbatim. Computed fields are
      excluded — their sub is derived in `generate-subs`."
-  [doc group all-groups app-ns]
-  (if (template-group? doc group)
+  [doc group _lowered app-ns]
+  (if (:template? group)
     (generate-db-template doc group app-ns)
-    (let [data          (collect-group-data doc (:instance-ids group) all-groups)
+    (let [data          (:data group)
           all-fields    (:fields data)
           declared-keys (set (map :name all-fields))
           stored        (remove computed-field? all-fields)
@@ -1075,12 +1069,13 @@
    - One derived sub per computed field.
    - Per-field `any?`-typed subs for any binding-only fields not
      already declared (legacy binding path)."
-  [doc group all-groups app-ns]
-  (let [ns-path   (str app-ns "." (:ns-name group) ".subs")
+  [doc group lowered app-ns]
+  (let [all-groups (:groups lowered)
+        ns-path   (str app-ns "." (:ns-name group) ".subs")
         db-alias  (str (:ns-name group) ".db")
         db-ns     (str app-ns "." (:ns-name group) ".db")]
-    (when-not (template-group? doc group)
-      (let [data         (collect-group-data doc (:instance-ids group) all-groups)
+    (when-not (:template? group)
+      (let [data         (:data group)
             bindings     (filter #(contains? #{:read :read-write} (:direction %))
                                  (:bindings data))
             fields       (:fields data)
@@ -1313,8 +1308,8 @@
    db require is the group's own db namespace.
 
    Returns nil when the group has neither fields nor declared actions."
-  [doc group all-groups app-ns]
-  (let [data        (collect-group-data doc (:instance-ids group) all-groups)
+  [_doc group _lowered app-ns]
+  (let [data        (:data group)
         fields      (:fields data)
         actions     (:actions data)
         emitting-ns (:ns-name group)
@@ -1322,7 +1317,7 @@
         db-ns       (str app-ns "." emitting-ns ".db")
         db-alias    (str emitting-ns ".db")
         declared-names (into #{} (map (comp cljs.core/name :name) actions))
-        template?      (template-group? doc group)
+        template?      (:template? group)
         setter-fields  (if template?
                          ;; Template groups own no state — no setters.
                          []
@@ -1348,8 +1343,8 @@
   "Generate the root db.cljs that merges the `default-db` of every
    stateful group. Template groups carry no state, so they're
    excluded from the require list and the merge."
-  [doc groups app-ns]
-  (let [stateful (filter #(stateful-group? doc %) groups)
+  [_doc lowered app-ns]
+  (let [stateful (remove :template? (:groups lowered))
         requires (str/join "\n            "
                            (cons (str "[" app-ns ".framework :as rf]")
                                  (for [g stateful]
@@ -1560,13 +1555,13 @@
    x-gaussian-blur, …) render as inline hiccup; named descendants
    inside them are recognised and emitted as group-view calls so the
    group's own subtree stays self-contained."
-  [doc groups root-order app-ns]
-  (let [root-groups    (filter :group? root-order)
-        template-names (into #{}
-                             (for [g groups :when (template-group? doc g)]
-                               (:ns-name g)))
-        owner-idx      (field-owner-index doc groups)
-        name->ns       (name->ns-name-map doc groups)
+  [doc lowered app-ns]
+  (let [groups         (:groups lowered)
+        root-order     (:root-order lowered)
+        template-names (:template-names lowered)
+        owner-idx      (:field-owner-ns lowered)
+        name->ns       (:name->ns-name lowered)
+        root-groups    (filter :group? root-order)
         root-tpl-subs  (distinct
                         (for [entry root-groups
                               :when (contains? template-names (:ns-name entry))
@@ -1736,21 +1731,27 @@
      :title     — HTML page title (default \"Bareforge Export\")
      :port      — dev server port (default 9000)
 
-   Returns a map of {relative-file-path -> file-content-string}."
+   Returns a map of {relative-file-path -> file-content-string}.
+
+   Per-document facts (group classification, field owners,
+   name->ns map, per-group `:data`) are computed once via
+   `bareforge.export.model/lower-document` and threaded through
+   the per-group generators as `lowered` — no generator re-derives."
   [doc & [{:keys [app-ns title port]
            :or   {app-ns "app" title "Bareforge Export" port 9000}}]]
-  (let [{:keys [groups root-order]} (detect-groups doc)
+  (let [lowered  (em/lower-document doc)
+        groups   (:groups lowered)
         src-base (str "src/" (kebab->snake app-ns) "/")
         group-files (into {}
                           (for [g groups
-                                [suffix content] [["db.cljs"     (generate-db doc g groups app-ns)]
-                                                  ["subs.cljs"   (generate-subs doc g groups app-ns)]
-                                                  ["events.cljs" (generate-events doc g groups app-ns)]
-                                                  ["views.cljs"  (generate-views doc g groups app-ns)]]
+                                [suffix content] [["db.cljs"     (generate-db doc g lowered app-ns)]
+                                                  ["subs.cljs"   (generate-subs doc g lowered app-ns)]
+                                                  ["events.cljs" (generate-events doc g lowered app-ns)]
+                                                  ["views.cljs"  (generate-views doc g lowered app-ns)]]
                                 :when content]
                             [(str src-base (kebab->snake (:ns-name g)) "/" suffix)
                              content]))
-        core-file (generate-core doc groups root-order app-ns)]
+        core-file (generate-core doc lowered app-ns)]
     (merge
      {"deps.edn"          (generate-deps-edn)
       "shadow-cljs.edn"   (generate-shadow-cljs-edn app-ns port)
@@ -1760,7 +1761,7 @@
      {(str src-base "framework.cljs") (generate-framework app-ns)
       (str src-base "renderer.cljs")  (generate-renderer app-ns)}
 
-     {(str src-base "db.cljs")   (generate-root-db doc groups app-ns)
+     {(str src-base "db.cljs")   (generate-root-db doc lowered app-ns)
       (str src-base "core.cljs") core-file}
 
      group-files)))
