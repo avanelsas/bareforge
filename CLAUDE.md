@@ -193,6 +193,84 @@ effectful zone. If it does not, it must be pure and testable without a browser.
 
 ---
 
+## Design lens (Hickey-style)
+
+The pure / effectful split above is the structural enforcement of a
+Hickey-style philosophy; this section names the framework we use to
+*evaluate* new code, review PRs, and audit modules for refactoring. The
+roadmap distilled in PRs #20 / #21 / #23 / #24 / #25 came out of this lens
+and the language below is what we use to describe smells:
+
+- **Incidental complexity** — accidents of how it's built (glue,
+  re-derivations, fanout). Distinct from **essential complexity**, which
+  is the problem itself.
+- **Simple** vs. **easy** — *simple* means one role, one job, no braiding;
+  *easy* means familiar / near at hand. Choose simple even when easy looks
+  cheaper.
+- **Complecting** — intertwining concerns that should be separable,
+  producing **braided** code that's hard to change. Most refactors are
+  un-braiding.
+
+### 1. De-complecting & orthogonality
+Each function does one job: data transformation OR I/O OR DOM manipulation
+OR business logic, never several at once. When a function mixes concerns
+(e.g., a DOM handler that also runs domain logic), pull the pure
+transformation out into a testable function and leave only the
+orchestration at the effectful site. Step 4 in the audit (`dnd.resolve`)
+is the canonical example: the planner is pure, the `commit-*!` fns are
+four-line orchestrators.
+
+### 2. Information as data
+Information is plain maps, vectors, sets — never opaque objects. A node,
+a binding, an action, a project file: all are just maps with documented
+keys, manipulable by `assoc` / `update` / `get-in`. Don't introduce
+records or protocols as a way to hide data behind methods (the **"totem"**
+anti-pattern), and don't reach for type-dispatched polymorphism when a
+map with a `:kind` key plus a multimethod or `case` does the job.
+**Generic functions on generic data** outlive bespoke type hierarchies.
+The export-pipeline rewrite (`clj-form` data + `lower-document`) is built
+on this principle.
+
+### 3. Epochal time model
+State is a succession of immutable values, not a place that mutates over
+time. There is exactly one atom; each commit produces a new document
+value via `doc.ops/*` (a **calculation**) and `state/commit!` is the
+single **action** that flips the atom from one value to the next.
+Calculations (pure data → data) are strictly isolated from actions
+(effectful, observable from outside). Any mutable cell outside
+`state/app-state` is **place-oriented programming (PLOP)** and a red
+flag — Step 3 of the audit hunted these down (`shortcuts` and
+`command_palette`'s `defonce` callback buckets).
+
+### 4. Language over plumbing
+Domain logic is expressed as composable data + small primitives, not
+bespoke imperative code. Specs in `doc/spec.cljs`; operations in
+`doc/ops.cljs`; tag-level rules in `meta/*.cljs` as plain data (`augment`
+maps, `placement` hints, `events` lists, `slots` registry). When you find
+yourself writing long imperative glue, ask whether it could be a few
+lines of data plus an interpreter. Existing examples: `clj-form`'s
+hiccup-shaped intermediate for emitted Clojure source, the export plugin
+registry / manifest contract, `lower-document` as the canonical model
+consumers iterate, and the inspector's field-as-data row builders.
+
+### Audit lens for new work
+Before merging a non-trivial change, ask:
+- **Is this function complected?** Could a reviewer name one concern it
+  addresses, or does it span several?
+- **Is the data behind a wall?** Could a future caller `get-in` the value
+  directly, or is it locked behind a method/protocol?
+- **Does state flow as values?** Or is something mutating in place where
+  a `commit!` should run?
+- **Is this code a DSL or plumbing?** Could the same logic be expressed
+  as data + a small interpreter?
+
+If a PR review surfaces "this is braided" or "this is PLOP," the response
+is to refactor along the offended pillar — not to defend the existing
+shape because it's familiar. Past audits land as PRs against this lens;
+new work should pass it before it gets there.
+
+---
+
 ## State management
 - **One atom**, `bareforge.state/app-state`, with top-level keys
   `:document :selection :history :mode :theme :ui :dirty? :project-file`.
@@ -301,14 +379,17 @@ effectful zone. If it does not, it must be pure and testable without a browser.
 ---
 
 ## Anti-patterns
-- Mutable state outside `state/app-state`.
-- Hidden side effects inside pure-zone functions.
-- Business logic buried inside a pointer or DOM event handler.
+- Mutable state outside `state/app-state` — **place-oriented programming
+  (PLOP)**.
+- Hidden side effects inside pure-zone functions — **calculation/action
+  complecting**.
+- Business logic buried inside a pointer or DOM event handler — **UI/domain
+  complecting**.
 - Deep JS interop leaking into `doc/` or `meta/`.
-- Object-oriented design (records or protocols used as classes, method
-  dispatch by type).
+- Records or protocols used as classes, method dispatch by type — the
+  **"totem"** pattern that hides data behind methods.
 - Large monolithic functions that parse, transform, render, and commit all
-  at once.
+  at once — **braided** code.
 - Re-implementing `clojure.core`.
 
 ---
