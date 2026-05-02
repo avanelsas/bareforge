@@ -38,19 +38,21 @@
    is unknown computed operations (a pre-v1 op like `:first-of`
    or a typo in a hand-edited doc); the seven v1 ops all have
    emitters below. `:inner-html` is supported via `parse-html`
-   at codegen — see `node->js-hiccup`."
-  [doc groups]
+   at codegen — see `node->js-hiccup`.
+
+   Consumes lowered groups so it walks `(:data g)` instead of
+   re-deriving via `collect-group-data` per group."
+  [groups]
   (doseq [g groups]
-    (let [data (em/collect-group-data doc (:instance-ids g) groups)]
-      (doseq [fd (:fields data)
-              :when (em/computed? fd)
-              :let  [op (get-in fd [:computed :operation])]]
-        (when-not (contains? known-computed-ops op)
-          (throw (ex-info (str "Vanilla-JS plugin doesn't recognise "
-                               "computed op " op " on `" (:name fd)
-                               "` of group `" (:ns-name g) "`. Known "
-                               "ops: " (pr-str known-computed-ops))
-                          {:error :nyi :op op :field (:name fd)})))))))
+    (doseq [fd (:fields (:data g))
+            :when (em/computed? fd)
+            :let  [op (get-in fd [:computed :operation])]]
+      (when-not (contains? known-computed-ops op)
+        (throw (ex-info (str "Vanilla-JS plugin doesn't recognise "
+                             "computed op " op " on `" (:name fd)
+                             "` of group `" (:ns-name g) "`. Known "
+                             "ops: " (pr-str known-computed-ops))
+                        {:error :nyi :op op :field (:name fd)}))))))
 
 ;; --- helpers -------------------------------------------------------------
 
@@ -141,11 +143,10 @@
    groups (no stored state) return nil — the app.js merger skips
    them. Stateful groups contribute one entry per stored field,
    scalar or collection."
-  [doc group _all-groups]
-  (when (em/stateful-group? doc group)
+  [_doc group _lowered]
+  (when-not (:template? group)
     (let [app-ns "app"
-          node   (m/get-node doc (:id group))
-          fields (remove em/computed? (:fields node))]
+          fields (remove em/computed? (:fields (:data group)))]
       (when (seq fields)
         (str "// Auto-generated: db slice for group \"" (:ns-name group) "\".\n"
              "export const defaultDb = {\n"
@@ -174,13 +175,12 @@
    underlying COLLECTION field on the owning stateful group. Used
    by `:sum-of` with a `:project-field` and by `:filter-by` to
    qualify the project/match keys."
-  [doc all-groups source-field]
+  [all-groups source-field]
   (some (fn [g]
-          (let [n (m/get-node doc (first (:instance-ids g)))]
-            (some (fn [f]
-                    (when (= source-field (:name f))
-                      (:of-group f)))
-                  (:fields n))))
+          (some (fn [f]
+                  (when (= source-field (:name f))
+                    (:of-group f)))
+                (:fields (:data g))))
         all-groups))
 
 (defn- emit-computed-simple
@@ -188,7 +188,7 @@
    sub: `regSubDerived(id, [src-sub], extract-fn)`. Covers
    :count-of, :empty-of, :negation, and :sum-of (with or without
    :project-field)."
-  [app-ns group fd doc all-groups]
+  [app-ns group fd _doc all-groups]
   (let [id       (sub-id app-ns (:ns-name group) (:name fd))
         src      (:source-field (:computed fd))
         src-sub  (sub-id app-ns (:ns-name group) src)
@@ -205,7 +205,7 @@
             ;; collection's :of-group; pluck the project field via
             ;; that full key. When :of-group is absent (degenerate
             ;; legacy path), fall back to a bare-key lookup.
-            (let [og (source-field-of-group doc all-groups src)
+            (let [og (source-field-of-group all-groups src)
                   k  (if og
                        (record-key app-ns og (cljs.core/name proj))
                        (cljs.core/name proj))]
@@ -308,11 +308,11 @@
 (defn emit-group-subs
   "Direct subs for stored fields + derived / multi-signal subs for
    each computed field. Template groups own no state — return nil."
-  [doc group all-groups]
-  (when (em/stateful-group? doc group)
-    (let [app-ns "app"
-          data   (em/collect-group-data doc (:instance-ids group) all-groups)
-          fields (:fields data)]
+  [doc group lowered]
+  (when-not (:template? group)
+    (let [app-ns     "app"
+          all-groups (:groups lowered)
+          fields     (:fields (:data group))]
       (when (seq fields)
         (let [imports (subs-imports-needed fields)]
           (str "// Auto-generated: subs for group \"" (:ns-name group) "\".\n"
@@ -331,11 +331,10 @@
   "The `:of-group` value on a stateful group's target-field, or nil
    if the target is scalar. Drives `:add` / `:remove` qualifyMap
    re-keying."
-  [doc group all-groups target-field]
-  (let [data (em/collect-group-data doc (:instance-ids group) all-groups)]
-    (some (fn [fd]
-            (when (= target-field (:name fd)) (:of-group fd)))
-          (:fields data))))
+  [group target-field]
+  (some (fn [fd]
+          (when (= target-field (:name fd)) (:of-group fd)))
+        (:fields (:data group))))
 
 (defn- qualify-expr
   "JS expression that re-keys `x` under `<app-ns>.<og>.db` when
@@ -372,10 +371,10 @@
   "JS expression that returns the new db given the prior `db`, with
    one step applied. Used inside the multi-step handler's `(db => …)`
    reducer."
-  [app-ns group doc all-groups step prev-db]
+  [app-ns group step prev-db]
   (let [{:keys [operation target-field]} step
         fk    (field-key app-ns (:ns-name group) target-field)
-        og    (field-of-group doc group all-groups target-field)
+        og    (field-of-group group target-field)
         vexpr (step-payload-js step)
         q-v   (qualify-expr app-ns og vexpr)
         cur   (str prev-db "[\"" fk "\"]")]
@@ -409,7 +408,7 @@
      respects its own `:payload` (literal-only in v1) so a step like
      `:set is-popover-open false` lands the literal verbatim while a
      `:add` step still consumes the dispatched record."
-  [app-ns group action doc all-groups]
+  [app-ns group action]
   (let [{:keys [name]} action
         aname (cljs.core/name name)
         ev-id (str app-ns "." (:ns-name group) ".events/" aname)
@@ -417,7 +416,7 @@
     (if (= 1 (count steps))
       (let [{:keys [operation target-field]} (first steps)
             fk  (field-key app-ns (:ns-name group) target-field)
-            og  (field-of-group doc group all-groups target-field)
+            og  (field-of-group group target-field)
             q-x (qualify-expr app-ns og "x")]
         (case operation
           :set
@@ -447,8 +446,7 @@
       ;; Multi-step: thread db through each step's mutator.
       (let [body (reduce
                   (fn [acc step]
-                    (str "(db => " (step-mutator-expr app-ns group doc all-groups
-                                                      step "db")
+                    (str "(db => " (step-mutator-expr app-ns group step "db")
                          ")(" acc ")"))
                   "db0"
                   steps)]
@@ -458,19 +456,19 @@
 (defn- step-needs-qualify?
   "True when a single step's operation + target combination forces
    `qualifyMap` in the emitted JS."
-  [doc group all-groups step]
+  [group step]
   (and (contains? #{:add :remove :set} (:operation step))
-       (field-of-group doc group all-groups (:target-field step))))
+       (field-of-group group (:target-field step))))
 
 (defn- uses-qualify?
   "Does any declared action need `qualifyMap` — i.e. :add or :remove
    (or :set) on an :of-group target? Iterates step-by-step so
    multi-step actions surface as needing qualifyMap if any one of
    their steps does."
-  [doc group all-groups actions]
+  [group actions]
   (boolean
    (some (fn [a]
-           (some (partial step-needs-qualify? doc group all-groups)
+           (some (partial step-needs-qualify? group)
                  (actions/step-list a)))
          actions)))
 
@@ -487,20 +485,20 @@
   "JS module registering every event handler the group owns — auto
    setters for stored fields plus declared actions. Skipped for
    template groups (they own no state)."
-  [doc group all-groups]
-  (when (em/stateful-group? doc group)
-    (let [app-ns "app"
-          data        (em/collect-group-data doc (:instance-ids group) all-groups)
-          stored      (remove em/computed? (:fields data))
-          declared    (:actions data)
+  [_doc group _lowered]
+  (when-not (:template? group)
+    (let [app-ns         "app"
+          data           (:data group)
+          stored         (remove em/computed? (:fields data))
+          declared       (:actions data)
           declared-names (set (map :name declared))
-          setter-kw   (fn [fd] (keyword (str (cljs.core/name (:name fd)) "-changed")))
-          auto-setters (remove #(contains? declared-names (setter-kw %)) stored)
-          extra-imports (concat ["regEvent" "trimV" "path"]
-                                (when (uses-qualify? doc group all-groups declared)
-                                  ["qualifyMap"])
-                                (when (uses-deep-equal? declared)
-                                  ["deepEqual"]))]
+          setter-kw      (fn [fd] (keyword (str (cljs.core/name (:name fd)) "-changed")))
+          auto-setters   (remove #(contains? declared-names (setter-kw %)) stored)
+          extra-imports  (concat ["regEvent" "trimV" "path"]
+                                 (when (uses-qualify? group declared)
+                                   ["qualifyMap"])
+                                 (when (uses-deep-equal? declared)
+                                   ["deepEqual"]))]
       (when (or (seq declared) (seq auto-setters))
         (str "// Auto-generated: events for group \"" (:ns-name group) "\".\n"
              "import { " (str/join ", " extra-imports)
@@ -508,7 +506,7 @@
              (str/join "\n\n"
                        (concat
                         (for [fd auto-setters] (emit-auto-setter app-ns group fd))
-                        (for [a declared] (emit-action app-ns group a doc all-groups))))
+                        (for [a declared] (emit-action app-ns group a))))
              "\n")))))
 
 ;; --- views ---------------------------------------------------------------
@@ -859,11 +857,14 @@
    arg, destructures its namespaced keys into local symbols, and
    returns the hiccup tree with those symbols substituting for
    `:text-field`-bound nodes and bindings that read the record."
-  [doc group all-groups]
-  (let [app-ns "app"
-        node   (m/get-node doc (:id group))
-        fields (remove em/computed? (:fields node))
-        field-syms (set (map :name fields))
+  [doc group lowered]
+  (let [app-ns          "app"
+        all-groups      (:groups lowered)
+        template-groups (:template-names lowered)
+        owner-idx       (:field-owner-ns lowered)
+        node            (m/get-node doc (:id group))
+        fields          (remove em/computed? (:fields (:data group)))
+        field-syms      (set (map :name fields))
         destructure
         (str "const { "
              (str/join ", "
@@ -872,20 +873,16 @@
                          (str "\"" (record-key app-ns (:ns-name group) (:name fd))
                               "\": " fname)))
              " } = record;")
-        sub-groups (em/find-sub-groups node all-groups)
+        sub-groups       (em/find-sub-groups node all-groups)
         sub-groups-by-id (into {} (map (juxt :id identity)) sub-groups)
-        template-groups (into #{}
-                              (for [g all-groups :when (em/template-group? doc g)]
-                                (:ns-name g)))
-        owner-idx (em/field-owner-index doc all-groups)
-        field->owner (fn [field]
-                       (or (get owner-idx field) (:ns-name group)))
-        ctx {:app-ns app-ns
-             :doc doc
-             :all-groups all-groups
-             :field->owner field->owner
-             :sub-groups-by-id sub-groups-by-id
-             :template-groups template-groups
+        field->owner     (fn [field]
+                           (or (get owner-idx field) (:ns-name group)))
+        ctx {:app-ns              app-ns
+             :doc                 doc
+             :all-groups          all-groups
+             :field->owner        field->owner
+             :sub-groups-by-id    sub-groups-by-id
+             :template-groups     template-groups
              :template-field-syms field-syms
              :template-record-sym "record"}]
     (str "export function view(record) {\n"
@@ -895,23 +892,22 @@
 
 (defn- stateful-view
   "Emit the no-arg view function for a stateful group."
-  [doc group all-groups]
-  (let [app-ns "app"
-        node   (m/get-node doc (:id group))
-        sub-groups (em/find-sub-groups node all-groups)
+  [doc group lowered]
+  (let [app-ns           "app"
+        all-groups       (:groups lowered)
+        template-groups  (:template-names lowered)
+        owner-idx        (:field-owner-ns lowered)
+        node             (m/get-node doc (:id group))
+        sub-groups       (em/find-sub-groups node all-groups)
         sub-groups-by-id (into {} (map (juxt :id identity)) sub-groups)
-        template-groups (into #{}
-                              (for [g all-groups :when (em/template-group? doc g)]
-                                (:ns-name g)))
-        owner-idx (em/field-owner-index doc all-groups)
-        field->owner (fn [field]
-                       (or (get owner-idx field) (:ns-name group)))
-        ctx {:app-ns app-ns
-             :doc doc
-             :all-groups all-groups
-             :field->owner field->owner
-             :sub-groups-by-id sub-groups-by-id
-             :template-groups template-groups
+        field->owner     (fn [field]
+                           (or (get owner-idx field) (:ns-name group)))
+        ctx {:app-ns              app-ns
+             :doc                 doc
+             :all-groups          all-groups
+             :field->owner        field->owner
+             :sub-groups-by-id    sub-groups-by-id
+             :template-groups     template-groups
              :template-field-syms #{}
              :template-record-sym nil}]
     (str "export function view() {\n"
@@ -923,13 +919,13 @@
    `template-iteration-expr` can call it. Runs for both stateful
    AND template-group views (a template can itself host another
    template, though v0.2 tests don't exercise that)."
-  [doc group all-groups]
-  (let [node       (m/get-node doc (:id group))
-        sub-groups (em/find-sub-groups node all-groups)
-        templates  (filter (fn [sg]
-                             (some #(= (:ns-name sg) (:ns-name %))
-                                   (filter #(em/template-group? doc %) all-groups)))
-                           sub-groups)]
+  [doc group lowered]
+  (let [all-groups      (:groups lowered)
+        template-groups (:template-names lowered)
+        node            (m/get-node doc (:id group))
+        sub-groups      (em/find-sub-groups node all-groups)
+        templates       (filter #(contains? template-groups (:ns-name %))
+                                sub-groups)]
     (str/join "\n"
               (for [sg (->> templates (map :ns-name) (filter some?) distinct)]
         ;; tpl_<ident> is a JS binding name (must be a valid JS
@@ -942,15 +938,15 @@
 (defn emit-group-views
   "Pick the right view shape based on whether the group is a
    template (takes a `record` arg) or stateful (no args)."
-  [doc group all-groups]
-  (let [tpl? (em/template-group? doc group)
+  [doc group lowered]
+  (let [tpl? (:template? group)
         imports (str "import { query, dispatch } from \"../runtime.js\";\n"
-                     (let [tpl-imports (template-sub-imports doc group all-groups)]
+                     (let [tpl-imports (template-sub-imports doc group lowered)]
                        (when (seq tpl-imports)
                          (str tpl-imports "\n"))))
         body (if tpl?
-               (template-view doc group all-groups)
-               (stateful-view doc group all-groups))]
+               (template-view doc group lowered)
+               (stateful-view doc group lowered))]
     (str "// Auto-generated: view for group \"" (:ns-name group) "\".\n"
          imports
          "\n"
@@ -966,8 +962,11 @@
    `x-navbar` and `x-gaussian-blur` come along for the ride —
    they're decorative containers rendered inline; their named
    descendants jump out into their own view fns."
-  [doc groups]
-  (let [stateful (filter #(em/stateful-group? doc %) groups)
+  [doc lowered]
+  (let [groups          (:groups lowered)
+        template-groups (:template-names lowered)
+        owner-idx       (:field-owner-ns lowered)
+        stateful        (remove :template? groups)
         ;; Path segments stay kebab-case (the on-disk file layout
         ;; mirrors `<ns-name>/`); JS binding names use `js-ident`
         ;; so a group named "product-feed" imports as
@@ -988,20 +987,16 @@
         ;; emits a `<ns>View()` call for each, and unnamed
         ;; wrappers (x-navbar, x-gaussian-blur, …) stay inline as
         ;; hiccup arrays.
-        root-node (:root doc)
-        sub-groups (em/find-sub-groups root-node groups)
+        root-node        (:root doc)
+        sub-groups       (em/find-sub-groups root-node groups)
         sub-groups-by-id (into {} (map (juxt :id identity)) sub-groups)
-        template-groups (into #{}
-                              (for [g groups :when (em/template-group? doc g)]
-                                (:ns-name g)))
-        owner-idx (em/field-owner-index doc groups)
-        field->owner (fn [field] (or (get owner-idx field) "main"))
-        ctx {:app-ns "app"
-             :doc doc
-             :all-groups groups
-             :field->owner field->owner
-             :sub-groups-by-id sub-groups-by-id
-             :template-groups template-groups
+        field->owner     (fn [field] (or (get owner-idx field) "main"))
+        ctx {:app-ns              "app"
+             :doc                 doc
+             :all-groups          groups
+             :field->owner        field->owner
+             :sub-groups-by-id    sub-groups-by-id
+             :template-groups     template-groups
              :template-field-syms #{}
              :template-record-sym nil}
         root-tree (node->js-hiccup root-node nil ctx)]
