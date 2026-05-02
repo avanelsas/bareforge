@@ -277,6 +277,101 @@
       (is (re-find #"rf/trim-v" out))
       (is (re-find #"rf/path"   out)))))
 
+;; --- :hiccup ------------------------------------------------------------
+
+(deftest hiccup-no-props-no-children-self-closes
+  (is (= "[:x-spacer]"
+         (cf/format-form [:hiccup :x-spacer nil nil])))
+  (testing "string tag works the same"
+    (is (= "[:x-spacer]"
+           (cf/format-form [:hiccup "x-spacer" nil nil])))))
+
+(deftest hiccup-inline-text-no-children
+  (is (= "[:x-typography \"Hello\"]"
+         (cf/format-form [:hiccup :x-typography nil [:literal "Hello"]])))
+  (testing "inline text co-exists with a single inline prop"
+    (is (= "[:x-typography {:variant \"h1\"} \"Hi\"]"
+           (cf/format-form
+            [:hiccup :x-typography
+             [[[:keyword :variant] [:literal "h1"]]]
+             [:literal "Hi"]])))))
+
+(deftest hiccup-one-prop-renders-inline
+  (is (= "[:x-icon {:name \"cart\"}]"
+         (cf/format-form
+          [:hiccup :x-icon
+           [[[:keyword :name] [:literal "cart"]]]
+           nil]))))
+
+(deftest hiccup-multi-prop-aligns-under-first
+  (let [out (cf/format-form
+             [:hiccup :x-navbar
+              [[[:keyword :elevated] [:literal true]]
+               [[:keyword :variant]  [:literal "default"]]]
+              nil])]
+    (testing "first prop sits next to the open brace; subsequent prop is
+              on its own line padded to (count bare-tag) + 3 spaces so
+              it lines up under the first prop's `:`"
+      (is (= (str "[:x-navbar {:elevated true\n"
+                  "           :variant \"default\"}]")
+             out)))))
+
+(deftest hiccup-children-render-one-per-line-under-bracket
+  (let [out (cf/format-form
+             [:hiccup :div nil nil
+              [:hiccup :x-icon nil nil]
+              [:hiccup :x-typography nil [:literal "Hi"]]])]
+    (is (= (str "[:div\n"
+                " [:x-icon]\n"
+                " [:x-typography \"Hi\"]]")
+           out))))
+
+(deftest hiccup-text-with-children-puts-text-on-its-own-line
+  (let [out (cf/format-form
+             [:hiccup :x-card
+              [[[:keyword :variant] [:literal "raised"]]]
+              [:literal "Title"]
+              [:hiccup :x-typography nil [:literal "body"]]])]
+    (is (= (str "[:x-card {:variant \"raised\"}\n"
+                " \"Title\"\n"
+                " [:x-typography \"body\"]]")
+           out))))
+
+(deftest hiccup-nested-multi-prop-preserves-relative-alignment
+  ;; The child :hiccup form aligns its multi-prop block at relative col
+  ;; `(count bare-tag) + 3` — one column LEFT of the first prop. This
+  ;; matches the legacy `format-props-map` alignment exactly so the
+  ;; cljs-project view emitter's emitted bytes don't shift after the
+  ;; migration. When the parent re-indents the child by one space,
+  ;; both lines shift together → relative offset stays the same.
+  (let [out (cf/format-form
+             [:hiccup :div nil nil
+              [:hiccup :x-navbar
+               [[[:keyword :elevated] [:literal true]]
+                [[:keyword :variant]  [:literal "default"]]]
+               nil]])]
+    (is (= (str "[:div\n"
+                " [:x-navbar {:elevated true\n"
+                "            :variant \"default\"}]]")
+           out))))
+
+(deftest hiccup-raw-child-passes-through-with-relative-indent
+  ;; A :raw child that already has its own multi-line shape gets its
+  ;; internal newlines indented by one space when composed under a
+  ;; parent — this is what lets multi-line for-loop blocks slot in
+  ;; cleanly without re-formatting them as structured forms first.
+  (let [for-block (str "(for [p (rf/query [::sub])]\n"
+                       "  (something p))")
+        out (cf/format-form
+             [:hiccup :div
+              [[[:keyword :style] [:literal "display: contents"]]]
+              nil
+              [:raw for-block]])]
+    (is (= (str "[:div {:style \"display: contents\"}\n"
+                " (for [p (rf/query [::sub])]\n"
+                "   (something p))]")
+           out))))
+
 ;; --- round-trip property ------------------------------------------------
 
 (deftest round-trip-parses-back
