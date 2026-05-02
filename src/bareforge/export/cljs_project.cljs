@@ -103,74 +103,70 @@
     (str "repeat(" (str/trim v) ", 1fr)")
     v))
 
-(defn- format-props-map
-  "Format an already-serialized list of `:key value` prop strings into
-   a hiccup props map. Single prop → inline; two or more → one-per-line
-   aligned after the opening `{`. `tag` and `depth` drive the alignment."
-  [props tag depth]
-  (when (seq props)
-    (if (<= (count props) 1)
-      (str "{" (first props) "}")
-      (let [align (apply str (repeat (+ depth 3 (count (or tag ""))) " "))]
-        (str "{" (first props) "\n"
-             (str/join "\n"
-                       (for [p (rest props)]
-                         (str align p)))
-             "}")))))
+(defn- attr-pair
+  "Build the `[k-form v-form]` clj-form pair for a single attr entry.
+   Read / read-write bindings substitute the field symbol for the
+   stored attr value; an empty string becomes a literal `true` (the
+   sentinel BareDOM uses for present-but-valueless attributes); other
+   values become quoted strings, with the `x-grid columns` integer
+   coercion applied at the boundary."
+  [tag k v binding]
+  (cond
+    (and binding (contains? #{:read :read-write} (:direction binding)))
+    [[:raw (str ":" k)] [:raw (cljs.core/name (:field binding))]]
 
-(defn- node->prop-strings
-  "Build the ordered list of `:key value` prop strings for a node.
-   Includes slot, attrs (with binding substitution), bindings that
-   have no matching static attr (e.g. `:open` on an x-popover where
-   the designer only set the binding), JS properties committed through
-   the inspector's augment boolean/number widgets (stored on `:props`),
-   and layout style."
+    (= "" v)
+    [[:raw (str ":" k)] [:raw "true"]]
+
+    :else
+    [[:raw (str ":" k)]
+     [:raw (str "\""
+                (h2h/escape-cljs-str (normalize-attr-value tag k v))
+                "\"")]]))
+
+(defn- node->prop-pairs
+  "Build the ordered list of `[k v]` clj-form pairs for a node's
+   props map. Both sides come back as `[:raw ...]` strings — the
+   :hiccup form variant in `bareforge.export.clj-form` handles the
+   final layout (1-prop inline / 2+ multi-line aligned).
+
+   Sources, in render order: slot prop (skipped on `default`),
+   sorted attrs (with binding substitution), JS props committed via
+   the inspector's augment widgets (stored on `:props`, skipped when
+   already present as an attr), read / read-write bindings that have
+   no matching static attr (e.g. `:open` on an x-popover where the
+   designer only set the binding), and the layout-derived style."
   [node slot-name]
   (let [bindings   (:bindings node)
         attr-keys  (into #{} (keys (:attrs node)))
         prop-keys  (into #{} (map #(cljs.core/name %) (keys (:props node))))
-        attrs      (for [[k v] (sort-by key (:attrs node))
+        slot-pair  (when (and slot-name (not= "default" slot-name))
+                     [[:raw ":slot"] [:raw (str "\"" slot-name "\"")]])
+        attr-pairs (for [[k v] (sort-by key (:attrs node))
                          :when (and k (some? v))]
-                     (let [binding (get bindings k)]
-                       (if (and binding
-                                (contains? #{:read :read-write} (:direction binding)))
-                         (str ":" k " " (cljs.core/name (:field binding)))
-                         (if (= "" v)
-                           (str ":" k " true")
-                           (str ":" k " \""
-                                (h2h/escape-cljs-str
-                                 (normalize-attr-value (:tag node) k v))
-                                "\"")))))
-        ;; :props holds values the inspector committed via setv! — one
-        ;; per augment-declared boolean / number / enum widget — that
-        ;; the designer hasn't duplicated in :attrs. Emit them into the
-        ;; hiccup prop-map as-is (the exported renderer will setv!
-        ;; them back onto the element), booleans serialised without
-        ;; quotes so observed-attribute paths fire.
+                     (attr-pair (:tag node) k v (get bindings k)))
         prop-pairs (for [[k v] (sort-by key (:props node))
-                         :let [kn (cljs.core/name k)]
+                         :let  [kn (cljs.core/name k)]
                          :when (and (not (contains? attr-keys kn))
                                     (some? v))]
-                     (cond
-                       (boolean? v) (str ":" kn " " v)
-                       (number?  v) (str ":" kn " " v)
-                       :else        (str ":" kn " \""
-                                         (h2h/escape-cljs-str (str v)) "\"")))
+                     [[:raw (str ":" kn)]
+                      [:raw (cond
+                              (boolean? v) (str v)
+                              (number?  v) (str v)
+                              :else        (str "\""
+                                                (h2h/escape-cljs-str (str v))
+                                                "\""))]])
         binding-only (for [[k {:keys [field direction]}] (sort-by key bindings)
                            :when (and (contains? #{:read :read-write} direction)
                                       (not (contains? attr-keys k))
                                       (not (contains? prop-keys k)))]
-                       (str ":" k " " (cljs.core/name field)))
-        slot-prop  (when (and slot-name (not= "default" slot-name))
-                     (str ":slot \"" slot-name "\""))
+                       [[:raw (str ":" k)] [:raw (cljs.core/name field)]])
         style      (rec/layout->css (:layout node))
-        style-prop (when style
-                     (str ":style \"" (h2h/escape-cljs-str style) "\""))]
-    (vec (remove nil? (concat [slot-prop] attrs prop-pairs binding-only [style-prop])))))
-
-(defn- indent [n s]
-  (let [pad (apply str (repeat n " "))]
-    (str pad s)))
+        style-pair (when style
+                     [[:raw ":style"]
+                      [:raw (str "\"" (h2h/escape-cljs-str style) "\"")]])]
+    (vec (remove nil? (concat [slot-pair] attr-pairs prop-pairs
+                              binding-only [style-pair])))))
 
 ;; --- code generation: views ------------------------------------------------
 
@@ -231,18 +227,20 @@
 (defn- write-binding-event-name [tag]
   (get write-binding-event-names tag))
 
-(defn- write-binding->dispatch
-  "Emit `:on-<ename> (fn [^js e] (rf/dispatch [::<owner>.events/<field>-changed
-   (.. e -detail -<prop-key>)]))` for a single write/read-write
-   binding. Returns nil when the tag has no registered value-changed
-   event or the owner ns couldn't be resolved — in either case,
-   emitting would produce dead code."
+(defn- write-binding->pair
+  "Build the `[k-form v-form]` clj-form pair for a single write /
+   read-write binding's auto-setter dispatch. The handler reads the
+   value off the DOM event detail and dispatches the field's
+   `<field>-changed` event on the owning group's events ns. Returns
+   nil when the tag has no registered value-changed event or the
+   owner ns couldn't be resolved — in either case, emitting would
+   produce dead code."
   [tag prop-key field owner-ns]
   (when (and owner-ns (write-binding-event-name tag))
-    (str ":on-" (write-binding-event-name tag) " "
-         "(fn [^js e] (rf/dispatch [::" owner-ns ".events/"
-         (cljs.core/name field) "-changed"
-         " (.. e -detail -" prop-key ")]))")))
+    [[:raw (str ":on-" (write-binding-event-name tag))]
+     [:raw (str "(fn [^js e] (rf/dispatch [::" owner-ns ".events/"
+                (cljs.core/name field) "-changed"
+                " (.. e -detail -" prop-key ")]))")]]))
 
 (defn- node-write-binding-owners
   "The set of `<owner>.events` alias strings needed by write/read-write
@@ -298,9 +296,9 @@
     (or (get field->sym (:field pe))
         (cljs.core/name (:field pe)))))
 
-(defn- trigger->event-prop
-  "Emit the full `:on-<ename> <handler>` event-prop string for a
-   single trigger — the one place that implements rule 17.
+(defn- trigger->event-pair
+  "Build the `[k-form v-form]` clj-form pair for a single trigger —
+   the one place that implements rule 17.
 
    Payload resolution (via `payload-arg`):
    - `{:literal v}`        — EDN literal dispatched verbatim.
@@ -321,41 +319,42 @@
    enclosing template record arg named by `tmpl-record-sym` (or fire
    with no args when outside a template group)."
   [trigger field->sym tmpl-record-sym]
-  (let [aref      (:action-ref trigger)
-        alias     (action-ref->alias aref)
-        ename     (cljs.core/name aref)
-        payload   (:payload trigger)
-        prevent?  (boolean (:prevent-default? trigger))
-        args      (cond
-                    (seq payload)
-                    (for [pe payload] (payload-arg pe field->sym))
+  (let [aref          (:action-ref trigger)
+        alias         (action-ref->alias aref)
+        ename         (cljs.core/name aref)
+        payload       (:payload trigger)
+        prevent?      (boolean (:prevent-default? trigger))
+        args          (cond
+                        (seq payload)
+                        (for [pe payload] (payload-arg pe field->sym))
 
-                    tmpl-record-sym
-                    [tmpl-record-sym]
+                        tmpl-record-sym
+                        [tmpl-record-sym]
 
-                    :else
-                    nil)
-        args-str  (apply str (for [a args] (str " " a)))
-        dispatch  (str "(rf/dispatch [::" alias "/" ename args-str "])")
-        body      (if prevent?
-                    (str "(.preventDefault e) " dispatch)
-                    dispatch)
+                        :else
+                        nil)
+        args-str      (apply str (for [a args] (str " " a)))
+        dispatch      (str "(rf/dispatch [::" alias "/" ename args-str "])")
+        body          (if prevent?
+                        (str "(.preventDefault e) " dispatch)
+                        dispatch)
         event-needed? (or prevent? (some :event-detail payload))
-        handler   (if event-needed?
-                    (str "(fn [^js e] " body ")")
-                    (str "#" body))]
-    (str ":on-" (:trigger trigger) " " handler)))
+        handler       (if event-needed?
+                        (str "(fn [^js e] " body ")")
+                        (str "#" body))]
+    [[:raw (str ":on-" (:trigger trigger))] [:raw handler]]))
 
-(defn- collection-iteration-call
-  "Emit a `for`-iteration over a template-group's records wrapped in
-   a `display: contents` `<div>`. The wrapper gives the reconciler a
-   stable position for the iteration so a shrinking list doesn't
-   shift its tail into trigger-slotted siblings — see
-   `bareforge.export.renderer` on stored children for context. The
-   `display: contents` style makes the wrapper visually transparent:
-   children lay out as if they were direct children of the enclosing
-   element, so grid / flex / popover default-slot all behave the
-   same as without the wrapper.
+(defn- collection-iteration-form
+  "Build the clj-form `:hiccup` value for a template group's
+   `(for …)` iteration, wrapped in a `display: contents` `<div>`.
+   The wrapper gives the reconciler a stable position for the
+   iteration so a shrinking list doesn't shift its tail into
+   trigger-slotted siblings — see `bareforge.export.renderer` on
+   stored children for context. The `display: contents` style
+   makes the wrapper visually transparent: children lay out as if
+   they were direct children of the enclosing element, so grid /
+   flex / popover default-slot all behave the same as without the
+   wrapper.
 
    The record source is either:
    - `:source-sub` on the instance node — a fully qualified sub
@@ -363,7 +362,7 @@
    - `:source-field` on the instance node — a plain field keyword;
      resolve its owning group via the field-owner index and iterate
      `::<owner>.subs/<field>`."
-  [sub-group-name pad source-sub source-field field-owner-ns]
+  [sub-group-name source-sub source-field field-owner-ns]
   (let [sub-ref (cond
                   source-sub
                   (str "::" (action-ref->alias source-sub) "/"
@@ -380,25 +379,25 @@
                                "the inspector and pick a 'Rendered from' "
                                "source field (or declare a :source-sub).")
                           {:group sub-group-name})))]
-    (str (pad "[:div {:style \"display: contents\"}")
-         "\n"
-         (pad (str "  (for [p (rf/query [" sub-ref "])]"))
-         "\n"
-         (pad (str "    (" sub-group-name ".views/" sub-group-name " p))]")))))
+    [:hiccup "div"
+     [[[:raw ":style"] [:raw "\"display: contents\""]]]
+     nil
+     [:raw (str "(for [p (rf/query [" sub-ref "])]\n"
+                "  (" sub-group-name ".views/" sub-group-name " p))")]]))
 
 (declare stateful-host-for-template)
 
 (declare node->hiccup-with-events)
 
 (defn- emit-sub-group-child
-  "Render one sub-group child of a node into its hiccup string.
-   Returns `[rendered-or-nil rendered-tpls']` so the caller can
-   dedupe templates within a parent slot — the first encounter
-   of a template sub-group renders its iteration call; later
-   encounters return nil so a parent with N seed-backed clones
-   still emits one iteration. Singleton sub-groups return the
-   plain `(<ns>.views/<ns>)` call."
-  [ctx child gname tpl? rendered-tpls kid-pad]
+  "Render one sub-group child of a node into a clj-form value.
+   Returns `[form-or-nil rendered-tpls']` so the caller can dedupe
+   templates within a parent slot — the first encounter of a
+   template sub-group emits its iteration form; later encounters
+   return nil so a parent with N seed-backed clones still emits
+   one iteration. Singleton sub-groups return the plain
+   `(<ns>.views/<ns>)` call as a `:raw` value."
+  [ctx child gname tpl? rendered-tpls]
   (let [{:keys [doc all-groups field-owner-ns-map]} ctx]
     (cond
       (and tpl? (contains? rendered-tpls gname))
@@ -419,26 +418,26 @@
                           (when fallback (keyword (:field-name fallback))))
             field-ns  (or (get field-owner-ns-map (:source-field child))
                           (when fallback (:ns-name fallback)))]
-        [(collection-iteration-call gname kid-pad
+        [(collection-iteration-form gname
                                     (:source-sub child)
                                     src-field
                                     field-ns)
          (conj rendered-tpls gname)])
 
       :else
-      [(kid-pad (str "(" gname ".views/" gname ")"))
+      [[:raw (str "(" gname ".views/" gname ")")]
        rendered-tpls])))
 
 (defn- walk-slotted-children
   "Render every child of `node` across all its slots. Sub-group
    children dispatch to `emit-sub-group-child`; non-group children
    recurse via `node->hiccup-with-events`. Returns a vector of
-   hiccup strings in document order, with template-group
-   iterations deduped per slot."
-  [ctx node depth]
+   clj-form values in document order, with template-group
+   iterations deduped per slot. Indentation is the parent
+   :hiccup form's job — children come back at relative col 0."
+  [ctx node]
   (let [{:keys [sub-group-ids all-groups template-groups]} ctx
-        sub-set (set sub-group-ids)
-        kid-pad (fn [s] (indent (+ depth 1) s))]
+        sub-set (set sub-group-ids)]
     (first
      (reduce
       (fn [[acc rendered-tpls] [sname child]]
@@ -448,10 +447,9 @@
                 gname (:ns-name g)
                 tpl?  (contains? template-groups gname)
                 [rendered tpls']
-                (emit-sub-group-child ctx child gname tpl?
-                                      rendered-tpls kid-pad)]
+                (emit-sub-group-child ctx child gname tpl? rendered-tpls)]
             [(cond-> acc rendered (conj rendered)) tpls'])
-          [(conj acc (node->hiccup-with-events ctx child sname (+ depth 1)))
+          [(conj acc (node->hiccup-with-events ctx child sname))
            rendered-tpls]))
       [[] #{}]
       (for [[sname kids] (m/slot-entries node)
@@ -459,12 +457,16 @@
         [sname child])))))
 
 (defn- node->hiccup-with-events
-  "Like node->hiccup but also adds :on-* handlers for event triggers
-   and honours `:text-field` on nodes by emitting a local symbol when
-   it's present in `field->sym`.
+  "Build the clj-form `:hiccup` value for a node, including any
+   `:on-*` handlers from event triggers and write/read-write
+   bindings, plus inline text from `:text-field`.
 
-   `ctx` carries the per-walk constants so the signature stays at
-   four args across the recursive calls:
+   Indent-agnostic: returns a relative-col-0 form. Outer composition
+   (the parent :hiccup form, or `cf/format-form` + `cf/indent` at
+   the file-level call site) handles the absolute indentation.
+
+   `ctx` carries the per-walk constants so the signature stays
+   compact across the recursive calls:
      :doc                — the document
      :field->sym         — payload/text-field field-kw → local sym
                            (let-bound from rf/query in template-parent
@@ -486,52 +488,45 @@
 
    Children walking + sub-group dispatch live in
    `walk-slotted-children` / `emit-sub-group-child`; this fn
-   handles props + text + final output assembly."
+   handles props + text + final form assembly."
   [{:keys [field->sym tmpl-record-sym field-owner-ns-map name->ns own-ns-name]
     :as ctx}
-   node slot-name depth]
-  (let [tag         (str ":" (:tag node))
-        base-props  (node->prop-strings node slot-name)
-        event-props (for [t (:events node)]
-                      (trigger->event-prop t field->sym tmpl-record-sym))
-        write-props (for [[k {:keys [field direction owner]}] (:bindings node)
+   node slot-name]
+  (let [base-pairs  (node->prop-pairs node slot-name)
+        event-pairs (for [t (:events node)]
+                      (trigger->event-pair t field->sym tmpl-record-sym))
+        write-pairs (for [[k {:keys [field direction owner]}] (:bindings node)
                           :when (contains? #{:write :read-write} direction)
                           :let  [owner-ns (or (when owner (get name->ns owner owner))
                                               (get field-owner-ns-map field)
                                               own-ns-name)
-                                 prop    (write-binding->dispatch
+                                 pair    (write-binding->pair
                                           (:tag node) k field owner-ns)]
-                          :when prop]
-                      prop)
-        props       (format-props-map (concat base-props event-props write-props)
-                                      (:tag node) depth)
+                          :when pair]
+                      pair)
+        all-pairs   (vec (concat base-pairs event-pairs write-pairs))
+        props       (when (seq all-pairs) all-pairs)
         tf          (:text-field node)
-        text        (cond
+        text-form   (cond
                       (and tf (contains? field->sym tf))
-                      (get field->sym tf)
+                      [:raw (get field->sym tf)]
 
                       (and (:text node) (not= "" (:text node)))
-                      (str "\"" (h2h/escape-cljs-str (:text node)) "\""))
+                      [:raw (str "\"" (h2h/escape-cljs-str (:text node)) "\"")])
         inner-html  (:inner-html node)
-        pad         (fn [s] (indent depth s))
-        children    (walk-slotted-children ctx node depth)]
-    (cond
-      inner-html
-      (let [inner-hiccup (h2h/html->hiccup-str inner-html (+ depth 1))]
-        (str (pad (str "[" tag (when props (str " " props))))
-             "\n" inner-hiccup "]"))
+        children    (cond
+                      ;; inner-html replaces slotted children entirely.
+                      ;; html->hiccup-str at depth=0 returns content
+                      ;; rooted at relative col 0; the parent :hiccup
+                      ;; formatter handles the +1 child indent.
+                      inner-html
+                      [[:raw (h2h/html->hiccup-str inner-html 0)]]
 
-      (and (empty? children) (nil? text))
-      (pad (str "[" tag (when props (str " " props)) "]"))
-
-      (and (empty? children) text)
-      (pad (str "[" tag (when props (str " " props)) " " text "]"))
-
-      :else
-      (str (pad (str "[" tag (when props (str " " props))))
-           (when text (str "\n" (indent (+ depth 1) text)))
-           (str/join "" (map #(str "\n" %) children))
-           "]"))))
+                      :else
+                      (walk-slotted-children ctx node))]
+    (into [:hiccup (:tag node) props
+           (when (nil? inner-html) text-form)]
+          children)))
 
 (def ^:private find-sub-groups em/find-sub-groups)
 
@@ -700,6 +695,8 @@
   (let [{:keys [fn-name ns-path fn-sig require-entries hiccup-ctx
                 node root-slot let-fields field->owner has-let?]}
         (view-context doc group all-groups app-ns)
+        hiccup-form (node->hiccup-with-events hiccup-ctx node root-slot)
+        hiccup-str  (cf/format-form hiccup-form)
         ns-clause (if (seq require-entries)
                     (str "(ns " ns-path "\n"
                          "  (:require " (str/join "\n            " require-entries) "))\n")
@@ -716,9 +713,9 @@
                                   fname (cljs.core/name field)]
                               (str fname " (rf/query [::" alias "/" fname "])"))))
                 "]\n"
-                (node->hiccup-with-events hiccup-ctx node root-slot 4)
+                "    " (cf/indent hiccup-str 4)
                 "))\n")
-           (str (node->hiccup-with-events hiccup-ctx node root-slot 2)
+           (str "  " (cf/indent hiccup-str 2)
                 ")\n")))))
 
 ;; --- code generation: db/subs/events ----------------------------------------
@@ -1517,19 +1514,23 @@
   (let [{:keys [node sub-group-ids let-fields field->sym field->owner]}
         (first (filter #(= (:id (:entry %)) (:id entry))
                        inline-entries))
-        hiccup (node->hiccup-with-events
-                {:doc                doc
-                 :field->sym         field->sym
-                 :sub-group-ids      sub-group-ids
-                 :all-groups         groups
-                 :template-groups    template-names
-                 :field-owner-ns-map owner-idx
-                 :tmpl-record-sym    nil
-                 :name->ns           name->ns
-                 :own-ns-name        nil}
-                node nil (if (seq let-fields) 4 3))]
+        hiccup-form (node->hiccup-with-events
+                     {:doc                doc
+                      :field->sym         field->sym
+                      :sub-group-ids      sub-group-ids
+                      :all-groups         groups
+                      :template-groups    template-names
+                      :field-owner-ns-map owner-idx
+                      :tmpl-record-sym    nil
+                      :name->ns           name->ns
+                      :own-ns-name        nil}
+                     node nil)
+        hiccup-str  (cf/format-form hiccup-form)
+        depth       (if (seq let-fields) 4 3)
+        pad         (apply str (repeat depth " "))
+        indented    (str pad (cf/indent hiccup-str depth))]
     (if-not (seq let-fields)
-      hiccup
+      indented
       (str "   (let ["
            (str/join "\n         "
                      (for [f let-fields
@@ -1537,7 +1538,7 @@
                                  fname (cljs.core/name f)]]
                        (str fname " (rf/query [::" owner ".subs/" fname "])")))
            "]\n"
-           hiccup ")"))))
+           indented ")"))))
 
 (defn- core-view-body
   "Emit the `[:div …]` body for `app.core/app`: one segment per

@@ -64,6 +64,24 @@
                                    layout would split each on its
                                    own line, losing the readable
                                    association.
+     [:hiccup tag props text & children]
+                                 — `[:tag {…} text child child…]`
+                                   custom-element-friendly hiccup with
+                                   column-aware multi-prop alignment.
+                                   `tag` is a keyword/string (without
+                                   leading `:`). `props` is nil or a
+                                   seq of `[k v]` clj-form pairs.
+                                   `text` is nil or a single clj-form
+                                   leaf rendered inline-after-props
+                                   when there are no children, or on
+                                   its own line above the children
+                                   otherwise. Children render one per
+                                   line, indented one space under `[`.
+                                   Multi-prop maps align subsequent
+                                   pairs to `(count tag) + 3` spaces
+                                   so they sit under the first prop —
+                                   the column-aware layout the cljs-
+                                   project view emitter needs.
      [:raw text]                 — verbatim string passthrough; escape
                                    hatch for forms not yet supported
 
@@ -93,7 +111,7 @@
    symbol, a string, etc.) is treated as a leaf and formatted via
    `format-leaf`."
   #{:literal :symbol :keyword :auto-keyword
-    :vector :map :pair
+    :vector :map :pair :hiccup
     :invoke :invoke-block
     :def :defn :let :fn :if :when :cond :ns :require
     :do :thread :thread-last :reader-tag :comment :raw})
@@ -191,6 +209,70 @@
 (defmethod format-form* :pair
   [[_ k v]]
   (str (format-form k) " " (format-form v)))
+
+;; --- :hiccup ------------------------------------------------------------
+;;
+;; Custom-element hiccup with the cljs-project view emitter's column-aware
+;; layout. Rules (relative to the form's own column 0):
+;;
+;;   - 0 props  → omit the props map entirely.
+;;   - 1 prop   → `{:k v}` inline.
+;;   - 2+ props → first pair on the tag-line; each subsequent pair on its
+;;                own line at column `(count bare-tag) + 3` so it lines
+;;                up under the first pair's `:` (matches the alignment
+;;                rule from the legacy `format-props-map`).
+;;
+;;   - text + no children → text inlined with a single space before `]`.
+;;   - children present   → each child on its own line, prefixed with
+;;                          `\n` + one space so it sits under the `[`.
+;;                          A non-nil `text` renders as the first child
+;;                          line above the rest.
+;;
+;; The form is INDENT-AGNOSTIC: it always renders starting at relative
+;; column 0. Outer composition (parents, callers) re-indents the
+;; resulting block to the absolute column they want it at.
+
+(defn- format-hiccup-props
+  "Render the props slot of a `:hiccup` form. Returns nil for an empty
+   props seq, an inline `{:k v}` for one pair, or a multi-line block
+   for two-or-more pairs aligned to `(count bare-tag) + 3` spaces."
+  [bare-tag pairs]
+  (when (seq pairs)
+    (let [rendered (mapv (fn [[k v]]
+                           (str (format-form k) " " (format-form v)))
+                         pairs)]
+      (if (= 1 (count rendered))
+        (str "{" (first rendered) "}")
+        (let [align (apply str (repeat (+ 3 (count bare-tag)) " "))]
+          (str "{" (first rendered)
+               (str/join "" (for [p (rest rendered)]
+                              (str "\n" align p)))
+               "}"))))))
+
+(defmethod format-form* :hiccup
+  [[_ tag props text & children]]
+  (let [bare-tag  (cond
+                    (keyword? tag) (name tag)
+                    (string? tag)  tag
+                    :else          (str tag))
+        tag-str   (str ":" bare-tag)
+        props-str (format-hiccup-props bare-tag props)
+        text-str  (when text (format-form text))
+        kid-strs  (mapv format-form children)
+        head      (str "[" tag-str (when props-str (str " " props-str)))]
+    (cond
+      (and (empty? kid-strs) (nil? text-str))
+      (str head "]")
+
+      (empty? kid-strs)
+      (str head " " text-str "]")
+
+      :else
+      (str head
+           (when text-str (str "\n " (indent text-str 1)))
+           (apply str (for [k kid-strs]
+                        (str "\n " (indent k 1))))
+           "]"))))
 
 ;; --- :vector ------------------------------------------------------------
 
