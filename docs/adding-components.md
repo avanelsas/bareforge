@@ -6,8 +6,10 @@ for the common case.
 
 ## Recipe
 
-1. **Bump the BareDOM version** in `deps.edn` if the component is in a
-   newer release.
+1. **Bump the BareDOM version** in *both* `deps.edn` and
+   `src/bareforge/meta/versions.cljs` if the component is in a newer
+   release. See "Syncing BareDOM versions" below for why both are
+   needed.
 
 2. **Run the scaffolder**:
 
@@ -59,6 +61,27 @@ Only needed when the defaults aren't enough:
 Even without any of these, the runtime fallback keeps the component
 usable — the inspector shows a humanized label and typed fields for
 every observed attribute.
+
+## Syncing BareDOM versions
+
+The BareDOM version is pinned in two places that must move together:
+
+- `deps.edn` — the `com.github.avanelsas/baredom` entry. This is
+  Bareforge's own runtime jar.
+- `src/bareforge/meta/versions.cljs` — the single `def baredom-version`
+  consumed by every export path: HTML export's CDN URL, the bundle-zip
+  export's vendored jar URL, and the emitted `deps.edn` inside
+  exported CLJS projects.
+
+Two files exist because `deps.edn` is plain EDN and cannot import the
+CLJS `def`. The lockstep is enforced by
+`test/bareforge/meta/versions_test.cljs` — `npx shadow-cljs compile
+test` fails loudly if either side moves alone, so a half-finished bump
+never reaches a green test gate.
+
+Skipping half of the pair means Bareforge itself recognises the new
+component, but exported artefacts pull a stale jar where the
+component (or a newly added attribute on it) doesn't exist.
 
 ## How it works
 
