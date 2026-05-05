@@ -77,6 +77,16 @@ no error is raised at compile time. When you add a plugin,
 run the test suite; `registry_test.cljs` asserts every
 registered plugin has a complete manifest.
 
+**NYI is explicit.** If a plugin only supports a subset of the
+features a document might use, throw
+`(ex-info "<message naming the feature>" {:error :nyi})` from
+`generate`. The download layer surfaces the message to the user as a
+dialog, so unsupported features fail loudly rather than emitting
+broken output. See
+`bareforge.export.vanilla-js.codegen/assert-supported!` for the
+canonical pattern, and the testing recipe below for how to cover the
+gate in a unit test.
+
 ## The export model
 
 `bareforge.export.model/detect-groups` is the entry point most
