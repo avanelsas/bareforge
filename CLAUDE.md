@@ -13,7 +13,9 @@ Bareforge is NOT a web component library. Rules from BareDOM's `CLAUDE.md` do no
 - Release: `npx shadow-cljs release app` — must compile clean, zero warnings
 - Lint:    `clj-kondo --lint src test scripts`
 - Format:  `cljfmt check` / `cljfmt fix`
+- All four gates at once: `./scripts/check.sh` (CI parity).
 - REPL:    nREPL on port 7888 once `watch app` is running. Connect details: [`docs/repl.md`](./docs/repl.md).
+- First-time setup: [`docs/dev-setup.md`](./docs/dev-setup.md).
 
 Run `release` regularly, not just at the end. Closure Advanced renames bite late.
 
