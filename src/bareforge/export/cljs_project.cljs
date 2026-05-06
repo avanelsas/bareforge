@@ -293,7 +293,7 @@
 
 (defn- trigger->event-pair
   "Build the `[k-form v-form]` clj-form pair for a single trigger —
-   the one place that implements rule 17.
+   the one place that implements spec rule 17.
 
    Payload resolution (via `payload-arg`):
    - `{:literal v}`        — EDN literal dispatched verbatim.
@@ -901,7 +901,7 @@
    `:filter-by` to specialised emitters upstream, so `op` here must
    be one of the simple ops in `computed-op->fn`. Unknown ops (e.g.
    the pre-v1 `:first-of` / `:last-of` / `:lookup-in`) throw — see
-   CLAUDE.md rule 12 on the closed v1 op set."
+   spec rule 12 on the closed v1 op set."
   [{:keys [name computed]} doc all-groups]
   (let [fname  (cljs.core/name name)
         src    (cljs.core/name (:source-field computed))
