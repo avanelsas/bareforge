@@ -33,4 +33,15 @@
   ;; on the port pinned in shadow-cljs.edn. See docs/repl.md.
   :nrepl
   {:extra-deps {nrepl/nrepl       {:mvn/version "1.3.0"}
-                cider/cider-nrepl {:mvn/version "0.50.2"}}}}}
+                cider/cider-nrepl {:mvn/version "0.50.2"}}}
+
+  ;; Release-cut helper. Promotes CHANGELOG.md's [Unreleased] block,
+  ;; bumps package.json, verifies BareDOM lockstep (deps.edn ↔
+  ;; meta/versions.cljs), and runs the four PR-readiness gates.
+  ;; Tagging and pushing stay manual. See scripts/release.clj.
+  ;;
+  ;;   clojure -X:release :bump :patch                     ; preview
+  ;;   clojure -X:release :bump :minor :confirm true       ; apply
+  :release
+  {:extra-paths ["scripts"]
+   :exec-fn     release/-main}}}
