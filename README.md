@@ -95,6 +95,8 @@ stays scannable:
   notes for new contributors.
 - [`docs/plugins.md`](./docs/plugins.md) — export plugin authoring
   guide.
+- [`docs/repl.md`](./docs/repl.md) — editor-connected REPL setup
+  (Calva / CIDER / Cursive) and the recommended dev loop.
 
 ## Authoring shortcuts
 
@@ -213,6 +215,7 @@ Bareforge is a **consumer** of BareDOM, pulled from Clojars as
 npm install
 
 # Start dev server on http://localhost:8765
+# Also exposes an nREPL on port 7888 — see docs/repl.md.
 npx shadow-cljs watch app
 
 # Release build (Closure :advanced)
