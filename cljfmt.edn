@@ -7,7 +7,11 @@
  {deftest      [[:block 1]]
   testing      [[:block 1]]
   use-fixtures [[:block 1]]
-  are          [[:block 2]]}
+  are          [[:block 2]]
+  ;; test.check's `prop/for-all` is body-indented like `let`: the
+  ;; bindings vector is the single header arg, the property body
+  ;; aligns under it at +2.
+  clojure.test.check.properties/for-all [[:block 1]]}
 
  :remove-surrounding-whitespace?  true
  :remove-trailing-whitespace?     true
