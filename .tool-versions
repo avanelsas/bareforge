@@ -1,0 +1,6 @@
+# Bareforge toolchain. Keep aligned with .github/workflows/ci.yml.
+# `mise install` or `asdf install` picks these up. Patch versions are
+# guidance — bumps that stay within the major are safe.
+java temurin-21.0.5+11.0.LTS
+nodejs 20.18.0
+clojure 1.12.0.1495

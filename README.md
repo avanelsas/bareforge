@@ -97,6 +97,8 @@ stays scannable:
   guide.
 - [`docs/repl.md`](./docs/repl.md) — editor-connected REPL setup
   (Calva / CIDER / Cursive) and the recommended dev loop.
+- [`docs/dev-setup.md`](./docs/dev-setup.md) — first-time contributor
+  walkthrough: toolchain, `./scripts/check.sh`, common pitfalls.
 
 ## Authoring shortcuts
 
@@ -223,9 +225,13 @@ npx shadow-cljs release app
 
 # Tests
 npx shadow-cljs watch test
+
+# All four PR-readiness gates in one go
+./scripts/check.sh
 ```
 
-Requirements: JDK 11+, Node 18+.
+Requirements: JDK 11+, Node 18+. Contributors should match CI exactly
+(Java 21, Node 20) — see [`docs/dev-setup.md`](./docs/dev-setup.md).
 
 ## Philosophy (brief)
 
@@ -238,6 +244,9 @@ is side-effect-free and tested without a browser; effectful zone
 access or atom writes. `CLAUDE.md` has the full rule list.
 
 ## Contributing
+
+First-time contributor? Start with [`docs/dev-setup.md`](./docs/dev-setup.md)
+— toolchain pins, `./scripts/check.sh`, and common pitfalls.
 
 Read `CLAUDE.md` before writing code. It encodes the pure / effectful
 zone boundary, the one-atom rule, spec usage at boundaries, Closure
