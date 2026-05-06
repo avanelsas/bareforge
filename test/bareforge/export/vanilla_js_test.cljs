@@ -506,7 +506,7 @@
   ;; instance child and a :source-field. Skipped here for scope — the
   ;; shape check is: if any stateful view's hiccup output includes a
   ;; template-sub-group invocation, it's wrapped in the `display: contents`
-  ;; div per CLAUDE.md rule 19. Covered by the browser-verify recipe.
+  ;; div per spec rule 19. Covered by the browser-verify recipe.
   (is true "see browser-verify recipe for end-to-end exercise"))
 
 ;; --- codegen helpers in isolation ---------------------------------------

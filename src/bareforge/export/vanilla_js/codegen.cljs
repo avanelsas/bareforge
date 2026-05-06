@@ -5,7 +5,7 @@
    groups, collection fields (`:of-group`), vector actions
    (`:add`/`:remove`) with `qualifyMap` re-keying, implicit
    trigger payloads from within template views, template iteration
-   (wrapped in a `display: contents` div per CLAUDE.md rule 19),
+   (wrapped in a `display: contents` div per spec rule 19),
    `:text-field` substitution, and the seven computed-field
    operations (`:count-of`, `:sum-of`, `:empty-of`, `:negation`,
    `:any-of`, `:filter-by`, `:join-on`).
@@ -564,7 +564,7 @@
    event-detail are legacy edges; the inspector doesn't create them.
 
    Without `:payload`: inside a template view dispatch the record
-   symbol as the single arg (implicit payload — CLAUDE.md rule 11).
+   symbol as the single arg (implicit payload — spec rule 11).
    Outside any template, dispatch with no args."
   [trigger {:keys [template-record-sym template-field-syms]
             :as   ctx}]
@@ -663,7 +663,7 @@
 
 (defn- template-iteration-expr
   "The JS fragment that renders a template-group instance. Wraps
-   the for-loop in a `display: contents` div (rule 19) so a
+   the for-loop in a `display: contents` div (spec rule 19) so a
    shrinking list doesn't shift tail items into trigger-slotted
    siblings.
 

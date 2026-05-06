@@ -349,7 +349,7 @@
 (deftest generated-framework-supports-three-arities
   (let [files (cp/generate (fixture-doc) {:app-ns "app"})
         fw    (get files "src/app/framework.cljs")]
-    (testing "no forward declares anywhere — rule 3, order defs so each is defined before use"
+    (testing "no forward declares anywhere — spec rule 3, order defs so each is defined before use"
       (is (not (re-find #"\(declare " fw))
           "blanket: no `(declare ` form anywhere in the emitted framework")
       (let [compute-idx (str/index-of fw "(defn- compute-sub")
@@ -764,7 +764,7 @@
         "sum-of without a project-field falls back to the plain reducer")))
 
 (deftest unknown-computed-op-throws-at-export-time
-  ;; v1 closes the computed-op set (CLAUDE.md rule 12). A doc carrying
+  ;; v1 closes the computed-op set (spec rule 12). A doc carrying
   ;; an unrecognised op (pre-v1 :first-of, a typo, hand-edited JSON)
   ;; must fail loudly at `cp/generate` rather than emit a malformed
   ;; extractor that only blows up when the generated project compiles.
