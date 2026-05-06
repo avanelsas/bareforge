@@ -1,5 +1,9 @@
-{:deps     true
+{:deps     {:aliases [:nrepl]}
  :dev-http {8765 "public"}
+ ;; Pinned nREPL port so editor configs can hard-code it. shadow-cljs
+ ;; auto-detects cider-nrepl on the classpath (loaded via the :nrepl
+ ;; alias above) and registers its middleware. See docs/repl.md.
+ :nrepl    {:port 7888}
  :builds
  {:app  {:target     :browser
          :output-dir "public/js"

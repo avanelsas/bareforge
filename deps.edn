@@ -25,4 +25,12 @@
   ;;   clojure -X:new-export :id :svelte :label "Svelte" :order 50 :dry-run true
   :new-export
   {:extra-paths ["scripts"]
-   :exec-fn     new-export/-main}}}
+   :exec-fn     new-export/-main}
+
+  ;; Editor-connected REPL middleware. shadow-cljs reads this alias
+  ;; via shadow-cljs.edn's `:deps {:aliases [:nrepl]}`, so a plain
+  ;; `npx shadow-cljs watch app` already exposes a CIDER-aware nREPL
+  ;; on the port pinned in shadow-cljs.edn. See docs/repl.md.
+  :nrepl
+  {:extra-deps {nrepl/nrepl       {:mvn/version "1.3.0"}
+                cider/cider-nrepl {:mvn/version "0.50.2"}}}}}
