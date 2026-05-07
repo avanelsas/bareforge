@@ -13,7 +13,9 @@
    the `commit-*!` fns here are thin orchestrators that snapshot the
    live JS state into a plain map, hand it to the planner, and apply
    the result via `ops/*` + `state/commit!`."
-  (:require [bareforge.dnd.resolve :as resolve]
+  (:require [bareforge.dnd.guides :as guides]
+            [bareforge.dnd.resolve :as resolve]
+            [bareforge.dnd.snap :as snap]
             [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
             [bareforge.meta.registry :as registry]
@@ -68,6 +70,14 @@
 
 (def ^:private move-threshold 4)
 
+(def ^:private snap-threshold
+  "Doc-pixel distance within which a free-drag snaps to a sibling
+   alignment. Six matches the visual feel of Figma / Webflow at 1×
+   zoom; the canvas-view divides cursor deltas by zoom *before* the
+   snap planner sees them, so the threshold stays in doc-pixels and
+   feels the same at 50% as at 200%."
+  6)
+
 (defn- phase       [] (unchecked-get drag-state "phase"))
 (defn- set-phase!  [p] (unchecked-set drag-state "phase" p))
 (defn- source-tag  [] (unchecked-get drag-state "source-tag"))
@@ -76,6 +86,16 @@
 (defn- set-source-node-id! [id] (unchecked-set drag-state "source-node-id" id))
 (defn- free-drag?     [] (unchecked-get drag-state "free-drag?"))
 (defn- set-free-drag! [v] (unchecked-set drag-state "free-drag?" (boolean v)))
+(defn- snap-initial    [] (unchecked-get drag-state "snap-initial"))
+(defn- snap-siblings   [] (or (unchecked-get drag-state "snap-siblings") []))
+(defn- set-snap-snapshot!
+  [{:keys [initial siblings]}]
+  (unchecked-set drag-state "snap-initial"  initial)
+  (unchecked-set drag-state "snap-siblings" siblings))
+(defn- clear-snap-snapshot!
+  []
+  (unchecked-set drag-state "snap-initial"  nil)
+  (unchecked-set drag-state "snap-siblings" nil))
 (defn- start-xy!
   [x y]
   (unchecked-set drag-state "start-x" x)
@@ -447,38 +467,65 @@
    :free-initial-x   (unchecked-get drag-state "free-initial-x")
    :free-initial-y   (unchecked-get drag-state "free-initial-y")})
 
+(defn- snap-during-drag
+  "Pure-ish helper: given the raw doc-space cursor delta and the
+   pointerdown snapshot, run `snap/snap` against the captured siblings
+   and return `{:total-dx :total-dy :guides}`. `total-*` is the delta
+   to write to the live `transform: translate(...)` and the value the
+   commit step uses to construct the final `:layout :x / :y`. Returns
+   raw deltas + empty guides when no snapshot was captured (e.g. a
+   non-free drag that somehow reached this code path)."
+  [raw-dx raw-dy]
+  (if-let [initial (snap-initial)]
+    (let [proposed (-> initial
+                       (update :left + raw-dx) (update :right + raw-dx)
+                       (update :top + raw-dy)  (update :bottom + raw-dy))
+          result   (snap/snap proposed (snap-siblings) snap-threshold)]
+      {:total-dx (+ raw-dx (:dx result))
+       :total-dy (+ raw-dy (:dy result))
+       :guides   (:guides result)})
+    {:total-dx raw-dx :total-dy raw-dy :guides []}))
+
 (defn- update-free-drag-position!
   "Visual feedback during a :free drag. Uses CSS transform so we
    never touch the document until pointerup — keeps history clean
    and avoids a thousand-entry undo stack from a single drag.
-   Divides the cursor delta by the canvas zoom: a `translate` on a
-   child of a scaled parent is itself scaled at render time, so to
-   make the element visually follow the cursor 1:1 we shrink the
-   translate by the same factor."
+   Divides the cursor delta by the canvas zoom (translate on a child
+   of a scaled parent is itself scaled at render time), then runs
+   `snap/snap` against the snapshotted siblings so the element pulls
+   to alignment within `snap-threshold`. Active alignments are drawn
+   live via `dnd.guides/show!`."
   [^js e]
   (when-let [^js el (canvas/dom-for-id (source-node-id))]
-    (let [zoom (:zoom (state/canvas-view @state/app-state))
-          dx   (/ (- (.-clientX e) (start-x)) zoom)
-          dy   (/ (- (.-clientY e) (start-y)) zoom)]
+    (let [zoom   (:zoom (state/canvas-view @state/app-state))
+          raw-dx (/ (- (.-clientX e) (start-x)) zoom)
+          raw-dy (/ (- (.-clientY e) (start-y)) zoom)
+          {:keys [total-dx total-dy guides]} (snap-during-drag raw-dx raw-dy)]
       (set! (.. el -style -transform)
-            (str "translate(" dx "px," dy "px)")))))
+            (str "translate(" total-dx "px," total-dy "px)"))
+      (guides/show! guides zoom))))
 
 (defn- commit-free-move!
-  "On drop, compute the new :x / :y via `resolve/plan-free-move` and
-   commit in a single `ops/set-layout` pair. The reconciler runs on
-   rAF after commit; its `apply-layout-style!` writes a fresh style
-   attribute without the transform, so the element lands cleanly at
-   its new coordinates. Reads the current canvas zoom so the planner
-   can convert viewport deltas back into doc coordinates."
+  "On drop, run `snap-during-drag` to mirror the live feedback's
+   alignment behaviour, then commit `(:layout :x)` / `(:layout :y)`
+   as `free-initial + total-delta`. The reconciler runs on rAF after
+   commit; its `apply-layout-style!` writes a fresh style attribute
+   without the transform, so the element lands cleanly at its new
+   coordinates."
   [^js e]
   (let [doc  (:document @state/app-state)
         zoom (:zoom (state/canvas-view @state/app-state))
-        {:keys [src-id x y]}
-        (resolve/plan-free-move (snapshot-drag-state)
-                                (.-clientX e) (.-clientY e) zoom)
-        doc' (-> doc
-                 (ops/set-layout src-id :x x)
-                 (ops/set-layout src-id :y y))]
+        raw-dx (/ (- (.-clientX e) (start-x)) zoom)
+        raw-dy (/ (- (.-clientY e) (start-y)) zoom)
+        {:keys [total-dx total-dy]} (snap-during-drag raw-dx raw-dy)
+        free-x (unchecked-get drag-state "free-initial-x")
+        free-y (unchecked-get drag-state "free-initial-y")
+        x      (+ free-x total-dx)
+        y      (+ free-y total-dy)
+        src-id (source-node-id)
+        doc'   (-> doc
+                   (ops/set-layout src-id :x x)
+                   (ops/set-layout src-id :y y))]
     (state/commit! doc')))
 
 (defn- clear-free-transform!
@@ -521,6 +568,8 @@
   (clear-slot-target!)
   (slot-strips/hide!)
   (clear-marquee-el!)
+  (guides/hide!)
+  (clear-snap-snapshot!)
   (set-marquee-additive! false)
   (set-valid! false)
   (set-target-position! nil)
@@ -546,6 +595,55 @@
   (start-xy! (.-clientX e) (.-clientY e))
   (set-phase! :armed))
 
+(defn- capture-snap-snapshot
+  "Walk the dragged element's DOM siblings (those with
+   `data-bareforge-id`) and capture each one's layout-box rect via
+   `offsetLeft / offsetTop / offsetWidth / offsetHeight`. Layout-box
+   coords are *not* affected by canvas-view's transform, so the
+   snapshot lives in the same doc-space the snap math expects.
+
+   Siblings whose `offsetParent` differs from the dragged element's
+   are skipped: a `position: fixed` sibling (e.g. an `x-metaball-cursor`)
+   reports `offsetLeft/Top` in viewport coordinates rather than the
+   shared offsetParent's, which would feed nonsense candidates into
+   the snap planner. Sharing offsetParent guarantees both rects live
+   in the same coordinate system.
+
+   `parentNode.children` is fine for the walk: free-placement nodes
+   are absolute-positioned, but their DOM parent is still the layout
+   container, and that's where their alignment candidates naturally
+   live."
+  [^js el]
+  (let [^js parent (.-parentNode el)
+        children   (when parent (.-children parent))
+        my-op      (.-offsetParent el)
+        x          (.-offsetLeft   el)
+        y          (.-offsetTop    el)
+        w          (.-offsetWidth  el)
+        h          (.-offsetHeight el)
+        siblings   (when children
+                     (loop [i 0 acc (transient [])]
+                       (if (< i (.-length children))
+                         (let [^js c (aget children i)]
+                           (recur
+                            (inc i)
+                            (cond-> acc
+                              (and (not (identical? c el))
+                                   (.getAttribute c "data-bareforge-id")
+                                   (identical? (.-offsetParent c) my-op))
+                              (conj! (let [cx (.-offsetLeft   c)
+                                           cy (.-offsetTop    c)
+                                           cw (.-offsetWidth  c)
+                                           ch (.-offsetHeight c)]
+                                       {:left   cx
+                                        :top    cy
+                                        :right  (+ cx cw)
+                                        :bottom (+ cy ch)})))))
+                         (persistent! acc))))]
+    {:initial  {:left   x   :top    y
+                :right  (+ x w) :bottom (+ y h)}
+     :siblings (or siblings [])}))
+
 (defn start-from-canvas!
   "Arm a drag from an existing canvas node. A release without meaningful
    movement selects the node (canvas tap); a release past the drag
@@ -564,7 +662,12 @@
       (unchecked-set drag-state "free-initial-x"
                      (or (get-in node [:layout :x]) 0))
       (unchecked-set drag-state "free-initial-y"
-                     (or (get-in node [:layout :y]) 0))))
+                     (or (get-in node [:layout :y]) 0))
+      ;; Snap snapshot lives in drag-state for the duration of the
+      ;; gesture: capture once at pointerdown so per-tick snap math
+      ;; stays cheap (no DOM walks during pointermove).
+      (when-let [^js el (canvas/dom-for-id node-id)]
+        (set-snap-snapshot! (capture-snap-snapshot el)))))
   (start-xy! (.-clientX e) (.-clientY e))
   (set-phase! :armed))
 

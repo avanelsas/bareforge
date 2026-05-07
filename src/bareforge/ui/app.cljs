@@ -3,6 +3,7 @@
    below. The inspector is a placeholder until build-order step 8.
    The canvas area hosts the DOM reconciler."
   (:require [bareforge.dnd.drag :as drag]
+            [bareforge.dnd.guides :as guides]
             [bareforge.render.canvas :as canvas]
             [bareforge.render.canvas-view :as canvas-view]
             [bareforge.render.selection :as selection]
@@ -85,6 +86,7 @@
     (canvas-view/install! canvas-host canvas-theme)
     (selection/install! canvas-host)
     (slot-strips/install! canvas-host)
+    (guides/install! canvas-host canvas-theme)
     (theme-editor/install-watch!)
     (welcome-tour/install-watch! tour-el)
     (drag/install-window-listeners! canvas-host)
