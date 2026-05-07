@@ -115,6 +115,16 @@
 
 ;; --- DOM build ---------------------------------------------------------
 
+(defn- tooltip-wrap
+  "Wrap `trigger` in an `x-tooltip` carrying a one-word `tip` so the
+   button's purpose surfaces on hover. The trigger is the child of
+   the tooltip element — BareDOM's x-tooltip uses the slotted child
+   as the hover surface and overlays the tip near it."
+  [tip trigger]
+  (let [^js t (u/el :x-tooltip {:text tip :delay "150" :placement "top"})]
+    (.appendChild t trigger)
+    t))
+
 (defn- icon-button
   "Small square button carrying a single character glyph and an
    accessible name. Returns the DOM element."
@@ -124,7 +134,6 @@
               {:variant    "tertiary"
                :size       "sm"
                :label      accessible-name
-               :title      accessible-name
                :aria-label accessible-name
                :class      "align-bar-button"}
               [text])
@@ -133,24 +142,33 @@
 (defn- divider [] (u/el :div {:class "align-bar-divider"}))
 
 (defn- build-bar
-  "Construct the bar DOM. Returns `{:el ROOT :distribute-h B :distribute-v B}`
-   so the watcher can toggle the distribute buttons' disabled state
-   independently from the bar's overall visibility."
+  "Construct the bar DOM. Each button is wrapped in an x-tooltip so a
+   one-word descriptor surfaces on hover — the unicode glyphs alone
+   don't carry enough meaning. A pointerdown listener on the bar
+   stops propagation so clicks on the bar don't bubble to the canvas's
+   marquee handler (without it, a click would commit an empty marquee
+   and clear the selection before the button's `click` event fires)."
   []
-  (let [bar    (u/el :div {:class "align-bar" :data-hidden ""})
-        align-l  (icon-button "⇤" "Align left"            (fn [_] (align! :left)))
+  (let [bar      (u/el :div {:class "align-bar" :data-hidden ""})
+        align-l  (icon-button "⇤" "Align left"               (fn [_] (align! :left)))
         align-cx (icon-button "↔" "Align horizontal centers" (fn [_] (align! :cx)))
-        align-r  (icon-button "⇥" "Align right"           (fn [_] (align! :right)))
-        align-t  (icon-button "⇡" "Align top"             (fn [_] (align! :top)))
-        align-cy (icon-button "↕" "Align vertical centers" (fn [_] (align! :cy)))
-        align-b  (icon-button "⇣" "Align bottom"          (fn [_] (align! :bottom)))
-        dist-h   (icon-button "⇿" "Distribute horizontally" (fn [_] (distribute! :horizontal)))
-        dist-v   (icon-button "⇳" "Distribute vertically"   (fn [_] (distribute! :vertical)))]
-    (doseq [c [align-l align-cx align-r
+        align-r  (icon-button "⇥" "Align right"              (fn [_] (align! :right)))
+        align-t  (icon-button "⇡" "Align top"                (fn [_] (align! :top)))
+        align-cy (icon-button "↕" "Align vertical centers"   (fn [_] (align! :cy)))
+        align-b  (icon-button "⇣" "Align bottom"             (fn [_] (align! :bottom)))
+        dist-h   (icon-button "⇿" "Distribute horizontally"  (fn [_] (distribute! :horizontal)))
+        dist-v   (icon-button "⇳" "Distribute vertically"    (fn [_] (distribute! :vertical)))]
+    (u/on! bar :pointerdown (fn [^js e] (.stopPropagation e)))
+    (doseq [c [(tooltip-wrap "Left"    align-l)
+               (tooltip-wrap "Center"  align-cx)
+               (tooltip-wrap "Right"   align-r)
                (divider)
-               align-t align-cy align-b
+               (tooltip-wrap "Top"     align-t)
+               (tooltip-wrap "Middle"  align-cy)
+               (tooltip-wrap "Bottom"  align-b)
                (divider)
-               dist-h dist-v]]
+               (tooltip-wrap "Spread"  dist-h)
+               (tooltip-wrap "Stack"   dist-v)]]
       (.appendChild bar c))
     {:el bar :dist-h dist-h :dist-v dist-v}))
 
