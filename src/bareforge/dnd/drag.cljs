@@ -602,12 +602,21 @@
    coords are *not* affected by canvas-view's transform, so the
    snapshot lives in the same doc-space the snap math expects.
 
-   `parentNode.children` is fine: free-placement nodes are absolute-
-   positioned, but their DOM parent is still the layout container,
-   and that's where their alignment candidates naturally live."
+   Siblings whose `offsetParent` differs from the dragged element's
+   are skipped: a `position: fixed` sibling (e.g. an `x-metaball-cursor`)
+   reports `offsetLeft/Top` in viewport coordinates rather than the
+   shared offsetParent's, which would feed nonsense candidates into
+   the snap planner. Sharing offsetParent guarantees both rects live
+   in the same coordinate system.
+
+   `parentNode.children` is fine for the walk: free-placement nodes
+   are absolute-positioned, but their DOM parent is still the layout
+   container, and that's where their alignment candidates naturally
+   live."
   [^js el]
   (let [^js parent (.-parentNode el)
         children   (when parent (.-children parent))
+        my-op      (.-offsetParent el)
         x          (.-offsetLeft   el)
         y          (.-offsetTop    el)
         w          (.-offsetWidth  el)
@@ -620,7 +629,8 @@
                             (inc i)
                             (cond-> acc
                               (and (not (identical? c el))
-                                   (.getAttribute c "data-bareforge-id"))
+                                   (.getAttribute c "data-bareforge-id")
+                                   (identical? (.-offsetParent c) my-op))
                               (conj! (let [cx (.-offsetLeft   c)
                                            cy (.-offsetTop    c)
                                            cw (.-offsetWidth  c)
