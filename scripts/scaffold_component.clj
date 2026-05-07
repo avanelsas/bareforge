@@ -175,11 +175,14 @@
 
 (defn- augment-has-tag?
   "Does augment.cljs already have either a `(def ^:private <tag> …)`
-   block or a `\"<tag>\" <tag>` registration in the augment map?"
+   block or a `\"<tag>\" <tag>` registration in the augment map?
+   `\\b` alone treats `-` as a word break, so `x-foo\\b` falsely
+   matches inside `x-foo-bar` — the `(?![-\\w])` lookahead asserts
+   the tag truly ends here and not at a hyphen-extended sibling."
   [source tag]
-  (or (boolean (re-find (re-pattern (str "\\(def\\s+\\^:private\\s+" tag "\\b"))
+  (or (boolean (re-find (re-pattern (str "\\(def\\s+\\^:private\\s+" tag "(?![-\\w])"))
                         source))
-      (boolean (re-find (re-pattern (str "\"" tag "\"\\s+" tag "\\b"))
+      (boolean (re-find (re-pattern (str "\"" tag "\"\\s+" tag "(?![-\\w])"))
                         source))))
 
 (defn- augment-entry-text
