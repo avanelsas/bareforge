@@ -97,20 +97,3 @@
   (assoc (resolve-insertion-target doc snapshot)
          :src-id source-node-id))
 
-(defn plan-free-move
-  "Pure: compute the new `[:layout :x]` / `[:layout :y]` for a
-   free-drag commit. `cursor-x` / `cursor-y` are the pointerup
-   position; the snapshot supplies the pointerdown position
-   (`:start-x` / `:start-y`) and the pre-drag layout position
-   (`:free-initial-x` / `:free-initial-y`). `zoom` is the canvas
-   viewport zoom factor — cursor deltas are in viewport (post-scale)
-   pixels, so we divide by `zoom` to get document-space deltas before
-   adding to the unscaled initial layout coordinates. Returns
-   `{:src-id :x :y}`."
-  [{:keys [source-node-id start-x start-y
-           free-initial-x free-initial-y]}
-   cursor-x cursor-y zoom]
-  (let [z (or zoom 1)]
-    {:src-id source-node-id
-     :x      (+ free-initial-x (/ (- cursor-x start-x) z))
-     :y      (+ free-initial-y (/ (- cursor-y start-y) z))}))

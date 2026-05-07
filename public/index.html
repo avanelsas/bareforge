@@ -225,6 +225,21 @@
       border: 1px dashed var(--x-color-primary, #4f46e5);
       background: rgba(79, 70, 229, 0.08);
     }
+    /* Smart-alignment guides shown during free-drag. Hot pink because
+       it's the universal "snapping" colour in design tools and reads
+       cleanly against any canvas content. Strokes are crisp 1 px
+       regardless of canvas zoom — they live in canvas-host (untransformed)
+       and dnd.guides converts doc-space coords to viewport-space using
+       the current zoom factor. */
+    .bareforge-snap-guide {
+      position: absolute;
+      pointer-events: none;
+      background: #ec4899;
+      box-shadow: 0 0 0 0.5px rgba(236, 72, 153, 0.5);
+      z-index: 98;
+    }
+    .bareforge-snap-guide[data-hidden] { display: none; }
+    .chrome[data-mode="preview"] .bareforge-snap-guide { display: none; }
     /* --- cheat sheet ----------------------------------------------- */
     /* x-modal carries its own backdrop / panel chrome; we only style
        the row + group layout inside the modal body. Typography (kbd,
