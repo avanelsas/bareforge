@@ -118,7 +118,11 @@
    "x-combobox"           :form
    "x-skeleton-group"     :feedback
    "x-welcome-tour"       :overlay
-   "x-file-upload"        :form})
+   "x-file-upload"        :form
+   "x-kinetic-canvas"     :effects
+   "x-i18n-provider"      :utility
+   "x-i18n"               :text
+   "x-multi-combobox"     :form})
 
 (defn category-for
   "Return the category keyword for `tag`, or `:other` when unknown."

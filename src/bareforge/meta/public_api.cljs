@@ -48,8 +48,11 @@
             [baredom.components.x-form-field.model          :as x-form-field]
             [baredom.components.x-gaussian-blur.model       :as x-gaussian-blur]
             [baredom.components.x-grid.model                :as x-grid]
+            [baredom.components.x-i18n.model              :as x-i18n]
+            [baredom.components.x-i18n-provider.model     :as x-i18n-provider]
             [baredom.components.x-icon.model              :as x-icon]
             [baredom.components.x-image.model             :as x-image]
+            [baredom.components.x-kinetic-canvas.model    :as x-kinetic-canvas]
             [baredom.components.x-kinetic-font.model        :as x-kinetic-font]
             [baredom.components.x-kinetic-typography.model  :as x-kinetic-typography]
             [baredom.components.x-liquid-dock.model         :as x-liquid-dock]
@@ -60,6 +63,7 @@
             [baredom.components.x-metaball-cursor.model     :as x-metaball-cursor]
             [baredom.components.x-modal.model               :as x-modal]
             [baredom.components.x-morph-stack.model         :as x-morph-stack]
+            [baredom.components.x-multi-combobox.model    :as x-multi-combobox]
             [baredom.components.x-navbar.model              :as x-navbar]
             [baredom.components.x-neural-glow.model         :as x-neural-glow]
             [baredom.components.x-notification-center.model :as x-notification-center]
@@ -152,8 +156,11 @@
    x-form-field/tag-name         (api x-form-field/tag-name         x-form-field/property-api         x-form-field/observed-attributes)
    x-gaussian-blur/tag-name      (api x-gaussian-blur/tag-name      x-gaussian-blur/property-api      x-gaussian-blur/observed-attributes)
    x-grid/tag-name               (api x-grid/tag-name               x-grid/property-api               x-grid/observed-attributes)
+   x-i18n/tag-name              (api x-i18n/tag-name x-i18n/property-api x-i18n/observed-attributes)
+   x-i18n-provider/tag-name     (api x-i18n-provider/tag-name x-i18n-provider/property-api x-i18n-provider/observed-attributes)
    x-icon/tag-name              (api x-icon/tag-name x-icon/property-api x-icon/observed-attributes)
    x-image/tag-name             (api x-image/tag-name x-image/property-api x-image/observed-attributes)
+   x-kinetic-canvas/tag-name    (api x-kinetic-canvas/tag-name x-kinetic-canvas/property-api x-kinetic-canvas/observed-attributes)
    x-kinetic-font/tag-name       (api x-kinetic-font/tag-name       x-kinetic-font/property-api       x-kinetic-font/observed-attributes)
    x-kinetic-typography/tag-name (api x-kinetic-typography/tag-name x-kinetic-typography/property-api x-kinetic-typography/observed-attributes)
    x-liquid-dock/tag-name        (api x-liquid-dock/tag-name        x-liquid-dock/property-api        x-liquid-dock/observed-attributes)
@@ -164,6 +171,7 @@
    x-metaball-cursor/tag-name    (api x-metaball-cursor/tag-name    x-metaball-cursor/property-api    x-metaball-cursor/observed-attributes)
    x-modal/tag-name              (api x-modal/tag-name              x-modal/property-api              x-modal/observed-attributes)
    x-morph-stack/tag-name        (api x-morph-stack/tag-name        x-morph-stack/property-api        x-morph-stack/observed-attributes)
+   x-multi-combobox/tag-name    (api x-multi-combobox/tag-name x-multi-combobox/property-api x-multi-combobox/observed-attributes)
    x-navbar/tag-name             (api x-navbar/tag-name             x-navbar/property-api             x-navbar/observed-attributes)
    x-neural-glow/tag-name        (api x-neural-glow/tag-name        x-neural-glow/property-api        x-neural-glow/observed-attributes)
    x-notification-center/tag-name (api x-notification-center/tag-name x-notification-center/property-api x-notification-center/observed-attributes)

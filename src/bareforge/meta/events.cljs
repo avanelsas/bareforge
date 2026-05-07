@@ -22,8 +22,13 @@
    "x-checkbox"     ["change"]
    "x-popover"      ["x-popover-toggle" "mouseenter" "mouseleave"]
    "x-combobox"     ["x-combobox-change" "x-combobox-input" "x-combobox-toggle"]
+   "x-multi-combobox" ["x-multi-combobox-change-request"
+                       "x-multi-combobox-change"
+                       "x-multi-combobox-input"
+                       "x-multi-combobox-toggle"]
    "x-tooltip"      ["x-tooltip-show" "x-tooltip-hide"]
-   "x-welcome-tour" ["x-welcome-tour-start" "x-welcome-tour-step-change" "x-welcome-tour-complete" "x-welcome-tour-skip"]})
+   "x-welcome-tour" ["x-welcome-tour-start" "x-welcome-tour-step-change" "x-welcome-tour-complete" "x-welcome-tour-skip"]
+   "x-i18n-provider" ["x-i18n-loading" "x-i18n-change" "x-i18n-error"]})
 
 (defn events-for
   "Return the vector of supported event names for `tag`, or nil."
