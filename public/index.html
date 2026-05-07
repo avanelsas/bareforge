@@ -137,6 +137,35 @@
        instead of var() with fallbacks. min-width keeps the chip
        readable across the full 25%–400% range without the box
        jiggling as digits change. */
+    /* Contextual alignment bar — a pill at the bottom-center of the
+       canvas-host, visible only when the selection contains 2+ free-
+       placement nodes. Buttons inside use `x-button` so they pick up
+       the active theme automatically. Sits above the zoom indicator
+       (z-index 200) and below modals (≥ 1000). */
+    .align-bar {
+      position: absolute;
+      left: 50%;
+      bottom: 16px;
+      transform: translateX(-50%);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 6px;
+      background: #ffffff;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      z-index: 210;
+      user-select: none;
+    }
+    .align-bar[data-hidden] { display: none; }
+    .chrome[data-mode="preview"] .align-bar { display: none; }
+    .align-bar-divider {
+      width: 1px;
+      height: 20px;
+      margin: 0 2px;
+      background: rgba(0, 0, 0, 0.12);
+    }
     .canvas-zoom-indicator {
       position: absolute;
       right: 16px;

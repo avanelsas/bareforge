@@ -9,6 +9,7 @@
             [bareforge.render.selection :as selection]
             [bareforge.render.slot-strips :as slot-strips]
             [bareforge.state :as state]
+            [bareforge.ui.align-bar :as align-bar]
             [bareforge.ui.cheat-sheet :as cheat-sheet]
             [bareforge.ui.command-palette :as command-palette]
             [bareforge.ui.inspector :as inspector]
@@ -87,6 +88,7 @@
     (selection/install! canvas-host)
     (slot-strips/install! canvas-host)
     (guides/install! canvas-host canvas-theme)
+    (align-bar/install! canvas-host)
     (theme-editor/install-watch!)
     (welcome-tour/install-watch! tour-el)
     (drag/install-window-listeners! canvas-host)
