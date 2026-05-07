@@ -402,10 +402,17 @@
   (unchecked-set overlay-state "pool" #js [])
   (create-overlay! true)
   (schedule-refresh!)
+  ;; Refresh on selection or document changes (an edit or a click moves
+   ;; the rect under us) AND on canvas-view changes (zoom + pan move
+   ;; the rendered nodes' visual rects, and overlays are read off
+   ;; getBoundingClientRect — without this the blue border stays put
+   ;; while the canvas slides under it).
   (add-watch state/app-state ::selection-overlay
              (fn [_ _ old-state new-state]
                (when (or (not= (:selection old-state) (:selection new-state))
-                         (not= (:document  old-state) (:document  new-state)))
+                         (not= (:document  old-state) (:document  new-state))
+                         (not= (state/canvas-view old-state)
+                               (state/canvas-view new-state)))
                  (schedule-refresh!))))
   (.addEventListener js/window "resize"
                      (fn [_] (schedule-refresh!))))

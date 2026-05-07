@@ -113,7 +113,7 @@
     (.. t -style (setProperty "--canvas-pan-x" (str pan-x "px")))
     (.. t -style (setProperty "--canvas-pan-y" (str pan-y "px"))))
   (when-let [^js i (indicator-el)]
-    (set! (.-textContent i) (format-zoom-percent zoom))))
+    (u/set-text! i (format-zoom-percent zoom))))
 
 (defn- cursor-content-coord
   "Convert clientX/clientY to canvas-host content-space coords (origin
@@ -249,11 +249,13 @@
 (defn- create-indicator!
   "Build the on-canvas zoom indicator and append it to the host. A
    simple absolutely-positioned chip in the bottom-right corner, never
-   intercepts pointer events."
+   intercepts pointer events. Initial text is set immediately so the
+   chip is non-empty even before `install-watch!` mirrors the live
+   view onto it."
   [^js host]
   (let [^js i (u/el :div {:class "canvas-zoom-indicator"})]
+    (u/set-text! i (format-zoom-percent 1.0))
     (.appendChild host i)
-    (set! (.-textContent i) (format-zoom-percent 1.0))
     i))
 
 (defn install-watch!

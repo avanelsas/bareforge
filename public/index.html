@@ -126,20 +126,30 @@
       transform: translate(var(--canvas-pan-x, 0), var(--canvas-pan-y, 0))
                  scale(var(--canvas-zoom, 1));
     }
+    /* The zoom indicator is a sibling of <x-theme>, not a descendant,
+       so the theme's CSS variables don't reach it — use solid values
+       instead of var() with fallbacks. min-width keeps the chip
+       readable across the full 25%–400% range without the box
+       jiggling as digits change. */
     .canvas-zoom-indicator {
       position: absolute;
       right: 16px;
       bottom: 16px;
+      min-width: 44px;
       padding: 4px 10px;
-      font: 12px/1.2 ui-monospace, monospace;
-      color: var(--x-color-on-surface, #1a1a1a);
-      background: var(--x-color-surface, #fff);
-      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      text-align: center;
+      color: #1a1a1a;
+      background: #ffffff;
+      border: 1px solid rgba(0, 0, 0, 0.15);
       border-radius: 6px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
       pointer-events: none;
       user-select: none;
       z-index: 200;
-      opacity: 0.85;
+      opacity: 0.92;
     }
     .chrome[data-mode="preview"] .canvas-zoom-indicator { display: none; }
     /* In edit mode, suppress native text selection inside the canvas:
