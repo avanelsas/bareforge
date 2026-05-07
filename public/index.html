@@ -137,6 +137,69 @@
        instead of var() with fallbacks. min-width keeps the chip
        readable across the full 25%–400% range without the box
        jiggling as digits change. */
+    /* Contextual alignment bar — a pill at the bottom-center of the
+       canvas-host, visible only when the selection contains 2+ free-
+       placement nodes. Sits above the zoom indicator (z-index 200)
+       and below modals (≥ 1000). The body-level <x-theme> exposes
+       --x-color-* tokens to every descendant, so the bar uses the
+       same surface / border / text colours as the chrome panels and
+       toolbar — fallbacks below for the (rare) case the theme isn't
+       providing them yet. */
+    .align-bar {
+      position: absolute;
+      left: 50%;
+      bottom: 16px;
+      transform: translateX(-50%);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 6px;
+      background: var(--x-color-surface, #ffffff);
+      color: var(--x-color-on-surface, #1a1a1a);
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      z-index: 210;
+      user-select: none;
+    }
+    .align-bar[data-hidden] { display: none; }
+    .chrome[data-mode="preview"] .align-bar { display: none; }
+    .align-bar-divider {
+      width: 1px;
+      height: 20px;
+      margin: 0 2px;
+      background: var(--x-color-border, rgba(127, 127, 127, 0.2));
+    }
+    /* CSS-only tooltip on each align-bar button. We avoid BareDOM's
+       x-tooltip here because nesting it inside the bar's inline-flex
+       layout squishes the popover to one character per line. The
+       `nowrap` keeps the tip on a single line; the inverse-of-surface
+       colours give it good contrast against the bar regardless of
+       theme (light theme → dark tip, dark theme → light tip). */
+    .align-bar-tip {
+      position: relative;
+      display: inline-flex;
+    }
+    .align-bar-tip[data-tip]:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 3px 8px;
+      font: 11px/1.4 system-ui, -apple-system, sans-serif;
+      color: var(--x-color-surface, #ffffff);
+      background: var(--x-color-on-surface, #1a1a1a);
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 220;
+      animation: align-bar-tip-fade 120ms ease-out 250ms both;
+    }
+    @keyframes align-bar-tip-fade {
+      from { opacity: 0; transform: translate(-50%, 4px); }
+      to   { opacity: 1; transform: translate(-50%, 0); }
+    }
     .canvas-zoom-indicator {
       position: absolute;
       right: 16px;
