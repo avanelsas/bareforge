@@ -20,7 +20,18 @@
             [bareforge.state :as state]
             [bareforge.util.dom :as u]))
 
-;; --- pure: derive the visibility flags from app-state ------------------
+;; --- pure: selection projection + visibility ---------------------------
+
+(defn- selection-doc-ids
+  "Pure: project `app-state` into the de-duplicated, root-stripped,
+   canonical id vector that every align action operates on."
+  [app-state]
+  (->> (state/selected-ids app-state)
+       (map #(canvas/canonical-node-id %))
+       distinct
+       (remove #{"root"})
+       (remove nil?)
+       vec))
 
 (defn bar-state
   "Pure: project app-state into `{:visible? :can-distribute?}`. The
@@ -28,30 +39,41 @@
    distribute buttons enable separately at 3+."
   [app-state]
   (let [doc   (:document app-state)
-        ids   (->> (state/selected-ids app-state)
-                   (map #(canvas/canonical-node-id %))
-                   distinct
-                   (remove #{"root"})
-                   (remove nil?))
-        nodes (keep #(m/get-node doc %) ids)]
+        nodes (keep #(m/get-node doc %) (selection-doc-ids app-state))]
     {:visible?        (align/alignable?     (vec nodes))
      :can-distribute? (align/distributable? (vec nodes))}))
 
 ;; --- effectful: commit a planner result --------------------------------
 
+(defn- dom-size
+  "Live `offsetWidth / offsetHeight` for `id`'s rendered element.
+   Returns nil when the element isn't in the index (stale id, or a
+   template-clone that never rendered) so the caller can drop the
+   entry."
+  [id]
+  (when-let [^js el (canvas/dom-for-id id)]
+    {:width  (.-offsetWidth  el)
+     :height (.-offsetHeight el)}))
+
 (defn- selected-rects
-  "Read the current selection's free-placement rects. Returns
-   `[rect ...]` ready for the planner — order preserved."
+  "Read the current selection's free-placement rects. Width / height
+   come from the live DOM (`offsetWidth / offsetHeight`) since fresh
+   free nodes don't carry explicit `:w` / `:h` in the doc model;
+   x / y come from the doc layout (defaulting to 0). Order matches
+   the selection."
   []
   (let [s     @state/app-state
         doc   (:document s)
-        ids   (->> (state/selected-ids s)
-                   (map #(canvas/canonical-node-id %))
-                   distinct
-                   (remove #{"root"})
-                   (remove nil?))
-        nodes (keep #(some-> (m/get-node doc %) (assoc :id %)) ids)]
-    (align/nodes->rects nodes)))
+        ids   (selection-doc-ids s)]
+    (vec
+     (keep
+      (fn [id]
+        (let [node (m/get-node doc id)]
+          (when (and node
+                     (= :free (get-in node [:layout :placement])))
+            (when-let [size (dom-size id)]
+              (align/rect-from-node-and-size (assoc node :id id) size)))))
+      ids))))
 
 (defn- commit-positions!
   "Apply a vector of new rects (`{:id :left :top :w :h}`) onto the

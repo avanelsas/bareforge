@@ -116,47 +116,43 @@
   "Public set of valid `kind` keywords for `align-rects`."
   #{:left :cx :right :top :cy :bottom})
 
+(defn- free-placement?
+  "Pure: `:layout :placement` is `:free`. The doc model only exposes
+   `:layout :x` / `:layout :y` for `:free` nodes — flow / background
+   nodes get their position from layout / their parent's stylesheet,
+   so neither alignment nor distribution semantics fit them."
+  [node]
+  (= :free (get-in node [:layout :placement])))
+
 (defn alignable?
-  "Pure: should the align/distribute toolbar appear for `selected-nodes`?
-   True when at least two nodes have numeric `:layout :x / :y / :w /
-   :h` — non-numeric (CSS-string) sizes are filtered upstream by the
-   caller. Independent of which axis the user picks."
+  "Pure: should the align/distribute toolbar be visible for the
+   `nodes` projected from the current selection? True when 2+ nodes
+   have `:placement :free`. The pure math operates on rects, but
+   reads w/h off the live DOM at action time — fresh free-placement
+   nodes commonly have only `{:layout {:placement :free :x N :y M}}`
+   (no `:w` / `:h`), so checking those keys here would hide the bar
+   for every realistic free node."
   [nodes]
-  (let [n (count (filter
-                  (fn [{:keys [layout]}]
-                    (and (number? (:x layout))
-                         (number? (:y layout))
-                         (number? (:w layout))
-                         (number? (:h layout))))
-                  nodes))]
-    (>= n 2)))
+  (>= (count (filter free-placement? nodes)) 2))
 
 (defn distributable?
   "Pure: like `alignable?` but the threshold is 3 — distribute
    needs first / last anchors plus at least one middle rect."
   [nodes]
-  (let [n (count (filter
-                  (fn [{:keys [layout]}]
-                    (and (number? (:x layout))
-                         (number? (:y layout))
-                         (number? (:w layout))
-                         (number? (:h layout))))
-                  nodes))]
-    (>= n 3)))
+  (>= (count (filter free-placement? nodes)) 3))
 
 ;; --- doc → rects helper -------------------------------------------------
 
-(defn nodes->rects
-  "Pure: lift `nodes` (each with `:id` and a numeric-layout `:layout`)
-   into a vector of `{:id :left :top :w :h}` ready for align-rects /
-   distribute-rects. Drops nodes without numeric coords so the math
-   never sees an `nil`. Order is preserved."
-  [nodes]
-  (vec
-   (keep
-    (fn [{:keys [id layout]}]
-      (let [{:keys [x y w h]} layout]
-        (when (and (number? x) (number? y) (number? w) (number? h))
-          {:id id :left x :top y :w w :h h})))
-    nodes)))
+(defn rect-from-node-and-size
+  "Pure: given a `:placement :free` node and a measured `{:width
+   :height}` (typically from `offsetWidth / offsetHeight`), build the
+   `{:id :left :top :w :h}` shape the planner expects. Falls back to
+   0 for missing `:x` / `:y` so a freshly-created free node still
+   produces a valid rect."
+  [{:keys [id layout]} {:keys [width height]}]
+  {:id    id
+   :left  (or (:x layout) 0)
+   :top   (or (:y layout) 0)
+   :w     width
+   :h     height})
 

@@ -115,36 +115,42 @@
 
 ;; --- alignable? / distributable? --------------------------------------
 
-(defn- node [x y w h]
-  {:layout {:x x :y y :w w :h h}})
+(defn- free-node
+  ([] {:layout {:placement :free}})
+  ([x y] {:layout {:placement :free :x x :y y}}))
 
-(deftest alignable-needs-two-numeric-layouts
+(defn- flow-node []
+  {:layout {:placement :flow}})
+
+(deftest alignable-needs-two-free-nodes
   (is (false? (align/alignable? [])))
-  (is (false? (align/alignable? [(node 0 0 10 10)])))
-  (is (true?  (align/alignable? [(node 0 0 10 10) (node 5 5 10 10)])))
-  (testing "non-numeric layout doesn't count"
-    (is (false? (align/alignable? [(node 0 0 10 10)
-                                   {:layout {:width "100px"}}]))
-        "a CSS-string sized node leaves only one numeric — fewer than two"))
-  (testing "no layout at all → nope"
+  (is (false? (align/alignable? [(free-node)])))
+  (is (true?  (align/alignable? [(free-node) (free-node)])))
+  (testing "flow nodes don't count"
+    (is (false? (align/alignable? [(free-node) (flow-node)])))
+    (is (true?  (align/alignable? [(free-node) (free-node) (flow-node)]))
+        "two free among any total — flow ignored, free count ≥ 2"))
+  (testing "no :placement key at all → not free → not alignable"
     (is (false? (align/alignable? [{} {} {}])))))
 
-(deftest distributable-needs-three-numeric-layouts
-  (is (false? (align/distributable?
-               [(node 0 0 10 10) (node 1 1 10 10)])))
-  (is (true?  (align/distributable?
-               [(node 0 0 10 10) (node 1 1 10 10) (node 2 2 10 10)]))))
+(deftest distributable-needs-three-free-nodes
+  (is (false? (align/distributable? [(free-node) (free-node)])))
+  (is (true?  (align/distributable? [(free-node) (free-node) (free-node)]))))
 
-;; --- nodes->rects ------------------------------------------------------
+;; --- rect-from-node-and-size -------------------------------------------
 
-(deftest nodes->rects-filters-non-numeric
-  (let [nodes [{:id "a" :layout {:x 10 :y 20 :w 30 :h 40}}
-               {:id "b" :layout {:width "100px"}}     ;; no x/y → drop
-               {:id "c" :layout {:x 50 :y 60 :w 70 :h 80}}]
-        rects (align/nodes->rects nodes)]
-    (is (= 2 (count rects)))
-    (is (= "a" (-> rects (nth 0) :id)))
-    (is (= "c" (-> rects (nth 1) :id)))))
+(deftest rect-from-node-and-size-pulls-x-y-from-layout
+  (let [node {:id "n_3" :layout {:placement :free :x 50 :y 30}}
+        out  (align/rect-from-node-and-size node {:width 120 :height 40})]
+    (is (= {:id "n_3" :left 50 :top 30 :w 120 :h 40} out))))
+
+(deftest rect-from-node-and-size-defaults-missing-x-y
+  (testing "Fresh free node with no explicit :x / :y still produces a
+            valid rect at the origin so align math doesn't see nil."
+    (let [node {:id "n_5" :layout {:placement :free}}
+          out  (align/rect-from-node-and-size node {:width 50 :height 50})]
+      (is (= 0 (:left out)))
+      (is (= 0 (:top  out))))))
 
 (deftest alignment-kinds-set
   (is (= #{:left :cx :right :top :cy :bottom} align/alignment-kinds)))
