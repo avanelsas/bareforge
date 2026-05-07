@@ -126,6 +126,12 @@
       transform: translate(var(--canvas-pan-x, 0), var(--canvas-pan-y, 0))
                  scale(var(--canvas-zoom, 1));
     }
+    /* Preview mode neutralises the canvas-view: the page should render
+       at 1:1 with native scroll, regardless of how the user pans or
+       zooms in edit mode. Edit-mode state is preserved (no reset on
+       toggle), so toggling back returns to where they were. */
+    .chrome[data-mode="preview"] .canvas-host       { overflow: auto; }
+    .chrome[data-mode="preview"] #bareforge-canvas-theme { transform: none; }
     /* The zoom indicator is a sibling of <x-theme>, not a descendant,
        so the theme's CSS variables don't reach it — use solid values
        instead of var() with fallbacks. min-width keeps the chip

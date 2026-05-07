@@ -102,6 +102,15 @@
 (defn- ^js theme-el     [] (unchecked-get view-state "theme"))
 (defn- ^js indicator-el [] (unchecked-get view-state "indicator"))
 
+(defn- edit-mode?
+  "Preview mode neutralises every canvas-view gesture so the rendered
+   page behaves like the deployed site — native scroll, no pan,
+   typing a space stays a space. The CSS sibling rules cover the
+   visual side (`.chrome[data-mode=\"preview\"] …`); this guard
+   covers the event side."
+  []
+  (= :edit (:mode @state/app-state)))
+
 (defn- apply-view!
   "Mirror `view` onto the theme element's CSS variables and the
    indicator's text. The transform itself is declared in CSS using
@@ -129,10 +138,11 @@
    wheel pans. Both branches preventDefault so the canvas host does
    not also scroll natively (it has `overflow: hidden`, so this is
    defensive — and it stops the page behind the editor from scrolling
-   when the wheel reaches the body)."
+   when the wheel reaches the body). Preview mode bails out so native
+   scroll on the rendered page works."
   [^js e]
   (let [^js host (host-el)]
-    (when host
+    (when (and host (edit-mode?))
       (.preventDefault e)
       (let [zoom?    (or (.-ctrlKey e) (.-metaKey e))
             [cx cy]  (cursor-content-coord host (.-clientX e) (.-clientY e))
@@ -204,11 +214,13 @@
 (defn- on-keydown!
   "Track Space so a subsequent left-button drag pans. Ignored when the
    keystroke targets an editable widget — typing a space into an
-   inspector field must not arm pan."
+   inspector field must not arm pan. Preview mode is also ignored so
+   spaces typed into the rendered page stay spaces."
   [^js e]
   (when (and (= " " (.-key e))
              (not (.-repeat e))
-             (not (space-down?)))
+             (not (space-down?))
+             (edit-mode?))
     (let [^js t (.-target e)
           tag   (some-> t .-tagName .toLowerCase)
           ce?   (and t (.-isContentEditable t))]
