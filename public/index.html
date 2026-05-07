@@ -108,9 +108,40 @@
     .canvas-host {
       grid-area: canvas;
       padding: 24px;
-      overflow: auto;
+      /* Pan is gesture-driven (Space-drag, wheel) rather than native
+         scroll, so we hide overflow and let the inner x-theme's
+         transform handle positioning. Cursor reflects the pan-gesture
+         state via data-pan-armed / data-pan-active. */
+      overflow: hidden;
       position: relative;
     }
+    .canvas-host[data-pan-armed]  { cursor: grab; }
+    .canvas-host[data-pan-active] { cursor: grabbing; }
+    /* The reconciler renders into #bareforge-canvas-theme. Driving
+       zoom + pan through CSS variables on this element means the
+       canvas-view watcher updates three style props per change rather
+       than rebuilding a transform string each tick. */
+    #bareforge-canvas-theme {
+      transform-origin: 0 0;
+      transform: translate(var(--canvas-pan-x, 0), var(--canvas-pan-y, 0))
+                 scale(var(--canvas-zoom, 1));
+    }
+    .canvas-zoom-indicator {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      padding: 4px 10px;
+      font: 12px/1.2 ui-monospace, monospace;
+      color: var(--x-color-on-surface, #1a1a1a);
+      background: var(--x-color-surface, #fff);
+      border: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
+      border-radius: 6px;
+      pointer-events: none;
+      user-select: none;
+      z-index: 200;
+      opacity: 0.85;
+    }
+    .chrome[data-mode="preview"] .canvas-zoom-indicator { display: none; }
     /* In edit mode, suppress native text selection inside the canvas:
        Shift-click and marquee-drag would otherwise paint a browser
        text-selection band over the rendered preview, fighting our own

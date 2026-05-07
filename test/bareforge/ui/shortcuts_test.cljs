@@ -62,6 +62,17 @@
 (deftest dispatch-cmd-n-news
   (is (= :new (k/dispatch (assoc base :key "n" :meta? true)))))
 
+(deftest dispatch-cmd-0-resets-zoom
+  (is (= :reset-zoom (k/dispatch (assoc base :key "0" :meta? true)))))
+
+(deftest dispatch-cmd-0-ignored-in-editable
+  (is (= :noop (k/dispatch (assoc base :key "0" :meta? true
+                                  :tag-name "INPUT")))))
+
+(deftest dispatch-plain-0-is-noop
+  (testing "typing '0' without Cmd is just a digit, not a zoom reset"
+    (is (= :noop (k/dispatch (assoc base :key "0"))))))
+
 (deftest dispatch-cmd-shift-s-is-noop
   (testing "Cmd+Shift+S is reserved (Save As / OS screenshot)"
     (is (= :noop (k/dispatch (assoc base :key "s" :meta? true :shift? true))))))

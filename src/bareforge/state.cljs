@@ -20,7 +20,13 @@
                   ;; First-run welcome tour. {:open? :step} mirrored
                   ;; onto the live `<x-welcome-tour>` element via a
                   ;; single `::welcome-tour` watch installed at mount.
-                  :welcome-tour   {:open? false :step 0}}
+                  :welcome-tour   {:open? false :step 0}
+                  ;; Canvas viewport: zoom factor + pan translate.
+                  ;; Driven onto CSS variables on the canvas-theme
+                  ;; element by `render.canvas-view/install-watch!`.
+                  ;; Lives under `:ui` so it bypasses history — a pan
+                  ;; or zoom is a viewport gesture, not a doc edit.
+                  :canvas         {:zoom 1.0 :pan-x 0.0 :pan-y 0.0}}
    :dirty?       false
    :project-file {:handle nil :name "untitled.json"}})
 
@@ -208,3 +214,26 @@
 
 (defn mark-saved! []
   (swap! app-state assoc :dirty? false))
+
+;; --- canvas viewport ----------------------------------------------------
+
+(def ^:const default-canvas-view
+  "Identity viewport: 1× zoom, no pan. Reset target for Cmd+0."
+  {:zoom 1.0 :pan-x 0.0 :pan-y 0.0})
+
+(defn canvas-view
+  "Pure: read the current canvas viewport map `{:zoom :pan-x :pan-y}`.
+   Falls back to `default-canvas-view` so a stale state shape (from a
+   pre-zoom autosave or a hot-reload) still yields sane numbers."
+  [state]
+  (or (get-in state [:ui :canvas]) default-canvas-view))
+
+(defn set-canvas-view!
+  "Replace the canvas viewport. Bypasses history (lives under :ui)."
+  [view]
+  (swap! app-state assoc-in [:ui :canvas] view))
+
+(defn reset-canvas-view!
+  "Restore the identity viewport. Bound to Cmd+0."
+  []
+  (set-canvas-view! default-canvas-view))

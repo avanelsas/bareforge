@@ -262,8 +262,15 @@
 (defn- resize-dims-for-event [^js e]
   (let [handle   (unchecked-get resize-state "handle")
         start    (read-resize-snapshot)
-        dx       (- (.-clientX e) (unchecked-get resize-state "start-cx"))
-        dy       (- (.-clientY e) (unchecked-get resize-state "start-cy"))
+        ;; Cursor deltas are in viewport (post-scale) pixels — the
+        ;; element being resized lives inside the transformed
+        ;; canvas-theme, so a 50 px cursor sweep at 2× zoom should
+        ;; resize the element by 25 doc-px. Divide the raw client
+        ;; delta by the current canvas zoom before feeding it to the
+        ;; pure resize math.
+        zoom     (:zoom (state/canvas-view @state/app-state))
+        dx       (/ (- (.-clientX e) (unchecked-get resize-state "start-cx")) zoom)
+        dy       (/ (- (.-clientY e) (unchecked-get resize-state "start-cy")) zoom)
         raw      (compute-resize-dims handle dx dy start)]
     (clamp-resize-dims handle raw start)))
 

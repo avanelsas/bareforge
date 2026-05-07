@@ -4,6 +4,7 @@
    The canvas area hosts the DOM reconciler."
   (:require [bareforge.dnd.drag :as drag]
             [bareforge.render.canvas :as canvas]
+            [bareforge.render.canvas-view :as canvas-view]
             [bareforge.render.selection :as selection]
             [bareforge.render.slot-strips :as slot-strips]
             [bareforge.state :as state]
@@ -81,6 +82,7 @@
         (build-chrome)]
     (.replaceChildren mount-el chrome)
     (canvas/mount! canvas-theme)
+    (canvas-view/install! canvas-host canvas-theme)
     (selection/install! canvas-host)
     (slot-strips/install! canvas-host)
     (theme-editor/install-watch!)
