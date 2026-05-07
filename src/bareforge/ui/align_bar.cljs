@@ -116,14 +116,16 @@
 ;; --- DOM build ---------------------------------------------------------
 
 (defn- tooltip-wrap
-  "Wrap `trigger` in an `x-tooltip` carrying a one-word `tip` so the
-   button's purpose surfaces on hover. The trigger is the child of
-   the tooltip element — BareDOM's x-tooltip uses the slotted child
-   as the hover surface and overlays the tip near it."
+  "Wrap `trigger` in a `<span>` carrying a `data-tip` attribute. A
+   CSS rule on `.align-bar-tip[data-tip]:hover::after` (in
+   `public/index.html`) renders the tip via a pseudo-element with
+   `white-space: nowrap`, so the tip is always one line wide — no
+   reliance on BareDOM's x-tooltip, which gets squished by the bar's
+   inline-flex layout."
   [tip trigger]
-  (let [^js t (u/el :x-tooltip {:text tip :delay "150" :placement "top"})]
-    (.appendChild t trigger)
-    t))
+  (let [^js s (u/el :span {:class "align-bar-tip" :data-tip tip})]
+    (.appendChild s trigger)
+    s))
 
 (defn- icon-button
   "Small square button carrying a single character glyph and an
