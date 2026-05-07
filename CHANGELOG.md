@@ -10,6 +10,50 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 Nothing yet.
 
+## [0.4.0] — 2026-05-07
+
+Three new canvas authoring features, a BareDOM bump, and four
+new components. 802 tests, zero release-build warnings.
+
+### Added
+
+- **Canvas authoring** — three new tools that work together:
+  - **Zoom + pan** (wheel / pinch zoom, middle-drag pan, zoom
+    indicator + reset).
+  - **Smart alignment guides** that snap to sibling edges /
+    centers while free-dragging, with a live overlay.
+  - **Alignment + distribution toolbar** — contextual pill above
+    the canvas for multi-selection of free-placement nodes.
+- **Hero imagery** in five onboarding templates.
+- **`./scripts/check.sh`** — runs the four PR-readiness gates
+  (clj-kondo, cljfmt, test, release build) in one command, so
+  contributors get the same signal CI does before pushing.
+- **`:release` alias** — release-cut helper that promotes
+  `[Unreleased]` in the changelog into a versioned section,
+  bumps `package.json`, verifies the BareDOM lockstep, and runs
+  the gates. Tagging and pushing stay manual.
+- **nREPL dev loop** — `shadow-cljs watch app` now also boots
+  an editor-connectable nREPL on port 7888 so CIDER / Calva can
+  evaluate live against the running app.
+- **Property-based tests** — generative test.check coverage on
+  the pure zone (node sanitization and the project-file save /
+  load round-trip), catching invariant violations the hand-
+  written cases miss.
+
+### Changed
+
+- **BareDOM 2.4.1 → 2.8.0**, onboarding `x-kinetic-canvas`
+  (effects), `x-i18n-provider` + `x-i18n` (utility / text),
+  and `x-multi-combobox` (form).
+- **CLAUDE.md** trimmed 399 → 151 lines; depth pushed into
+  topic docs under `docs/`.
+
+### Verified
+
+- 802 tests / 2379 assertions / 0 failures, 0 errors.
+- `clj-kondo`, `cljfmt`, `shadow-cljs compile test`, and
+  `shadow-cljs release app` — all clean.
+
 ## [0.3.0] — 2026-05-02
 
 Minor release. Three new editor authoring features, a templates
