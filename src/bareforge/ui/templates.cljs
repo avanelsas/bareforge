@@ -21,6 +21,7 @@
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]
             [bareforge.storage.indexeddb :as idb]
+            [bareforge.ui.template-assets :as assets]
             [bareforge.util.dom :as u]))
 
 ;; --- helpers ---------------------------------------------------------------
@@ -51,6 +52,15 @@
   [doc parent-id slot idx size]
   (ops/insert-new doc parent-id slot idx "x-spacer"
                   {:attrs {"size" size "axis" "vertical"}}))
+
+(defn- add-image
+  "Insert an x-image with `src`/`ratio`/`alt`. Uses `loading=lazy` by
+   default — the augment-spec default — and `fit=cover`. Templates
+   pass illustrations from `bareforge.ui.template-assets` so newly
+   loaded templates render imagery without external CDNs."
+  [doc parent-id slot idx src ratio alt]
+  (ops/insert-new doc parent-id slot idx "x-image"
+                  {:attrs {"src" src "ratio" ratio "alt" alt "fit" "contain"}}))
 
 ;; --- builders --------------------------------------------------------------
 
@@ -89,10 +99,16 @@
                                           "Get started free" "primary" "lg")
         {d14 :doc}            (add-button d13 cta-id "default" 1
                                           "Watch demo" "secondary" "lg")
-        ;; stats row
-        {d15 :doc}            (ops/insert-new d14 "root" "default" 7 "x-spacer"
+        ;; hero illustration — sits between the CTAs and the social-proof
+        ;; stats row, the classic "headline · subhead · CTAs · product
+        ;; visual · proof" rhythm. Self-contained SVG data URI; no CDN.
+        {d14b :doc}           (add-image d14 "root" "default" 7
+                                         assets/product-mockup-uri "5/3"
+                                         "Nimbus dashboard preview")
+        ;; stats row (indices shifted by the image insert above)
+        {d15 :doc}            (ops/insert-new d14b "root" "default" 8 "x-spacer"
                                               {:attrs {"size" "2rem" "axis" "vertical"}})
-        {d16 :doc stats-id :id} (ops/insert-new d15 "root" "default" 8 "x-grid"
+        {d16 :doc stats-id :id} (ops/insert-new d15 "root" "default" 9 "x-grid"
                                                 {:attrs {"columns" "repeat(3, 1fr)"
                                                          "gap"     "lg"
                                                          "row-gap" "lg"}})
@@ -158,10 +174,16 @@
 
 (defn- scroll-story []
   (let [d0  (m/empty-document)
-        {d1 :doc} (add-text+align d0 "root" "default" 0 "overline" "OUR STORY" "center")
-        {d2 :doc} (add-text+align d1 "root" "default" 1 "h2"
+        ;; Header banner — abstract arc through milestone dots.
+        ;; Anchors the "Our Story" beat with a piece of imagery
+        ;; before the first heading lands.
+        {d0a :doc} (add-image d0 "root" "default" 0
+                              assets/narrative-arc-uri "5/2"
+                              "Three milestones connected by a flowing arc")
+        {d1 :doc} (add-text+align d0a "root" "default" 1 "overline" "OUR STORY" "center")
+        {d2 :doc} (add-text+align d1 "root" "default" 2 "h2"
                                   "Built by developers, for developers" "center")
-        {d3 :doc} (ops/insert-new d2 "root" "default" 2 "x-spacer"
+        {d3 :doc} (ops/insert-new d2 "root" "default" 3 "x-spacer"
                                   {:attrs {"size" "2rem" "axis" "vertical"}})
 
         add-section
@@ -173,15 +195,15 @@
                 {doc''' :doc} (add-text doc'' card-id "default" 1 "body1" body)]
             doc'''))
 
-        d4 (add-section d3 3 "It started with a problem"
+        d4 (add-section d3 4 "It started with a problem"
                         "We were tired of gluing together twelve different services just to ship a login page. There had to be a better way — fewer tools, less config, more building.")
-        {d5 :doc} (ops/insert-new d4 "root" "default" 4 "x-organic-divider"
+        {d5 :doc} (ops/insert-new d4 "root" "default" 5 "x-organic-divider"
                                   {:attrs {"shape" "wave"}})
-        d6 (add-section d5 5 "From prototype to platform"
+        d6 (add-section d5 6 "From prototype to platform"
                         "Within six months the internal tool had grown into something our friends wanted to use. We opened it up, listened to feedback, and rebuilt the hard parts twice.")
-        {d7 :doc} (ops/insert-new d6 "root" "default" 6 "x-organic-divider"
+        {d7 :doc} (ops/insert-new d6 "root" "default" 7 "x-organic-divider"
                                   {:attrs {"shape" "blob-edge"}})
-        d8 (add-section d7 7 "Where we are today"
+        d8 (add-section d7 8 "Where we are today"
                         "Trusted by over ten thousand teams across 120 countries. Still a small crew, still obsessed with developer experience, still shipping every week.")]
     d8))
 
@@ -876,7 +898,12 @@
         {d8 :doc}     (add-text d7 meta "default" 1 "body2" "Alex van Elsas")
         {d9 :doc}     (add-text d8 meta "default" 2 "caption" "Apr 30, 2026")
         {d10 :doc}    (add-spacer d9 cnt "default" 5 "1.5rem")
-        {d11 :doc}    (ops/insert-new d10 cnt "default" 6 "x-divider" {})
+        ;; Editorial hero image stands in for the visual break a
+        ;; horizontal rule used to do — slot count is unchanged so
+        ;; the body-paragraph indices below stay correct.
+        {d11 :doc}    (add-image d10 cnt "default" 6
+                                 assets/editorial-spread-uri "15/7"
+                                 "Two editorial pages on a warm parchment background")
         {d12 :doc}    (add-spacer d11 cnt "default" 7 "1.5rem")
         body          ["Frameworks ship a lot of code. For a 200-page documentation site, the runtime tax is hard to justify when the content is mostly static and the interactivity is mostly local."
                        "Web components answer the encapsulation question at the platform level. The browser already understands custom elements, shadow DOM, slots, and CSS variables — there's no shim layer between you and the rendered output."
