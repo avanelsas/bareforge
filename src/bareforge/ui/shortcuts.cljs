@@ -87,7 +87,7 @@
 
    {:category :view       :keys "Cmd+K"          :label "Open command palette"}
    {:category :view       :keys "?"              :label "Show this cheat sheet"}
-   {:category :view       :keys "Cmd+scroll"     :label "Zoom canvas at cursor"}
+   {:category :view       :keys "Cmd/Ctrl+scroll" :label "Zoom canvas at cursor"}
    {:category :view       :keys "Wheel"          :label "Pan canvas"}
    {:category :view       :keys "Space+drag"     :label "Pan canvas"}
    {:category :view       :keys "Cmd+0"          :label "Reset zoom & pan"}])
