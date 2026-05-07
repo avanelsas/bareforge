@@ -144,12 +144,13 @@
 (defn- divider [] (u/el :div {:class "align-bar-divider"}))
 
 (defn- build-bar
-  "Construct the bar DOM. Each button is wrapped in an x-tooltip so a
-   one-word descriptor surfaces on hover — the unicode glyphs alone
-   don't carry enough meaning. A pointerdown listener on the bar
-   stops propagation so clicks on the bar don't bubble to the canvas's
-   marquee handler (without it, a click would commit an empty marquee
-   and clear the selection before the button's `click` event fires)."
+  "Construct the bar DOM. Each button is wrapped via `tooltip-wrap`
+   so a one-word descriptor surfaces on hover — the unicode glyphs
+   alone don't carry enough meaning. A pointerdown listener on the
+   bar stops propagation so clicks on the bar don't bubble to the
+   canvas's marquee handler (without it, a click would commit an
+   empty marquee and clear the selection before the button's `click`
+   event fires)."
   []
   (let [bar      (u/el :div {:class "align-bar" :data-hidden ""})
         align-l  (icon-button "⇤" "Align left"               (fn [_] (align! :left)))
