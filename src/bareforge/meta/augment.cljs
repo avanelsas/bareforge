@@ -1823,6 +1823,49 @@
     {:name "required" :kind :boolean}
     {:name "name" :kind :string-short}]})
 
+(def ^:private x-kinetic-canvas
+  {:category :effects
+   :label    "Kinetic canvas"
+   :properties
+   [{:name "type"       :kind :enum
+     :choices ["starfield" "bubbles" "matrix"] :default "starfield"}
+    {:name "variant"    :kind :enum
+     :choices ["motion" "twinkle"]}
+    {:name "speed"      :kind :string-short}
+    {:name "density"    :kind :string-short}
+    {:name "fullscreen" :kind :boolean}
+    {:name "paused"     :kind :boolean}]})
+
+(def ^:private x-i18n-provider
+  {:category :utility
+   :label    "I18n provider"
+   :properties
+   [{:name "src" :kind :url}
+    {:name "locale" :kind :string-short}
+    {:name "fallback-locale" :kind :string-short}]})
+
+(def ^:private x-i18n
+  {:category :text
+   :label    "I18n"
+   :properties
+   [{:name "key" :kind :string-short}
+    {:name "params" :kind :string-short}]})
+
+(def ^:private x-multi-combobox
+  {:category :form
+   :label    "Multi combobox"
+   :properties
+   [{:name "value"       :kind :string-short}
+    {:name "placeholder" :kind :string-short}
+    {:name "name"        :kind :string-short}
+    {:name "disabled"    :kind :boolean}
+    {:name "required"    :kind :boolean}
+    {:name "open"        :kind :boolean}
+    {:name "placement"   :kind :enum
+     :choices ["bottom-start" "bottom-end" "top-start" "top-end"]
+     :default "bottom-start"}
+    {:name "max"         :kind :number}]})
+
 (def augment
   "{tag-name → augmentation-map}. Hand-curated. Omissions are intentional —
    tags not present here fall through to the raw-attribute inspector."
@@ -1914,4 +1957,8 @@
    "x-combobox"           x-combobox
    "x-skeleton-group"     x-skeleton-group
    "x-welcome-tour"       x-welcome-tour
-   "x-file-upload"        x-file-upload})
+   "x-file-upload"        x-file-upload
+   "x-kinetic-canvas"     x-kinetic-canvas
+   "x-i18n-provider"      x-i18n-provider
+   "x-i18n"               x-i18n
+   "x-multi-combobox"     x-multi-combobox})
