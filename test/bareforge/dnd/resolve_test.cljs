@@ -182,7 +182,7 @@
                     :free-initial-x  10
                     :free-initial-y  20)]
     (is (= {:src-id "n_3" :x 60 :y 90}
-           (resolve/plan-free-move snap 150 120))
+           (resolve/plan-free-move snap 150 120 1))
         "delta (50, 70) added to initial (10, 20) → (60, 90)")))
 
 (deftest plan-free-move-handles-negative-delta
@@ -193,7 +193,7 @@
                     :free-initial-x  100
                     :free-initial-y  100)]
     (is (= {:src-id "n_5" :x 50 :y 80}
-           (resolve/plan-free-move snap 150 180)))))
+           (resolve/plan-free-move snap 150 180 1)))))
 
 (deftest plan-free-move-zero-delta-keeps-initial
   (let [snap (assoc empty-snapshot
@@ -203,4 +203,33 @@
                     :free-initial-x  42
                     :free-initial-y  17)]
     (is (= {:src-id "n_7" :x 42 :y 17}
-           (resolve/plan-free-move snap 100 100)))))
+           (resolve/plan-free-move snap 100 100 1)))))
+
+(deftest plan-free-move-divides-cursor-delta-by-zoom
+  (testing "Cursor deltas are in viewport pixels — at zoom > 1 the
+            element should move fewer doc-pixels than the cursor."
+    (let [snap (assoc empty-snapshot
+                      :source-node-id  "n_9"
+                      :start-x         100
+                      :start-y         100
+                      :free-initial-x  0
+                      :free-initial-y  0)]
+      (is (= {:src-id "n_9" :x 50 :y 25}
+             (resolve/plan-free-move snap 200 150 2))
+          "100 px viewport delta at 2× zoom = 50 doc-px in x;
+           50 px viewport delta = 25 doc-px in y")
+      (is (= {:src-id "n_9" :x 200 :y 200}
+             (resolve/plan-free-move snap 200 200 0.5))
+          "100 px viewport delta at 0.5× zoom = 200 doc-px"))))
+
+(deftest plan-free-move-nil-zoom-falls-back-to-1
+  (testing "A nil zoom (e.g. from a stale state shape) reads as 1 so
+            the planner stays defined."
+    (let [snap (assoc empty-snapshot
+                      :source-node-id  "n_z"
+                      :start-x         0
+                      :start-y         0
+                      :free-initial-x  0
+                      :free-initial-y  0)]
+      (is (= {:src-id "n_z" :x 30 :y 40}
+             (resolve/plan-free-move snap 30 40 nil))))))

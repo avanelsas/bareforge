@@ -86,7 +86,11 @@
    {:category :file       :keys "Cmd+N"          :label "New project"}
 
    {:category :view       :keys "Cmd+K"          :label "Open command palette"}
-   {:category :view       :keys "?"              :label "Show this cheat sheet"}])
+   {:category :view       :keys "?"              :label "Show this cheat sheet"}
+   {:category :view       :keys "Cmd+scroll"     :label "Zoom canvas at cursor"}
+   {:category :view       :keys "Wheel"          :label "Pan canvas"}
+   {:category :view       :keys "Space+drag"     :label "Pan canvas"}
+   {:category :view       :keys "Cmd+0"          :label "Reset zoom & pan"}])
 
 (def category-labels
   "Human labels and ordering for the cheat sheet category groups."
@@ -186,6 +190,10 @@
       (and meta? (= "k" key) (not shift?) (not alt?)
            (not editable?))
       :show-command-palette
+
+      (and meta? (= "0" key) (not shift?) (not alt?)
+           (not editable?))
+      :reset-zoom
 
       (and meta? alt? c-letter? (not shift?)
            has-selection?
@@ -446,6 +454,7 @@
                                 ((:show-shortcuts actions)))
       :show-command-palette (do (.preventDefault e)
                                 ((:show-command-palette actions)))
+      :reset-zoom (do (.preventDefault e) (state/reset-canvas-view!))
       :exit-text-edit (do (.preventDefault e) (inline-edit/teardown!))
       :deselect (do (.preventDefault e) (state/select-clear!))
       nil)))

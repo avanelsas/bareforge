@@ -147,6 +147,29 @@
     (is (= [] (get-in @state/app-state [:history :future]))))
   (state/reset-state!))
 
+(deftest canvas-view-defaults-and-mutators
+  (state/reset-state!)
+  (is (= state/default-canvas-view
+         (state/canvas-view @state/app-state))
+      "fresh state has identity viewport")
+  (state/set-canvas-view! {:zoom 2.0 :pan-x 100 :pan-y -50})
+  (is (= {:zoom 2.0 :pan-x 100 :pan-y -50}
+         (state/canvas-view @state/app-state)))
+  (testing "viewport changes bypass history"
+    (is (= [] (get-in @state/app-state [:history :past]))))
+  (state/reset-canvas-view!)
+  (is (= state/default-canvas-view
+         (state/canvas-view @state/app-state))
+      "reset! restores identity")
+  (state/reset-state!))
+
+(deftest canvas-view-falls-back-on-stale-shape
+  (testing "A state shape missing :ui :canvas (e.g. an autosave from
+            before zoom/pan) reads as the identity viewport rather
+            than nil-bombing the watcher."
+    (let [s (assoc (fresh) :ui {})]
+      (is (= state/default-canvas-view (state/canvas-view s))))))
+
 ;; --- selection helpers ---------------------------------------------------
 
 (deftest selected-ids-defaults-empty

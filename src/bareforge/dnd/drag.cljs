@@ -18,6 +18,7 @@
             [bareforge.doc.ops :as ops]
             [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
+            [bareforge.render.canvas-view :as canvas-view]
             [bareforge.render.slot-strips :as slot-strips]
             [bareforge.state :as state]
             [bareforge.ui.palette :as palette]
@@ -449,11 +450,16 @@
 (defn- update-free-drag-position!
   "Visual feedback during a :free drag. Uses CSS transform so we
    never touch the document until pointerup — keeps history clean
-   and avoids a thousand-entry undo stack from a single drag."
+   and avoids a thousand-entry undo stack from a single drag.
+   Divides the cursor delta by the canvas zoom: a `translate` on a
+   child of a scaled parent is itself scaled at render time, so to
+   make the element visually follow the cursor 1:1 we shrink the
+   translate by the same factor."
   [^js e]
   (when-let [^js el (canvas/dom-for-id (source-node-id))]
-    (let [dx (- (.-clientX e) (start-x))
-          dy (- (.-clientY e) (start-y))]
+    (let [zoom (:zoom (state/canvas-view @state/app-state))
+          dx   (/ (- (.-clientX e) (start-x)) zoom)
+          dy   (/ (- (.-clientY e) (start-y)) zoom)]
       (set! (.. el -style -transform)
             (str "translate(" dx "px," dy "px)")))))
 
@@ -462,12 +468,14 @@
    commit in a single `ops/set-layout` pair. The reconciler runs on
    rAF after commit; its `apply-layout-style!` writes a fresh style
    attribute without the transform, so the element lands cleanly at
-   its new coordinates."
+   its new coordinates. Reads the current canvas zoom so the planner
+   can convert viewport deltas back into doc coordinates."
   [^js e]
-  (let [doc (:document @state/app-state)
+  (let [doc  (:document @state/app-state)
+        zoom (:zoom (state/canvas-view @state/app-state))
         {:keys [src-id x y]}
         (resolve/plan-free-move (snapshot-drag-state)
-                                (.-clientX e) (.-clientY e))
+                                (.-clientX e) (.-clientY e) zoom)
         doc' (-> doc
                  (ops/set-layout src-id :x x)
                  (ops/set-layout src-id :y y))]
@@ -667,7 +675,13 @@
   ;; empty space. Preview mode disables both drag and marquee entirely
   ;; so native click / pointer events flow through to the user's own
   ;; components.
-  (when (not= :preview (:mode @state/app-state))
+  ;;
+  ;; Space-held pan wins over everything: when the user is mid-pan the
+  ;; gesture must not also drop a marquee or pick up a node. We give
+  ;; `canvas-view/try-begin-pan!` first refusal — it returns truthy if
+  ;; it consumed the pointerdown, and we bail out of the rest.
+  (when (and (not= :preview (:mode @state/app-state))
+             (not (canvas-view/try-begin-pan! e)))
     (let [id (canvas/element->node-id (.-target e))]
       (cond
         (or (nil? id) (= id "root")) (start-marquee! e)
