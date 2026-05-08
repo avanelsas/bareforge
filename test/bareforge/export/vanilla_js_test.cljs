@@ -500,6 +500,69 @@
                          "\"app.cart.db/is-popover-open\": false")
           "literal payload bypasses x and emits the JSON-encoded false"))))
 
+(defn- single-step-ops-doc
+  "Minimal doc with one stateful group whose declared actions cover
+   the four single-step operations not exercised by the cart fixture:
+   `:set` (with a literal payload), `:increment`, `:decrement`, and
+   `:clear`. Pins the emit shape for each — bytewise."
+  []
+  {:next-id 2
+   :root {:id "root" :tag "x-container"
+          :attrs {} :props {} :text nil :inner-html nil
+          :layout {:placement :flow}
+          :slots {"default"
+                  [{:id "panel" :tag "x-card" :name "panel"
+                    :attrs {} :props {} :text nil :inner-html nil
+                    :layout {:placement :flow}
+                    :slots {}
+                    :fields  [{:name :id :type :number :default 0 :locked? true}
+                              {:name :score :type :number :default 0}
+                              {:name :note  :type :string :default ""}]
+                    :actions [{:name :set-note     :operation :set
+                               :target-field :note
+                               :payload [{:literal "ok"}]}
+                              {:name :inc-score    :operation :increment
+                               :target-field :score}
+                              {:name :dec-score    :operation :decrement
+                               :target-field :score}
+                              {:name :clear-score  :operation :clear
+                               :target-field :score}]}]}}})
+
+(deftest single-step-set-emits-value-narrowed-handler
+  (let [files  (vjs/generate (single-step-ops-doc) {:title "ops-demo"})
+        events (get files "panel/events.js")]
+    (is (str/includes? events "app.panel.events/set-note"))
+    (is (re-find #"regEvent\(\"app\.panel\.events/set-note\", \[trimV, path\(\"app\.panel\.db/note\"\)\], \(_, \[v\]\) => v\);"
+                 events)
+        ":set without :of-group emits a bare `(_, [v]) => v` body — qualifyMap only kicks in for collection targets")))
+
+(deftest single-step-increment-emits-coalescing-add-one
+  (let [events (get (vjs/generate (single-step-ops-doc) {}) "panel/events.js")]
+    (is (re-find #"regEvent\(\"app\.panel\.events/inc-score\", \[trimV, path\(\"app\.panel\.db/score\"\)\], \(v\) => \(v \|\| 0\) \+ 1\);"
+                 events)
+        ":increment defaults nil to 0 then adds 1 — exact emit shape")))
+
+(deftest single-step-decrement-emits-coalescing-sub-one
+  (let [events (get (vjs/generate (single-step-ops-doc) {}) "panel/events.js")]
+    (is (re-find #"regEvent\(\"app\.panel\.events/dec-score\", \[trimV, path\(\"app\.panel\.db/score\"\)\], \(v\) => \(v \|\| 0\) - 1\);"
+                 events))))
+
+(deftest single-step-clear-emits-null-handler
+  (let [events (get (vjs/generate (single-step-ops-doc) {}) "panel/events.js")]
+    (is (re-find #"regEvent\(\"app\.panel\.events/clear-score\", \[trimV, path\(\"app\.panel\.db/score\"\)\], \(\) => null\);"
+                 events)
+        ":clear emits a no-arg handler returning null")))
+
+(deftest single-step-ops-skip-qualify-and-deepequal-imports
+  (testing "scalar-only :set / :increment / :decrement / :clear actions don't "
+    "pull qualifyMap or deepEqual into the events module — both imports are "
+    "behaviour-gated, regression here would mean dead code in user exports"
+    (let [events (get (vjs/generate (single-step-ops-doc) {}) "panel/events.js")]
+      (is (not (str/includes? events "qualifyMap"))
+          "no :of-group target on any single-step → qualifyMap not imported")
+      (is (not (str/includes? events "deepEqual"))
+          "no :remove anywhere → deepEqual not imported"))))
+
 (deftest template-iteration-wraps-in-display-contents-div
   ;; The doc above doesn't nest a template instance inside the stateful
   ;; cart, but iteration can still be exercised by adding a template-

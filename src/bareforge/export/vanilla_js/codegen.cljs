@@ -390,68 +390,61 @@
       (throw (ex-info (str "unknown action op: " operation)
                       {:op operation})))))
 
-(defn- emit-action
-  "Declared action: set / toggle / increment / decrement / clear /
-   add / remove. `:add` and `:remove` pass their payload through
-   `qualifyMap` when the target field is `:of-group` — same
-   re-keying contract the CLJS plugin honours so a payload
-   dispatched from one record shape (e.g. a product record) lands
-   under the target collection's template ns (e.g. cart-item.db/*).
+(defn- emit-single-step-action
+  "Single-step shape: `regEvent(id, [trimV, path(field)], handler)`.
+   The handler is value-narrowed — receives the field's prior value
+   (`v`) and the trimmed payload (`[x]`). `:add` and `:remove` pass
+   their payload through `qualifyMap` when the target is `:of-group`,
+   mirroring the CLJS plugin so a payload dispatched from one record
+   shape lands under the target collection's template ns. Pinned by
+   existing tests; bytewise unchanged."
+  [app-ns group ev-id step]
+  (let [{:keys [operation target-field]} step
+        fk     (field-key app-ns (:ns-name group) target-field)
+        og     (field-of-group group target-field)
+        q-x    (qualify-expr app-ns og "x")
+        prefix (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], ")
+        body   (case operation
+                 :set       (str "(_, [v]) => " (qualify-expr app-ns og "v"))
+                 :toggle    "(v) => !v"
+                 :increment "(v) => (v || 0) + 1"
+                 :decrement "(v) => (v || 0) - 1"
+                 :clear     "() => null"
+                 :add       (str "(v, [x]) => [...v, " q-x "]")
+                 :remove    (str "(v, [x]) => { const target = " q-x "; "
+                                 "return v.filter(item => !deepEqual(item, target)); }")
+                 (throw (ex-info (str "unknown action op: " operation)
+                                 {:op operation})))]
+    (str prefix body ");")))
 
-   Two emission shapes:
-   - **Single-step** (1 entry in `:steps`): legacy `regEvent(id,
-     [trimV, path(field)], handler)` — value-narrowed handler. Pinned
-     by existing tests; bytewise unchanged.
-   - **Multi-step** (≥ 2 entries): `regEvent(id, [trimV],
-     handler-over-full-db)`. The handler reduces over the steps,
-     applying each step's transformation to the rolling db. Each step
-     respects its own `:payload` (literal-only in v1) so a step like
-     `:set is-popover-open false` lands the literal verbatim while a
-     `:add` step still consumes the dispatched record."
+(defn- emit-multi-step-action
+  "Multi-step shape: `regEvent(id, [trimV], handler-over-full-db)`.
+   Threads the rolling db through each step's mutator via
+   `step-mutator-expr`. Each step respects its own `:payload`
+   (literal-only in v1) so `:set is-popover-open false` lands the
+   literal verbatim while a `:add` step still consumes the dispatched
+   record `x`."
+  [app-ns group ev-id steps]
+  (let [body (reduce
+              (fn [acc step]
+                (str "(db => " (step-mutator-expr app-ns group step "db")
+                     ")(" acc ")"))
+              "db0"
+              steps)]
+    (str "regEvent(\"" ev-id "\", [trimV], "
+         "(db0, [x]) => " body ");")))
+
+(defn- emit-action
+  "Declared action — dispatches to one of two shapes based on step
+   count. Single-step uses the legacy path-narrowed handler; multi-step
+   threads the full db through a reducer."
   [app-ns group action]
-  (let [{:keys [name]} action
-        aname (cljs.core/name name)
-        ev-id (str app-ns "." (:ns-name group) ".events/" aname)
+  (let [ev-id (str app-ns "." (:ns-name group)
+                   ".events/" (cljs.core/name (:name action)))
         steps (actions/step-list action)]
     (if (= 1 (count steps))
-      (let [{:keys [operation target-field]} (first steps)
-            fk  (field-key app-ns (:ns-name group) target-field)
-            og  (field-of-group group target-field)
-            q-x (qualify-expr app-ns og "x")]
-        (case operation
-          :set
-          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-               "(_, [v]) => " (qualify-expr app-ns og "v") ");")
-          :toggle
-          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-               "(v) => !v);")
-          :increment
-          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-               "(v) => (v || 0) + 1);")
-          :decrement
-          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-               "(v) => (v || 0) - 1);")
-          :clear
-          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-               "() => null);")
-          :add
-          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-               "(v, [x]) => [...v, " q-x "]);")
-          :remove
-          (str "regEvent(\"" ev-id "\", [trimV, path(\"" fk "\")], "
-               "(v, [x]) => { const target = " q-x "; "
-               "return v.filter(item => !deepEqual(item, target)); });")
-          (throw (ex-info (str "unknown action op: " operation)
-                          {:op operation}))))
-      ;; Multi-step: thread db through each step's mutator.
-      (let [body (reduce
-                  (fn [acc step]
-                    (str "(db => " (step-mutator-expr app-ns group step "db")
-                         ")(" acc ")"))
-                  "db0"
-                  steps)]
-        (str "regEvent(\"" ev-id "\", [trimV], "
-             "(db0, [x]) => " body ");")))))
+      (emit-single-step-action app-ns group ev-id (first steps))
+      (emit-multi-step-action app-ns group ev-id steps))))
 
 (defn- step-needs-qualify?
   "True when a single step's operation + target combination forces
