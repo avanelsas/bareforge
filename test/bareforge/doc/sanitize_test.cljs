@@ -142,6 +142,25 @@
   (is (= [] (sn/unsafe-findings (doc-with-icon "<svg viewBox=\"0 0 1 1\"/>"))))
   (is (= [] (sn/unsafe-findings (doc-with-attr "href" "/page")))))
 
+(deftest unsafe-findings-reports-deep-path
+  (let [icon  {:id "icon-1" :tag "x-icon" :attrs {} :props {} :slots {}
+               :inner-html "<svg><script>x</script></svg>"
+               :layout {:placement :flow}}
+        inner {:id "inner-1" :tag "x-container" :attrs {} :props {}
+               :slots {"default" [icon]}
+               :layout {:placement :flow}}
+        outer {:id "outer-1" :tag "x-container" :attrs {} :props {}
+               :slots {"default" [inner]}
+               :layout {:placement :flow}}
+        doc   (assoc-in (m/empty-document) [:root :slots "default"] [outer])
+        f     (sn/unsafe-findings doc)]
+    (is (= 1 (count f)))
+    (is (= [:root :slots "default" 0
+            :slots "default" 0
+            :slots "default" 0
+            :inner-html]
+           (:path (first f))))))
+
 (deftest sanitize-doc-strips-icon-script
   (let [doc      (doc-with-icon
                   "<svg><script>alert(1)</script><path d=\"M0\"/></svg>")

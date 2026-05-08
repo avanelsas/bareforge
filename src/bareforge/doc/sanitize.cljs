@@ -120,19 +120,20 @@
 ;; --- doc walker -----------------------------------------------------------
 
 (defn- walk-nodes-with-path
-  "Eager seq of [path node] pairs covering every node in the doc,
-   path is the data-structure path (`get-in doc path`) ending at a
-   `::node`. Mirrors `model/walk-nodes` but keeps the structural
+  "Depth-first lazy seq of [path node] pairs covering every node in the
+   doc, where `path` is the data-structure path (`get-in doc path`)
+   ending at a node. Mirrors `model/walk-nodes` but keeps the structural
    path so callers can pinpoint findings."
   [doc]
-  (let [out (volatile! [])]
-    (letfn [(rec [path node]
-              (vswap! out conj [path node])
-              (doseq [[sname kids] (m/slot-entries node)]
-                (dotimes [i (count kids)]
-                  (rec (conj path :slots sname i) (nth kids i)))))]
-      (rec [:root] (:root doc))
-      @out)))
+  (letfn [(walk [path node]
+            (cons [path node]
+                  (mapcat (fn [[sname kids]]
+                            (mapcat (fn [i kid]
+                                      (walk (conj path :slots sname i) kid))
+                                    (range)
+                                    kids))
+                          (m/slot-entries node))))]
+    (walk [:root] (:root doc))))
 
 (defn unsafe-findings
   "Walk `doc` and return a vector of `{:path :reason :preview}` maps,
