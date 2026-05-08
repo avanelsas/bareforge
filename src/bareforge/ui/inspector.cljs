@@ -14,13 +14,13 @@
   (:require [bareforge.doc.actions :as actions]
             [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
-            [bareforge.meta.design-tokens :as tokens]
             [bareforge.meta.events :as meta-events]
             [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]
             [bareforge.ui.inspector.model :as model]
             [bareforge.ui.inspector.scrub :as scrub]
+            [bareforge.ui.inspector.tokens :as tokens]
             [bareforge.ui.state-panel :as state-panel]
             [bareforge.util.coerce :as c]
             [bareforge.util.dom :as u]
@@ -58,69 +58,6 @@
 (defn- read-event-value ^js [^js e]
   (or (some-> e .-detail (.-value))
       (some-> e .-target .-value)))
-
-;; --- CSS-var autocomplete (M2.4) ----------------------------------------
-
-(def ^:private color-datalist-id  "bareforge-tokens-color")
-(def ^:private length-datalist-id "bareforge-tokens-length")
-
-(defn- ^js build-token-datalist!
-  "Build a `<datalist>` element populated with `var(--x-…)` options
-   for every token entry. Called once at install time per category."
-  [^js doc id entries]
-  (let [^js dl (.createElement doc "datalist")]
-    (.setAttribute dl "id" id)
-    (doseq [{:keys [name]} entries]
-      (let [^js o (.createElement doc "option")]
-        (.setAttribute o "value" (tokens/var-of name))
-        (.appendChild dl o)))
-    dl))
-
-(defn install-token-datalists!
-  "Mount one shared `<datalist>` per token category at the top of the
-   document body. Inspector widgets reference these via `list=` so
-   typing `var(` in a colour or length field surfaces native browser
-   autocomplete with theme tokens. Idempotent — calling twice replaces
-   the existing datalists rather than duplicating them."
-  []
-  (let [^js doc js/document
-        ^js body (.-body doc)]
-    (doseq [id [color-datalist-id length-datalist-id]]
-      (when-let [^js prev (.getElementById doc id)]
-        (.removeChild (.-parentNode prev) prev)))
-    (.appendChild body (build-token-datalist! doc color-datalist-id
-                                              (tokens/tokens-for :color)))
-    (.appendChild body (build-token-datalist! doc length-datalist-id
-                                              (tokens/tokens-for :length)))))
-
-(defn- attach-datalist-to-shadow-input!
-  "BareDOM's `x-search-field` wraps a real `<input part=\"input\">` in
-   its open shadow root. Two things are needed for native datalist
-   autocomplete to work in that setup:
-
-   1. `list=` has to be on the actual `<input>`, not the custom-element
-      host (BareDOM doesn't observe / forward `list`).
-   2. The referenced `<datalist>` has to live in the same tree as the
-      input. The HTML spec scopes the `list` lookup to the input's
-      containing root, so a body-level datalist is invisible to an
-      input inside a shadow root.
-
-   We clone the global datalist (mounted by `install-token-datalists!`)
-   into the field's shadow root on the next animation frame, and set
-   `list=` on the inner input. Idempotent — the clone only happens
-   when the shadow root doesn't already carry a datalist with the
-   target id."
-  [^js host datalist-id]
-  (letfn [(try-attach! []
-            (if-let [^js sr (.-shadowRoot host)]
-              (when-let [^js inner (.querySelector sr "[part=input]")]
-                (when-not (.querySelector sr
-                                          (str "datalist[id='" datalist-id "']"))
-                  (when-let [^js src (js/document.getElementById datalist-id)]
-                    (.appendChild sr (.cloneNode src true))))
-                (.setAttribute inner "list" datalist-id))
-              (js/requestAnimationFrame try-attach!)))]
-    (js/requestAnimationFrame try-attach!)))
 
 (defn- read-event-checked ^js [^js e]
   (let [d (.-detail e)]
@@ -189,7 +126,7 @@
         node-id   (:id node)
         attr-name (:name prop)]
     (when color?
-      (attach-datalist-to-shadow-input! el color-datalist-id))
+      (tokens/attach-datalist-to-shadow-input! el tokens/color-datalist-id))
     (when current (u/set-attr! el :value current))
     (u/on! el :x-search-field-input
            (fn [^js e]
@@ -262,7 +199,7 @@
                     (tag-widget! prop-name prop-kind))
         current (getter node)]
     (when datalist-id
-      (attach-datalist-to-shadow-input! el datalist-id))
+      (tokens/attach-datalist-to-shadow-input! el datalist-id))
     (when current (u/set-attr! el :value current))
     (u/on! el event
            (fn [^js e]
@@ -316,7 +253,7 @@
                  :write-fn      (fn [doc id v]
                                   (ops/set-layout doc id layout-key v))
                  :coerce-fn     c/nil-if-empty
-                 :datalist-id   length-datalist-id}))
+                 :datalist-id   tokens/length-datalist-id}))
 
 (defn- build-placement-field
   "Editable x-select for the node's `:layout :placement`. Currently
@@ -1033,7 +970,7 @@
                       (tag-widget! (:name prop) "text" transform))
         ids       (mapv :id nodes)]
     (when color?
-      (attach-datalist-to-shadow-input! el color-datalist-id))
+      (tokens/attach-datalist-to-shadow-input! el tokens/color-datalist-id))
     (when (and (not mixed?) value (not= "" value))
       (u/set-attr! el :value value))
     (when mixed?
