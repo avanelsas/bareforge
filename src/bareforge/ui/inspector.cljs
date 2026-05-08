@@ -2,10 +2,11 @@
   "Right-hand inspector panel. Auto-generates editable form fields for
    the currently-selected node by consuming `meta/registry/get-meta`.
 
-   Pure helpers (inspector-model, editor-spec, current-value) are
-   unit-tested; the effectful `create` builds the DOM, installs a
-   watcher on `:document`/`:selection`, and wires each editor's input
-   event back to `doc.ops/*` plus `state/commit!`.
+   Pure helpers (inspector-model, editor-spec, current-value, …) live
+   in `bareforge.ui.inspector.model` and are unit-tested. The effectful
+   `create` here builds the DOM, installs a watcher on
+   `:document`/`:selection`, and wires each editor's input event back
+   to `doc.ops/*` plus `state/commit!`.
 
    v1 scope: attributes section (full editing) + slots section
    (read-only summary) + layout section (read-only placement).
@@ -18,114 +19,11 @@
             [bareforge.meta.registry :as registry]
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]
+            [bareforge.ui.inspector.model :as model]
             [bareforge.ui.state-panel :as state-panel]
             [bareforge.util.coerce :as c]
             [bareforge.util.dom :as u]
             [clojure.string :as str]))
-
-;; --- pure ----------------------------------------------------------------
-
-(defn- aria-attr?
-  "Attributes that BareDOM maps to aria-* (either an explicit `aria-*`
-   prefix or the conventional `label` attribute, which every seeded
-   component uses as aria-label)."
-  [attr-name]
-  (and (string? attr-name)
-       (or (= "label" attr-name)
-           (str/starts-with? attr-name "aria-"))))
-
-(defn display-label
-  "Human-readable field label for a property. Rules:
-   1. If the property has `:display-name`, use it verbatim.
-   2. If the attribute is aria-related, suffix with ` (aria)`.
-   3. Otherwise use the raw attribute name."
-  [{:keys [name display-name]}]
-  (cond
-    display-name         display-name
-    (aria-attr? name)    (str name " (aria)")
-    :else                name))
-
-(defn editor-spec
-  "Decide which BareDOM element renders a given property descriptor.
-   Returns `{:kind :widget-tag :options}`. Unknown / unsupported kinds
-   fall back to a plain text search field."
-  [{:keys [kind choices]}]
-  (case kind
-    :boolean     {:kind :boolean     :widget-tag "x-switch"}
-    :enum        {:kind :enum        :widget-tag "x-select"  :choices choices}
-    :string-long {:kind :string-long :widget-tag "x-text-area"}
-    :number      {:kind :number      :widget-tag "x-search-field" :type "number"}
-    :string-short {:kind :string-short :widget-tag "x-search-field"}
-    ;; :unknown / :color / :url / :date / :string-short fallback
-    {:kind (or kind :unknown) :widget-tag "x-search-field"}))
-
-(defn- transform-for-commit
-  "Apply a named transform to a user-entered value before committing
-   it as an HTML attribute. Returns the value unchanged when no
-   transform matches."
-  [transform v]
-  (case transform
-    :grid-columns (when (and (string? v) (not= "" v))
-                    (if (re-matches #"\d+" v)
-                      (str "repeat(" v ", 1fr)")
-                      v))
-    v))
-
-(defn- transform-for-display
-  "Reverse a named transform so the stored attribute value is shown
-   in a human-friendly form in the inspector widget."
-  [transform v]
-  (case transform
-    :grid-columns (if-let [[_ n] (and (string? v) (re-matches #"repeat\((\d+),\s*1fr\)" v))]
-                    n
-                    v)
-    v))
-
-(defn current-value
-  "Return the current attr or prop value for a given node + property
-   descriptor. Booleans read from :props (keywordised name); everything
-   else reads from :attrs (string name). Values with a `:transform`
-   are reverse-transformed for display."
-  [node {:keys [name kind transform]}]
-  (let [raw (if (= :boolean kind)
-              (get-in node [:props (keyword name)])
-              (get-in node [:attrs name]))]
-    (if transform
-      (transform-for-display transform raw)
-      raw)))
-
-(defn inspector-model
-  "Project app-state into the view model the inspector needs. Returns
-   nil when no meaningful selection exists. The selection id may be a
-   template-instance clone's DOM id (`__seed<N>` suffix); canonicalise
-   before looking it up in the doc so canvas-tap on a clone reveals
-   the underlying template node.
-
-   Single-select returns `{:node :meta}`. Multi-select (>1 distinct
-   doc nodes) returns `{:multi true :nodes [...] :tags #{...}}`; the
-   renderer uses that to show shared-attribute editors."
-  [app-state]
-  (let [ids     (state/selected-ids app-state)
-        doc-ids (->> ids (map canvas/canonical-node-id) (remove nil?) distinct)]
-    (cond
-      (empty? doc-ids)
-      nil
-
-      (> (count doc-ids) 1)
-      (let [nodes (->> doc-ids
-                       (keep #(m/get-node (:document app-state) %))
-                       vec)]
-        (when (seq nodes)
-          {:multi true
-           :nodes nodes
-           :tags  (set (map :tag nodes))}))
-
-      :else
-      (let [doc-id (first doc-ids)
-            node   (m/get-node (:document app-state) doc-id)]
-        (when node
-          {:node node
-           :meta (registry/get-meta (:tag node))})))))
 
 ;; --- effectful: editor widgets -------------------------------------------
 
@@ -337,7 +235,7 @@
 (defn- build-boolean [node prop]
   (let [el       (-> (u/el :x-switch {:class "inspector-field-widget"})
                      (tag-widget! (:name prop) "boolean"))
-        current? (boolean (current-value node prop))]
+        current? (boolean (model/current-value node prop))]
     (when current? (u/set-attr! el :checked ""))
     (u/on! el :x-switch-change
            (fn [^js e]
@@ -347,7 +245,7 @@
 (defn- build-enum [node prop]
   (let [sel-el  (-> (u/el :x-select {:class "inspector-field-widget"})
                     (tag-widget! (:name prop) "enum"))
-        current (current-value node prop)
+        current (model/current-value node prop)
         options (for [choice (:choices prop)]
                   (let [o (u/el :option {:value choice})]
                     (u/set-text! o choice)
@@ -362,7 +260,7 @@
 (defn- build-text-area [node prop]
   (let [el      (-> (u/el :x-text-area {:class "inspector-field-widget"})
                     (tag-widget! (:name prop) "text-long"))
-        current (current-value node prop)]
+        current (model/current-value node prop)]
     (when current (u/set-attr! el :value current))
     (u/on! el :x-text-area-input
            (fn [^js e]
@@ -381,7 +279,7 @@
                             (cond-> {:class "inspector-field-widget"}
                               numeric? (assoc :type "number")))
                       (tag-widget! (:name prop) "text" transform))
-        current   (current-value node prop)
+        current   (model/current-value node prop)
         node-id   (:id node)
         attr-name (:name prop)]
     (when color?
@@ -390,7 +288,7 @@
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)
-                   v (if transform (transform-for-commit transform v) v)]
+                   v (if transform (model/transform-for-commit transform v) v)]
                (commit-attr! node-id attr-name v))))
     (cond-> el
       numeric?
@@ -402,7 +300,7 @@
                      ;; do nothing on a fresh component.
                      (let [doc (:document @state/app-state)
                            n   (m/get-node doc node-id)]
-                       (c/parse-number-or-zero (current-value n prop))))
+                       (c/parse-number-or-zero (model/current-value n prop))))
         :commit-fn! (fn [new-val first?]
                       (let [doc  (:document @state/app-state)
                             doc' (ops/set-attr doc node-id attr-name (str new-val))]
@@ -412,7 +310,7 @@
         :step       1}))))
 
 (defn- build-widget [node prop]
-  (let [spec (editor-spec prop)]
+  (let [spec (model/editor-spec prop)]
     (case (:kind spec)
       :boolean     (build-boolean node prop)
       :enum        (build-enum node prop)
@@ -1019,7 +917,7 @@
   (let [props (:properties meta)
         rows  (for [p props]
                 (field-row-with-binding
-                 (display-label p) (build-widget node p)
+                 (model/display-label p) (build-widget node p)
                  node p all-fields))]
     (if (seq props)
       (section "Attributes" rows)
@@ -1202,7 +1100,7 @@
    agrees, the first node's value otherwise. `:mixed?` is true iff
    the values disagree."
   [nodes prop]
-  (let [vs (mapv #(current-value % prop) nodes)]
+  (let [vs (mapv #(model/current-value % prop) nodes)]
     {:value  (first vs)
      :mixed? (not (apply = vs))}))
 
@@ -1237,7 +1135,7 @@
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)
-                   v (if transform (transform-for-commit transform v) v)]
+                   v (if transform (model/transform-for-commit transform v) v)]
                (multi-set-attr! ids (:name prop) v))))
     el))
 
@@ -1302,7 +1200,7 @@
     el))
 
 (defn- build-multi-widget [nodes prop]
-  (let [spec (editor-spec prop)]
+  (let [spec (model/editor-spec prop)]
     (case (:kind spec)
       :boolean     (build-multi-boolean   nodes prop)
       :enum        (build-multi-enum      nodes prop)
@@ -1313,7 +1211,7 @@
   (let [props (shared-properties tags)
         body  (if (seq props)
                 (for [p props]
-                  (field-row (display-label p) (build-multi-widget nodes p)))
+                  (field-row (model/display-label p) (build-multi-widget nodes p)))
                 [(u/set-text! (u/el :div {:class "inspector-empty"})
                               "No shared attributes between the selected components.")])]
     (section (str (count nodes) " components selected — Shared attributes")
@@ -1361,7 +1259,7 @@
     ;; the optional display transform (e.g. grid-columns repeat → N).
     (let [raw (or (get-in node [:attrs prop-name]) "")]
       (if transform
-        (or (transform-for-display transform raw) "")
+        (or (model/transform-for-display transform raw) "")
         raw))))
 
 (defn- sync-widget-value!
@@ -2713,7 +2611,7 @@
         panel      (u/el :div {:id    "bareforge-inspector"
                                :class "panel panel-inspector"}
                          [tabs body state-body])]
-    (render! body (inspector-model @state/app-state))
+    (render! body (model/inspector-model @state/app-state))
     (add-watch state/app-state ::inspector
                (fn [_ _ old-state new-state]
                  (let [sel-changed? (not= (:selection old-state)
@@ -2725,7 +2623,7 @@
                                         (not= (get-in old-state [:ui :expanded-seeds])
                                               (get-in new-state [:ui :expanded-seeds])))
                        new-model    (when (or sel-changed? doc-changed? ui-changed?)
-                                      (inspector-model new-state))]
+                                      (model/inspector-model new-state))]
                    (cond
                      (or sel-changed? ui-changed?)
                      (render! body new-model)
@@ -2744,7 +2642,7 @@
                      nil
 
                      doc-changed?
-                     (let [old-model   (inspector-model old-state)
+                     (let [old-model   (model/inspector-model old-state)
                            old-node    (:node old-model)
                            new-node    (:node new-model)
                            ;; Compare fields with auto-locked entries
