@@ -164,6 +164,14 @@
     (let [out (html/render-html (simple-snapshot) nil)]
       (is (not (str/includes? out "rel=\"modulepreload\""))))))
 
+(deftest render-html-is-deterministic
+  (testing "two renders of the same snapshot produce byte-identical output — "
+    "the export is consumed by golden-file diffs and downstream byte-level "
+    "comparisons (SRI manifests, CI fixtures), so any nondeterminism breaks them"
+    (let [snap (simple-snapshot)
+          opts {:cdn-version "2.4.0" :title "Stable"}]
+      (is (= (html/render-html snap opts) (html/render-html snap opts))))))
+
 (deftest render-html-with-manifest-emits-sri-preload-for-each-tag
   (testing "passing :integrity-manifest causes every BareDOM tag the doc loads "
     "to gain a <link rel=modulepreload integrity=…> entry — SRI-binding "

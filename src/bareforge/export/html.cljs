@@ -187,6 +187,81 @@
        "object-src 'none'; "
        "base-uri 'self'"))
 
+(defn- select-csp
+  "Pick the CSP policy. Explicit `csp` wins. Otherwise an `import-base`
+   override means scripts come from somewhere other than the CDN, so
+   default to the stricter self-only policy; without an override fall
+   back to the CDN-aware default."
+  [csp import-base]
+  (or csp (if import-base csp-bundle csp-cdn)))
+
+(defn- theme-open-tag
+  "Build the opening `<x-theme preset=\"…\" style=\"…\">` tag from a
+   resolved preset name and optional `{css-var value}` overrides."
+  [preset overrides]
+  (str "<x-theme preset=\"" (escape-attr preset) "\""
+       (when-let [s (overrides->style overrides)]
+         (str " style=\"" (escape-attr s) "\""))
+       ">"))
+
+(defn- style-block
+  "Static shell CSS plus the optional canvas-width constraint that
+   matches the editor's content column. `canvas-w` may be nil/0 — in
+   that case no width constraint is emitted."
+  [canvas-w]
+  (str
+   "  <style>\n"
+   "    :root { color-scheme: light dark; }\n"
+   "    html, body { margin: 0; padding: 0; min-height: 100%; }\n"
+   "    body { font-family: system-ui, sans-serif; }\n"
+   "    x-theme {\n"
+   "      display: block;\n"
+   "      min-height: 100vh;\n"
+   "      background: var(--x-color-bg);\n"
+   "      color: var(--x-color-text);\n"
+   "    }\n"
+   "    [data-bareforge-positioned] {\n"
+   "      position: relative;\n"
+   "      isolation: isolate;\n"
+   "    }\n"
+   "    [data-bareforge-positioned] > [data-bareforge-placement=\"background\"] {\n"
+   "      z-index: 0;\n"
+   "      pointer-events: none;\n"
+   "    }\n"
+   "    [data-bareforge-positioned]\n"
+   "      > :not([data-bareforge-placement=\"background\"]):not([data-bareforge-placement=\"free\"]) {\n"
+   "      position: relative;\n"
+   "      z-index: 1;\n"
+   "    }\n"
+   (when (pos-int? canvas-w)
+     (str "    body > x-theme > :first-child {\n"
+          "      max-width: " canvas-w "px;\n"
+          "      margin-left: auto;\n"
+          "      margin-right: auto;\n"
+          "    }\n"))
+   "  </style>\n"))
+
+(defn- head-block
+  "Full `<head>…</head>` for the exported shell. The modulepreload
+   block is empty when no manifest is wired (current default until
+   BareDOM publishes integrity.json) — in that case the dynamic
+   imports below behave exactly as before, with only the CSP meta as
+   defence."
+  [{:keys [title csp tags base-url canvas-w integrity-manifest]}]
+  (str
+   "<head>\n"
+   "  <meta charset=\"utf-8\">\n"
+   "  <meta http-equiv=\"Content-Security-Policy\" content=\""
+   (escape-attr csp) "\">\n"
+   "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+   "  <title>" (escape-text title) "</title>\n"
+   (style-block canvas-w)
+   (integrity/modulepreload-block integrity-manifest tags base-url)
+   "  <script type=\"module\">\n"
+   (import-block tags base-url)
+   "  </script>\n"
+   "</head>\n"))
+
 (defn render-html
   "Pure: assemble a full HTML document string for the given
    persistable slice `{:document :theme}`. Options map:
@@ -213,73 +288,24 @@
          cdn-version (or cdn-version versions/baredom-version)
          base-url    (or import-base
                          (str cdn-base "@" cdn-version "/dist/"))
-         ;; A custom :import-base means scripts no longer come from
-         ;; the CDN — fall through to the stricter self-only policy
-         ;; unless the caller explicitly opts in to a different one.
-         csp         (or csp (if import-base csp-bundle csp-cdn))
          ;; `x-theme` is the shell wrapper in the exported HTML, not a
          ;; document node — ensure its definition is imported so the
          ;; wrapper registers and applies its tokens.
          tags        (conj (collect-tags document) "x-theme")
          preset      (or (:base-preset theme) "default")
-         overrides   (:overrides theme)
-         theme-open  (str "<x-theme preset=\"" (escape-attr preset) "\""
-                          (when-let [s (overrides->style overrides)]
-                            (str " style=\"" (escape-attr s) "\""))
-                          ">")
-         canvas-w    (get-in document [:canvas :width])
-         body        (serialize-node (:root document))]
+         canvas-w    (get-in document [:canvas :width])]
      (str
       "<!doctype html>\n"
       "<html lang=\"en\">\n"
-      "<head>\n"
-      "  <meta charset=\"utf-8\">\n"
-      "  <meta http-equiv=\"Content-Security-Policy\" content=\""
-      (escape-attr csp) "\">\n"
-      "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
-      "  <title>" (escape-text title) "</title>\n"
-      "  <style>\n"
-      "    :root { color-scheme: light dark; }\n"
-      "    html, body { margin: 0; padding: 0; min-height: 100%; }\n"
-      "    body { font-family: system-ui, sans-serif; }\n"
-      "    x-theme {\n"
-      "      display: block;\n"
-      "      min-height: 100vh;\n"
-      "      background: var(--x-color-bg);\n"
-      "      color: var(--x-color-text);\n"
-      "    }\n"
-      "    [data-bareforge-positioned] {\n"
-      "      position: relative;\n"
-      "      isolation: isolate;\n"
-      "    }\n"
-      "    [data-bareforge-positioned] > [data-bareforge-placement=\"background\"] {\n"
-      "      z-index: 0;\n"
-      "      pointer-events: none;\n"
-      "    }\n"
-      "    [data-bareforge-positioned]\n"
-      "      > :not([data-bareforge-placement=\"background\"]):not([data-bareforge-placement=\"free\"]) {\n"
-      "      position: relative;\n"
-      "      z-index: 1;\n"
-      "    }\n"
-      (when (pos-int? canvas-w)
-        (str "    body > x-theme > :first-child {\n"
-             "      max-width: " canvas-w "px;\n"
-             "      margin-left: auto;\n"
-             "      margin-right: auto;\n"
-             "    }\n"))
-      "  </style>\n"
-      ;; Modulepreload + SRI block. Empty when no manifest is wired
-      ;; (current default until BareDOM publishes integrity.json) —
-      ;; in that case the dynamic imports below behave exactly as
-      ;; before, with only the CSP meta as defence.
-      (integrity/modulepreload-block integrity-manifest tags base-url)
-      "  <script type=\"module\">\n"
-      (import-block tags base-url)
-      "  </script>\n"
-      "</head>\n"
+      (head-block {:title              title
+                   :csp                (select-csp csp import-base)
+                   :tags               tags
+                   :base-url           base-url
+                   :canvas-w           canvas-w
+                   :integrity-manifest integrity-manifest})
       "<body>\n"
-      "  " theme-open "\n"
-      "    " body "\n"
+      "  " (theme-open-tag preset (:overrides theme)) "\n"
+      "    " (serialize-node (:root document)) "\n"
       "  </x-theme>\n"
       "</body>\n"
       "</html>\n"))))
