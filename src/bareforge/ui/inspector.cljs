@@ -20,6 +20,7 @@
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]
             [bareforge.ui.inspector.model :as model]
+            [bareforge.ui.inspector.scrub :as scrub]
             [bareforge.ui.state-panel :as state-panel]
             [bareforge.util.coerce :as c]
             [bareforge.util.dom :as u]
@@ -121,101 +122,6 @@
               (js/requestAnimationFrame try-attach!)))]
     (js/requestAnimationFrame try-attach!)))
 
-;; --- numeric drag (M2.1) -----------------------------------------------
-
-(defn- ^js attach-scrub-meta!
-  "Stash a scrub spec on a widget element. `field-row` reads it back
-   to wire a horizontal-drag scrubber on the row's label. Spec map:
-   `{:read-fn :commit-fn! :step}`. Returns the element for thread-
-   friendly use in builder pipelines."
-  [^js el spec]
-  (set! (.-bareforgeScrub el) spec)
-  el)
-
-(defn- read-scrub-meta [^js el]
-  (when el (.-bareforgeScrub el)))
-
-(defonce ^:private scrub-state
-  ;; One global drag-in-flight tracker is enough — only one inspector
-  ;; row can be scrubbed at a time, and a label captures the pointer
-  ;; so other handlers don't compete.
-  #js {:active? false
-       :start-x 0
-       :start-val 0
-       :first? true
-       :pointer-id nil
-       :label nil
-       :input nil
-       :commit-fn nil
-       :step 1})
-
-(defn- on-scrub-move! [^js e]
-  (when (.-active? scrub-state)
-    (.preventDefault e)
-    (let [dx        (- (.-clientX e) (.-start-x scrub-state))
-          step-px   (.-step scrub-state)
-          mult      (if (.-shiftKey e) 10 1)
-          start-val (.-start-val scrub-state)
-          new-val   (+ start-val (* dx step-px mult))
-          ;; Snap to an integer when the step is integer-valued; for
-          ;; sub-unit steps fall through with the raw float.
-          rounded   (if (zero? (mod step-px 1))
-                      (js/Math.round new-val)
-                      new-val)
-          ^js input (.-input scrub-state)
-          first?    (.-first? scrub-state)
-          commit-fn (.-commit-fn scrub-state)]
-      (commit-fn rounded first?)
-      (when input (u/set-attr! input :value (str rounded)))
-      (when first? (set! (.-first? scrub-state) false)))))
-
-(defn- end-scrub! []
-  (let [^js label (.-label scrub-state)
-        pid       (.-pointer-id scrub-state)]
-    (when (and label pid)
-      (try (.releasePointerCapture label pid) (catch :default _ nil)))
-    (set! (.-active? scrub-state) false)
-    (set! (.-label scrub-state) nil)
-    (set! (.-input scrub-state) nil)
-    (set! (.-commit-fn scrub-state) nil)
-    (set! (.-pointer-id scrub-state) nil)
-    (.removeEventListener js/window "pointermove" on-scrub-move!)
-    (.removeEventListener js/window "pointerup"   end-scrub!)
-    (.removeEventListener js/window "pointercancel" end-scrub!)))
-
-(defn- pointer-scrub!
-  "Wire pointerdown on `label-el` so a horizontal drag scrubs the
-   numeric value of `input-el`. `read-fn` returns the current numeric
-   value (nil to suppress the gesture). `commit-fn!` is called as
-   `(new-val first?)`; the first call pushes a fresh history entry
-   via `state/commit!`, every later call uses `state/commit-coalesced!`
-   so the whole drag undoes as a single step. Shift multiplies the
-   step by 10."
-  [^js label-el ^js input-el read-fn commit-fn! step]
-  (.. label-el -classList (add "is-scrubbable"))
-  (u/on! label-el :pointerdown
-         (fn [^js e]
-           (let [v (read-fn)]
-             (when (number? v)
-               (.preventDefault e)
-               (try (.setPointerCapture label-el (.-pointerId e))
-                    (catch :default _ nil))
-               (set! (.-active? scrub-state)    true)
-               (set! (.-start-x scrub-state)    (.-clientX e))
-               (set! (.-start-val scrub-state)  v)
-               (set! (.-first? scrub-state)     true)
-               (set! (.-pointer-id scrub-state) (.-pointerId e))
-               (set! (.-label scrub-state)      label-el)
-               (set! (.-input scrub-state)      input-el)
-               (set! (.-commit-fn scrub-state)  commit-fn!)
-               (set! (.-step scrub-state)       (or step 1))
-               ;; Window-level move/up means the drag survives the
-               ;; pointer leaving the label, which is the natural
-               ;; gesture (drag continues until release).
-               (.addEventListener js/window "pointermove"   on-scrub-move!)
-               (.addEventListener js/window "pointerup"     end-scrub!)
-               (.addEventListener js/window "pointercancel" end-scrub!))))))
-
 (defn- read-event-checked ^js [^js e]
   (let [d (.-detail e)]
     (cond
@@ -292,7 +198,7 @@
                (commit-attr! node-id attr-name v))))
     (cond-> el
       numeric?
-      (attach-scrub-meta!
+      (scrub/attach-scrub-meta!
        {:read-fn   (fn []
                      ;; Empty / non-numeric attr starts the drag at 0
                      ;; so unset fields are still scrubbable from
@@ -450,7 +356,7 @@
            (fn [^js e]
              (let [v (read-event-value e)]
                (commit-with! ops/set-layout node-id layout-key (c/parse-length-value v)))))
-    (attach-scrub-meta!
+    (scrub/attach-scrub-meta!
      el
      {:read-fn    (fn []
                      ;; Default to 0 when the field is empty so the
@@ -866,9 +772,9 @@
           :on-unbind  #(commit-unbind! (:id node) prop-name)})
         label-el  (u/set-text! (u/el :div {:class "inspector-field-label"}) label)
         head      (u/el :div {:class "inspector-field-head"} [label-el chip])]
-    (when-let [scrub (read-scrub-meta widget)]
-      (pointer-scrub! label-el widget
-                      (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
+    (when-let [scrub (scrub/read-scrub-meta widget)]
+      (scrub/pointer-scrub! label-el widget
+                            (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
     (u/el :div {:class "inspector-field"} [head widget popover])))
 
 ;; --- section builders ----------------------------------------------------
@@ -907,9 +813,9 @@
 
 (defn- field-row [label widget]
   (let [label-el (u/set-text! (u/el :div {:class "inspector-field-label"}) label)]
-    (when-let [scrub (read-scrub-meta widget)]
-      (pointer-scrub! label-el widget
-                      (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
+    (when-let [scrub (scrub/read-scrub-meta widget)]
+      (scrub/pointer-scrub! label-el widget
+                            (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
     (u/el :div {:class "inspector-field"}
           [label-el widget])))
 
@@ -983,9 +889,9 @@
         widget   (build-text-field node)
         label-el (u/set-text! (u/el :div {:class "inspector-field-label"}) "text")
         head     (u/el :div {:class "inspector-field-head"} [label-el chip])]
-    (when-let [scrub (read-scrub-meta widget)]
-      (pointer-scrub! label-el widget
-                      (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
+    (when-let [scrub (scrub/read-scrub-meta widget)]
+      (scrub/pointer-scrub! label-el widget
+                            (:read-fn scrub) (:commit-fn! scrub) (:step scrub)))
     (u/el :div {:class "inspector-field"} [head widget popover])))
 
 (defn- text-section [{:keys [node]}]
