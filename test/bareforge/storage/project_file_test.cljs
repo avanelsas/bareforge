@@ -56,3 +56,31 @@
   (let [out (pf/validate-project {:format "bareforge-project"})]
     (is (= :spec (:kind out))
         ":spec :unsafe distinction lets the UI explain *why* a file was refused")))
+
+;; --- classify-payload: load-decision dispatch ---------------------------
+
+(deftest classify-payload-ok-on-clean-document
+  (is (= {:status :ok}
+         (pf/classify-payload (well-formed-project (m/empty-document))))))
+
+(deftest classify-payload-unparseable-on-nil
+  (testing "deserialize failure (nil) classifies distinctly from spec
+            failure — the user-visible alert wording differs"
+    (is (= {:status :unparseable} (pf/classify-payload nil)))))
+
+(deftest classify-payload-invalid-on-spec-failure
+  (let [out (pf/classify-payload {:format "bareforge-project"})]
+    (is (= :invalid (:status out)))
+    (is (some? (:explain out))
+        "the spec explanation is forwarded so console.error has detail")))
+
+(deftest classify-payload-unsafe-on-script-payload
+  (let [doc (assoc-in (m/empty-document)
+                      [:root :slots "default"]
+                      [{:id "i" :tag "x-icon" :attrs {} :props {} :slots {}
+                        :inner-html "<svg><script>alert(1)</script></svg>"
+                        :layout {:placement :flow}}])
+        out (pf/classify-payload (well-formed-project doc))]
+    (is (= :unsafe (:status out)))
+    (is (seq (:findings out))
+        "findings vector is forwarded so console.error names the offending paths")))
