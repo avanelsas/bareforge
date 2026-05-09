@@ -10,6 +10,26 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 Nothing yet.
 
+## [0.5.0] — 2026-05-09
+
+A BareDOM bump and five new components. 813 tests, zero
+release-build warnings.
+
+### Changed
+
+- **BareDOM 2.8.0 → 2.9.0**, onboarding `x-confetti` (effects),
+  `x-kbd` (text), `x-otp-input` (form), `x-proximity-list`
+  (navigation), and `x-spotlight-card` (layout). The three
+  interactive ones (`x-confetti`, `x-otp-input`,
+  `x-proximity-list`) are wired into the inspector's Events
+  section.
+
+### Verified
+
+- 813 tests / 2404 assertions / 0 failures, 0 errors.
+- `clj-kondo`, `cljfmt`, `shadow-cljs compile test`, and
+  `shadow-cljs release app` — all clean.
+
 ## [0.4.0] — 2026-05-07
 
 Three new canvas authoring features, a BareDOM bump, and four
