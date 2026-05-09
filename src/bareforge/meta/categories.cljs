@@ -122,7 +122,12 @@
    "x-kinetic-canvas"     :effects
    "x-i18n-provider"      :utility
    "x-i18n"               :text
-   "x-multi-combobox"     :form})
+   "x-multi-combobox"     :form
+   "x-confetti"           :effects
+   "x-kbd"                :text
+   "x-otp-input"          :form
+   "x-proximity-list"     :navigation
+   "x-spotlight-card"     :layout})
 
 (defn category-for
   "Return the category keyword for `tag`, or `:other` when unknown."

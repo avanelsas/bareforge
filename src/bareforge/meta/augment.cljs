@@ -1866,6 +1866,72 @@
      :default "bottom-start"}
     {:name "max"         :kind :number}]})
 
+(def ^:private x-confetti
+  {:category :effects
+   :label    "Confetti"
+   :properties
+   [{:name "mode" :kind :string-short}
+    {:name "origin" :kind :string-short}
+    {:name "count" :kind :string-short}
+    {:name "spread" :kind :string-short}
+    {:name "velocity" :kind :string-short}
+    {:name "gravity" :kind :string-short}
+    {:name "duration" :kind :string-short}
+    {:name "colors" :kind :string-short}
+    {:name "shapes" :kind :string-short}
+    {:name "auto-fire" :kind :string-short}
+    {:name "disabled" :kind :boolean}]})
+
+(def ^:private x-kbd
+  {:category :text
+   :label    "Kbd"
+   :properties
+   [{:name "keys" :kind :string-short}
+    {:name "separator" :kind :string-short}
+    {:name "size" :kind :string-short}
+    {:name "platform" :kind :string-short}
+    {:name "label" :kind :string-short}]})
+
+(def ^:private x-otp-input
+  {:category :form
+   :label    "Otp input"
+   :properties
+   [{:name "name" :kind :string-short}
+    {:name "value" :kind :string-short}
+    {:name "length" :kind :string-short}
+    {:name "type" :kind :string-short}
+    {:name "mask" :kind :string-short}
+    {:name "disabled" :kind :boolean}
+    {:name "readonly" :kind :boolean}
+    {:name "required" :kind :boolean}
+    {:name "autofocus" :kind :string-short}
+    {:name "label" :kind :string-short}
+    {:name "placeholder" :kind :string-short}
+    {:name "error" :kind :string-short}]})
+
+(def ^:private x-proximity-list
+  {:category :navigation
+   :label    "Proximity list"
+   :properties
+   [{:name "direction" :kind :string-short}
+    {:name "radius" :kind :string-short}
+    {:name "max-scale" :kind :string-short}
+    {:name "lift" :kind :string-short}
+    {:name "gap" :kind :string-short}
+    {:name "disabled" :kind :boolean}]})
+
+(def ^:private x-spotlight-card
+  {:category :layout
+   :label    "Spotlight card"
+   :properties
+   [{:name "variant" :kind :string-short}
+    {:name "radius" :kind :string-short}
+    {:name "padding" :kind :string-short}
+    {:name "color" :kind :string-short}
+    {:name "intensity" :kind :string-short}
+    {:name "size" :kind :string-short}
+    {:name "static" :kind :string-short}]})
+
 (def augment
   "{tag-name → augmentation-map}. Hand-curated. Omissions are intentional —
    tags not present here fall through to the raw-attribute inspector."
@@ -1961,4 +2027,9 @@
    "x-kinetic-canvas"     x-kinetic-canvas
    "x-i18n-provider"      x-i18n-provider
    "x-i18n"               x-i18n
-   "x-multi-combobox"     x-multi-combobox})
+   "x-multi-combobox"     x-multi-combobox
+   "x-confetti"           x-confetti
+   "x-kbd"                x-kbd
+   "x-otp-input"          x-otp-input
+   "x-proximity-list"     x-proximity-list
+   "x-spotlight-card"     x-spotlight-card})
