@@ -33,6 +33,7 @@
             [baredom.components.x-color-picker.model        :as x-color-picker]
             [baredom.components.x-combobox.model          :as x-combobox]
             [baredom.components.x-command-palette.model     :as x-command-palette]
+            [baredom.components.x-confetti.model          :as x-confetti]
             [baredom.components.x-container.model           :as x-container]
             [baredom.components.x-context-menu.model        :as x-context-menu]
             [baredom.components.x-copy.model                :as x-copy]
@@ -52,6 +53,7 @@
             [baredom.components.x-i18n-provider.model     :as x-i18n-provider]
             [baredom.components.x-icon.model              :as x-icon]
             [baredom.components.x-image.model             :as x-image]
+            [baredom.components.x-kbd.model               :as x-kbd]
             [baredom.components.x-kinetic-canvas.model    :as x-kinetic-canvas]
             [baredom.components.x-kinetic-font.model        :as x-kinetic-font]
             [baredom.components.x-kinetic-typography.model  :as x-kinetic-typography]
@@ -70,11 +72,13 @@
             [baredom.components.x-organic-divider.model     :as x-organic-divider]
             [baredom.components.x-organic-progress.model    :as x-organic-progress]
             [baredom.components.x-organic-shape.model       :as x-organic-shape]
+            [baredom.components.x-otp-input.model         :as x-otp-input]
             [baredom.components.x-pagination.model          :as x-pagination]
             [baredom.components.x-particle-button.model     :as x-particle-button]
             [baredom.components.x-popover.model             :as x-popover]
             [baredom.components.x-progress.model            :as x-progress]
             [baredom.components.x-progress-circle.model     :as x-progress-circle]
+            [baredom.components.x-proximity-list.model    :as x-proximity-list]
             [baredom.components.x-radio.model               :as x-radio]
             [baredom.components.x-ripple-effect.model       :as x-ripple-effect]
             [baredom.components.x-scroll.model              :as x-scroll]
@@ -92,6 +96,7 @@
             [baredom.components.x-spacer.model              :as x-spacer]
             [baredom.components.x-spinner.model             :as x-spinner]
             [baredom.components.x-splash.model              :as x-splash]
+            [baredom.components.x-spotlight-card.model    :as x-spotlight-card]
             [baredom.components.x-stat.model                :as x-stat]
             [baredom.components.x-stepper.model             :as x-stepper]
             [baredom.components.x-switch.model              :as x-switch]
@@ -141,6 +146,7 @@
    x-color-picker/tag-name       (api x-color-picker/tag-name       x-color-picker/property-api       x-color-picker/observed-attributes)
    x-combobox/tag-name          (api x-combobox/tag-name x-combobox/property-api x-combobox/observed-attributes)
    x-command-palette/tag-name    (api x-command-palette/tag-name    x-command-palette/property-api    x-command-palette/observed-attributes)
+   x-confetti/tag-name          (api x-confetti/tag-name x-confetti/property-api x-confetti/observed-attributes)
    x-container/tag-name          (api x-container/tag-name          x-container/property-api          x-container/observed-attributes)
    x-context-menu/tag-name       (api x-context-menu/tag-name       x-context-menu/property-api       x-context-menu/observed-attributes)
    x-copy/tag-name               (api x-copy/tag-name               x-copy/property-api               x-copy/observed-attributes)
@@ -160,6 +166,7 @@
    x-i18n-provider/tag-name     (api x-i18n-provider/tag-name x-i18n-provider/property-api x-i18n-provider/observed-attributes)
    x-icon/tag-name              (api x-icon/tag-name x-icon/property-api x-icon/observed-attributes)
    x-image/tag-name             (api x-image/tag-name x-image/property-api x-image/observed-attributes)
+   x-kbd/tag-name               (api x-kbd/tag-name x-kbd/property-api x-kbd/observed-attributes)
    x-kinetic-canvas/tag-name    (api x-kinetic-canvas/tag-name x-kinetic-canvas/property-api x-kinetic-canvas/observed-attributes)
    x-kinetic-font/tag-name       (api x-kinetic-font/tag-name       x-kinetic-font/property-api       x-kinetic-font/observed-attributes)
    x-kinetic-typography/tag-name (api x-kinetic-typography/tag-name x-kinetic-typography/property-api x-kinetic-typography/observed-attributes)
@@ -178,11 +185,13 @@
    x-organic-divider/tag-name    (api x-organic-divider/tag-name    x-organic-divider/property-api    x-organic-divider/observed-attributes)
    x-organic-progress/tag-name   (api x-organic-progress/tag-name   x-organic-progress/property-api   x-organic-progress/observed-attributes)
    x-organic-shape/tag-name      (api x-organic-shape/tag-name      x-organic-shape/property-api      x-organic-shape/observed-attributes)
+   x-otp-input/tag-name         (api x-otp-input/tag-name x-otp-input/property-api x-otp-input/observed-attributes)
    x-pagination/tag-name         (api x-pagination/tag-name         x-pagination/property-api         x-pagination/observed-attributes)
    x-particle-button/tag-name    (api x-particle-button/tag-name    x-particle-button/property-api    x-particle-button/observed-attributes)
    x-popover/tag-name            (api x-popover/tag-name            x-popover/property-api            x-popover/observed-attributes)
    x-progress/tag-name           (api x-progress/tag-name           x-progress/property-api           x-progress/observed-attributes)
    x-progress-circle/tag-name    (api x-progress-circle/tag-name    x-progress-circle/property-api    x-progress-circle/observed-attributes)
+   x-proximity-list/tag-name    (api x-proximity-list/tag-name x-proximity-list/property-api x-proximity-list/observed-attributes)
    x-radio/tag-name              (api x-radio/tag-name              x-radio/property-api              x-radio/observed-attributes)
    x-ripple-effect/tag-name      (api x-ripple-effect/tag-name      x-ripple-effect/property-api      x-ripple-effect/observed-attributes)
    x-scroll/tag-name             (api x-scroll/tag-name             x-scroll/property-api             x-scroll/observed-attributes)
@@ -200,6 +209,7 @@
    x-spacer/tag-name             (api x-spacer/tag-name             x-spacer/property-api             x-spacer/observed-attributes)
    x-spinner/tag-name            (api x-spinner/tag-name            x-spinner/property-api            x-spinner/observed-attributes)
    x-splash/tag-name             (api x-splash/tag-name             x-splash/property-api             x-splash/observed-attributes)
+   x-spotlight-card/tag-name    (api x-spotlight-card/tag-name x-spotlight-card/property-api x-spotlight-card/observed-attributes)
    x-stat/tag-name               (api x-stat/tag-name               x-stat/property-api               x-stat/observed-attributes)
    x-stepper/tag-name            (api x-stepper/tag-name            x-stepper/property-api            x-stepper/observed-attributes)
    x-switch/tag-name             (api x-switch/tag-name             x-switch/property-api             x-switch/observed-attributes)

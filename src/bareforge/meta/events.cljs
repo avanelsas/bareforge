@@ -28,7 +28,10 @@
                        "x-multi-combobox-toggle"]
    "x-tooltip"      ["x-tooltip-show" "x-tooltip-hide"]
    "x-welcome-tour" ["x-welcome-tour-start" "x-welcome-tour-step-change" "x-welcome-tour-complete" "x-welcome-tour-skip"]
-   "x-i18n-provider" ["x-i18n-loading" "x-i18n-change" "x-i18n-error"]})
+   "x-i18n-provider" ["x-i18n-loading" "x-i18n-change" "x-i18n-error"]
+   "x-confetti"       ["x-confetti-fire" "x-confetti-end"]
+   "x-otp-input"      ["x-otp-input-input" "x-otp-input-change" "x-otp-input-complete"]
+   "x-proximity-list" ["x-proximity-list-select"]})
 
 (defn events-for
   "Return the vector of supported event names for `tag`, or nil."
