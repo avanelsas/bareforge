@@ -288,9 +288,7 @@
   (unchecked-set resize-state "element" nil)
   (unchecked-set resize-state "node-id" nil)
   (when-let [overlay (overlay-el)]
-    (.removeAttribute overlay "data-resizing"))
-  (.removeEventListener js/window "pointermove" on-resize-move!)
-  (.removeEventListener js/window "pointerup"   on-resize-up!))
+    (.removeAttribute overlay "data-resizing")))
 
 (defn- commit-resize!
   "Build the updated document for a resize commit. Free mode writes
@@ -358,9 +356,7 @@
         (unchecked-set resize-state "start-w"  cur-w)
         (unchecked-set resize-state "start-h"  cur-h)
         (when-let [overlay (overlay-el)]
-          (.setAttribute overlay "data-resizing" ""))
-        (.addEventListener js/window "pointermove" on-resize-move!)
-        (.addEventListener js/window "pointerup"   on-resize-up!)))))
+          (.setAttribute overlay "data-resizing" ""))))))
 
 (defn- on-handle-pointerdown! [^js e]
   (let [^js target (.-target e)
@@ -395,18 +391,21 @@
   "Mount the selection overlay pool inside `canvas-host-el`. Seeds the
    pool with one primary overlay (handles attached), installs a
    watcher on `state/app-state` that fires on selection / document
-   changes, and wires a window resize listener for layout-shift
-   cases. Safe to call once at app startup."
+   changes, wires a window resize listener for layout-shift cases, and
+   attaches the resize-drag pointermove / pointerup listeners *once*
+   here — both handlers are inert (early-exit on `resize-active?`)
+   until a handle pointerdown starts a drag. Safe to call once at app
+   startup."
   [^js canvas-host-el]
   (unchecked-set overlay-state "host" canvas-host-el)
   (unchecked-set overlay-state "pool" #js [])
   (create-overlay! true)
   (schedule-refresh!)
   ;; Refresh on selection or document changes (an edit or a click moves
-   ;; the rect under us) AND on canvas-view changes (zoom + pan move
-   ;; the rendered nodes' visual rects, and overlays are read off
-   ;; getBoundingClientRect — without this the blue border stays put
-   ;; while the canvas slides under it).
+  ;; the rect under us) AND on canvas-view changes (zoom + pan move
+  ;; the rendered nodes' visual rects, and overlays are read off
+  ;; getBoundingClientRect — without this the blue border stays put
+  ;; while the canvas slides under it).
   (add-watch state/app-state ::selection-overlay
              (fn [_ _ old-state new-state]
                (when (or (not= (:selection old-state) (:selection new-state))
@@ -415,4 +414,6 @@
                                (state/canvas-view new-state)))
                  (schedule-refresh!))))
   (.addEventListener js/window "resize"
-                     (fn [_] (schedule-refresh!))))
+                     (fn [_] (schedule-refresh!)))
+  (.addEventListener js/window "pointermove" on-resize-move!)
+  (.addEventListener js/window "pointerup"   on-resize-up!))
