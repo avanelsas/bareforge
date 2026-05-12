@@ -16,6 +16,7 @@
   (:require [bareforge.dnd.guides :as guides]
             [bareforge.dnd.resolve :as resolve]
             [bareforge.dnd.snap :as snap]
+            [bareforge.dnd.target :as target]
             [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
             [bareforge.meta.registry :as registry]
@@ -25,24 +26,6 @@
             [bareforge.state :as state]
             [bareforge.ui.palette :as palette]
             [bareforge.util.dom :as u]))
-
-(defn classify-position
-  "Pure: given a hovered element's `{:top :height}`, the cursor's
-   `clientY`, and whether the target is a container, return one of
-   `:before`, `:after`, or `:inside`. Containers get a 25/50/25 split
-   (top quarter → :before, middle half → :inside, bottom quarter →
-   :after); leaves get a 50/50 split with no `:inside` band."
-  [{:keys [top height]} cursor-y container?]
-  (let [bottom (+ top height)
-        clamped (max top (min cursor-y bottom))
-        offset (- clamped top)
-        ratio (if (pos? height) (/ offset height) 0.5)]
-    (if container?
-      (cond
-        (< ratio 0.25) :before
-        (> ratio 0.75) :after
-        :else          :inside)
-      (if (< ratio 0.5) :before :after))))
 
 ;; --- mutable drag state ---------------------------------------------------
 
@@ -345,19 +328,6 @@
   (when el
     (.closest el "[data-bareforge-layer-row]")))
 
-(defn- node-position
-  "Compute the half-element drop classification for a hovered DOM
-   element backed by document node `id`. Looks up whether the node's
-   tag is a container so the rule (top half / 50/50 vs top quarter /
-   25/50/25) matches its capabilities."
-  [^js node-el id cursor-y]
-  (let [container? (let [doc (:document @state/app-state)
-                         tag (some-> (m/get-node doc id) :tag)]
-                     (boolean (and tag (registry/container? tag))))
-        ^js bcr    (.getBoundingClientRect node-el)
-        rect       {:top (.-top bcr) :height (.-height bcr)}]
-    (classify-position rect cursor-y container?)))
-
 (defn- canvas-target-el
   "Find the element with `data-bareforge-id` that is also inside the
    canvas host (avoids matching the layers panel row with the same id)."
@@ -368,85 +338,143 @@
         (when (pos? (.-length nodes))
           (.item nodes 0))))))
 
+(defn- el-rect-shape
+  "Read just the slice of getBoundingClientRect the classifier needs."
+  [^js node-el]
+  (when node-el
+    (let [^js bcr (.getBoundingClientRect node-el)]
+      {:top (.-top bcr) :height (.-height bcr)})))
+
+(defn- node-container? [tag]
+  (boolean (and tag (registry/container? tag))))
+
+(defn- collect-snapshot
+  "Effectful: gather the cursor's current DOM + state context into a
+   plain map the pure classifier `target/classify-drop-target`
+   consumes. Bundles every read the classifier might need so the
+   classifier itself never touches DOM, state, or registry data.
+
+   Slot-rows carry their own slot/node attrs and don't need a rect
+   (classification is by name, not position); layer-rows and canvas-
+   elements both need the hovered element's rect + the resolved doc
+   node + a `container?` flag. Strip-host id rides on every snapshot
+   so the `:slot-row` branch can decide whether stale strips need to
+   be hidden, and so the `:canvas-element` branch can suppress
+   `:needs-strips` when strips for the same id are already mounted."
+  [^js e]
+  (let [under     (element-under-cursor e)
+        slot-row  (find-slot-row under)
+        layer-row (find-layer-row under)
+        host-id   (slot-strips/current-host-id)]
+    (cond
+      slot-row
+      {:hovered-context :slot-row
+       :hovered-id      (.getAttribute slot-row "data-bareforge-slot-node")
+       :hovered-slot    (.getAttribute slot-row "data-bareforge-slot-name")
+       :hovered-el      slot-row
+       :strip-host-id   host-id}
+
+      layer-row
+      (let [id   (.getAttribute layer-row "data-bareforge-id")
+            doc  (:document @state/app-state)
+            node (some->> id canvas/canonical-node-id (m/get-node doc))]
+        {:hovered-context :layer-row
+         :hovered-id      id
+         :hovered-el      layer-row
+         :hovered-rect    (el-rect-shape layer-row)
+         :cursor-y        (.-clientY e)
+         :node            node
+         :container?      (node-container? (:tag node))
+         :strip-host-id   host-id})
+
+      (inside-canvas? under)
+      (let [id     (canvas/element->node-id under)
+            canon  (canvas/canonical-node-id id)
+            ^js el (canvas-target-el id)
+            doc    (:document @state/app-state)
+            node   (when canon (m/get-node doc canon))
+            tag    (:tag node)]
+        {:hovered-context :canvas-element
+         :hovered-id      id
+         :hovered-el      el
+         :hovered-rect    (el-rect-shape el)
+         :cursor-y        (.-clientY e)
+         :node            node
+         :container?      (node-container? tag)
+         :strips?         (boolean (and tag (slot-strips/render-strips? tag)))
+         :strip-host-id   host-id})
+
+      :else
+      {:hovered-context :outside})))
+
+(defn- apply-result!
+  "Effectful: project the classifier's tagged result onto drag-state
+   and DOM. Pure dispatch on `:kind`; never reads from state or DOM
+   beyond what the result already carries."
+  [{:keys [kind] :as result}]
+  (case kind
+    :slot-row
+    (do (set-valid! true)
+        (set-ghost-valid-style! true)
+        (set-target-highlight! nil nil nil)
+        (set-slot-target! (:hovered-el result)
+                          (:slot-node result)
+                          (:slot-name result))
+        (when (:hide-stale-strips? result)
+          (slot-strips/hide!)))
+
+    :layer-row
+    (do (set-valid! true)
+        (set-ghost-valid-style! true)
+        (clear-slot-target!)
+        (set-target-highlight! (:hovered-el result) (:id result) (:position result))
+        (slot-strips/hide!))
+
+    :canvas-element
+    (do (set-valid! true)
+        (set-ghost-valid-style! true)
+        (clear-slot-target!)
+        (set-target-highlight! (:hovered-el result) (:id result) (:position result))
+        (slot-strips/hide!))
+
+    :invalid
+    (do (set-valid! false)
+        (set-ghost-valid-style! false)
+        (clear-slot-target!)
+        (set-target-highlight! nil nil nil)
+        (slot-strips/hide!))))
+
 (defn- resolve-target!
-  "Inspect the element under the cursor. Valid drop targets are:
-   (a) an inspector slot row OR a canvas slot strip (both carry
-       `data-bareforge-slot-node`; `find-slot-row` walks up to either),
-   (b) a layers-panel row (data-bareforge-layer-row),
-   (c) the canvas host and any of its descendants.
-   Everything else is invalid.
+  "Drive the pure target classifier and apply its tagged result.
 
-   For multi-slot canvas targets, the (c) branch mounts per-slot
-   strips via `render.slot-strips` and then re-invokes itself once so
-   the freshly-appended strip becomes the under-cursor element on
-   this same pointermove — otherwise a stationary drop after strips
-   appear would commit to the default slot rather than the strip
-   under the cursor. The `re-entered?` guard bounds recursion depth
-   to one."
-  ([^js e] (resolve-target! e false))
-  ([^js e re-entered?]
-   (let [under     (element-under-cursor e)
-         slot-row  (find-slot-row under)
-         layer-row (find-layer-row under)]
-     (cond
-       slot-row
-       (let [node-id   (.getAttribute slot-row "data-bareforge-slot-node")
-             slot-name (.getAttribute slot-row "data-bareforge-slot-name")]
-         (set-valid! true)
-         (set-ghost-valid-style! true)
-         (set-target-highlight! nil nil nil)
-         (set-slot-target! slot-row node-id slot-name)
-         ;; Strips for node X are themselves slot rows; keep them
-         ;; visible while the cursor stays on them. Hide when the
-         ;; hovered row belongs to any OTHER node (an Inspector row,
-         ;; or a different canvas host).
-         (when (and (slot-strips/current-host-id)
-                    (not= node-id (slot-strips/current-host-id)))
-           (slot-strips/hide!)))
+   Two-pass when the classifier returns `:needs-strips` (a multi-slot
+   canvas container hovered `:inside` whose strips aren't mounted
+   yet): mount the strips, re-snapshot — the freshly-appended strip
+   is now under the cursor as a slot-row, so the second classify
+   returns `:slot-row` and the drop targets the correct slot. The
+   classifier's `:needs-strips` precondition `(not= id strip-host-id)`
+   bounds the loop to exactly two iterations: after the mount,
+   `strip-host-id` equals the just-mounted id, so a second
+   `:needs-strips` return is impossible by construction.
 
-       layer-row
-       (let [id  (.getAttribute layer-row "data-bareforge-id")
-             pos (node-position layer-row id (.-clientY e))]
-         (set-valid! true)
-         (set-ghost-valid-style! true)
-         (clear-slot-target!)
-         (set-target-highlight! layer-row id pos)
-         (slot-strips/hide!))
-
-       (inside-canvas? under)
-       (let [id      (canvas/element->node-id under)
-             ^js el  (canvas-target-el id)
-             pos     (when el (node-position el id (.-clientY e)))
-             doc     (:document @state/app-state)
-             tag     (some-> (m/get-node doc (canvas/canonical-node-id id)) :tag)
-             strips? (and el (= pos :inside) (slot-strips/render-strips? tag))]
-         (set-valid! true)
-         (set-ghost-valid-style! true)
-         (clear-slot-target!)
-         (if strips?
-           (do
-             ;; Strips tile the element and carry their own outline;
-             ;; suppress the usual `.bareforge-drop-inside` class that
-             ;; `set-target-highlight!` would add.
-             (set-target-highlight! nil nil nil)
-             (when (not= id (slot-strips/current-host-id))
-               (slot-strips/show-for-element! tag id el)
-               ;; After mounting, re-run once so the strip under the
-               ;; cursor is picked up via `find-slot-row` — guarantees
-               ;; a stationary drop targets the correct slot.
-               (when-not re-entered?
-                 (resolve-target! e true))))
-           (do
-             (set-target-highlight! el id pos)
-             (slot-strips/hide!))))
-
-       :else
-       (do
-         (set-valid! false)
-         (set-ghost-valid-style! false)
-         (clear-slot-target!)
-         (set-target-highlight! nil nil nil)
-         (slot-strips/hide!))))))
+   No recursion: the classifier never invokes itself, and the
+   orchestrator's two-pass branch is visible at the call site."
+  [^js e]
+  (let [snapshot (collect-snapshot e)
+        result   (target/classify-drop-target snapshot)]
+    (if (= :needs-strips (:kind result))
+      (let [{:keys [tag id hovered-el]} result]
+        ;; Mounting the strips is the only side-effect explicit in the
+        ;; classifier's contract. Suppress the canvas `.bareforge-
+        ;; drop-inside` highlight that `set-target-highlight!` would
+        ;; otherwise add — strips carry their own outline.
+        (set-valid! true)
+        (set-ghost-valid-style! true)
+        (clear-slot-target!)
+        (set-target-highlight! nil nil nil)
+        (slot-strips/show-for-element! tag id hovered-el)
+        (apply-result! (target/classify-drop-target (collect-snapshot e))))
+      (apply-result! result))))
 
 ;; --- commit drop ----------------------------------------------------------
 
