@@ -344,17 +344,27 @@
   "Effectful: read the rendered DOM element for `node-id` plus its
    immediate DOM parent and return `[x y]` in the content-pixel
    coordinate space `:layout :x / :y` use on a `:free` node — viewport-
-   pixel offset divided by the active canvas zoom. nil when either
-   element can't be resolved (deleted between snapshot and render,
-   not yet mounted, etc.)."
+   pixel offset divided by the active canvas zoom, then minus the
+   parent's border width.
+
+   CSS `position: absolute; left: Xpx; top: Ypx;` is measured from
+   the containing block's *padding* box (CSS positioning spec), not
+   its border-box BCR origin. Subtracting `clientLeft / clientTop`
+   (the rendered border width) brings the captured offset into the
+   same reference frame the reconciler will use when it re-renders
+   the just-promoted element. Without it a parent with a 1 px
+   border shifts the element 1 px on commit.
+
+   nil when either element can't be resolved (deleted between
+   snapshot and render, not yet mounted, etc.)."
   [node-id]
   (when-let [^js el (canvas/dom-for-id node-id)]
     (when-let [^js parent-el (.-parentElement el)]
       (let [^js ebcr (.getBoundingClientRect el)
             ^js pbcr (.getBoundingClientRect parent-el)
             zoom     (or (:zoom (state/canvas-view @state/app-state)) 1)]
-        [(/ (- (.-left ebcr) (.-left pbcr)) zoom)
-         (/ (- (.-top  ebcr) (.-top  pbcr)) zoom)]))))
+        [(- (/ (- (.-left ebcr) (.-left pbcr)) zoom) (.-clientLeft parent-el))
+         (- (/ (- (.-top  ebcr) (.-top  pbcr)) zoom) (.-clientTop  parent-el))]))))
 
 (defn- commit-promote-placement!
   "Set a node's `:layout :placement`. When the transition is to
@@ -1247,7 +1257,12 @@
   "Effectful: write `new-v` to `el` if it differs from the current
    widget value. Booleans go through the `checked` attr (BareDOM
    boolean controls observe presence/absence); every other kind
-   goes through the `value` attr."
+   goes through the `value` attr.
+
+   Non-boolean values are routed through `format-decimal` so numeric
+   payloads from the patch path display the same rounded form the
+   build path uses (e.g. an x-coord of 257.29168701171875 paints as
+   `257.29` here too — not a twelve-decimal tail every keystroke)."
   [^js el kind new-v]
   (if (= "boolean" kind)
     (let [cur-v (boolean (.-checked el))]
@@ -1255,9 +1270,10 @@
         (if new-v
           (.setAttribute el "checked" "")
           (.removeAttribute el "checked"))))
-    (let [cur-v (widget-value el)]
-      (when (not= new-v cur-v)
-        (.setAttribute el "value" new-v)))))
+    (let [cur-v (widget-value el)
+          new-v* (or (c/format-decimal new-v) "")]
+      (when (not= new-v* cur-v)
+        (.setAttribute el "value" new-v*)))))
 
 (defn- update-field-in-place! [^js el node]
   (let [prop-name (.getAttribute el "data-prop-name")
