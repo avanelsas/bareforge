@@ -155,6 +155,41 @@
       (is (= "cart" (get field-owner-ns :cart-items))
           "the :cart-items field is declared on cart"))))
 
+;; --- action-target-of-group-ns -------------------------------------------
+
+(def ^:private cart-fields
+  [{:name :cart-items :type :vector :of-group "cart-item" :default []}
+   {:name :total      :type :number :default 0}])
+
+(deftest action-target-of-group-ns-collection-field
+  (testing "step targeting a collection field qualifies with that field's :of-group"
+    (is (= "app.cart-item.db"
+           (em/action-target-of-group-ns
+            {:operation :add :target-field :cart-items}
+            cart-fields
+            "app")))))
+
+(deftest action-target-of-group-ns-scalar-field
+  (testing "step targeting a scalar field returns nil — no :of-group to qualify"
+    (is (nil? (em/action-target-of-group-ns
+               {:operation :set :target-field :total}
+               cart-fields
+               "app")))))
+
+(deftest action-target-of-group-ns-unknown-target
+  (testing "target-field not present in :fields returns nil"
+    (is (nil? (em/action-target-of-group-ns
+               {:operation :set :target-field :nonexistent}
+               cart-fields
+               "app")))))
+
+(deftest action-target-of-group-ns-honours-app-ns
+  (is (= "myapp.cart-item.db"
+         (em/action-target-of-group-ns
+          {:operation :add :target-field :cart-items}
+          cart-fields
+          "myapp"))))
+
 (deftest lower-document-on-empty-doc
   (let [lowered (em/lower-document (m/empty-document))]
     (testing "empty doc still produces a valid lowered shape with the

@@ -1175,10 +1175,7 @@
    Honours `:of-group` payload re-keying for `:set` / `:add` / `:remove`."
   [{:keys [operation target-field] :as step} db-alias fields app-ns]
   (let [fname    (cljs.core/name target-field)
-        of-group (some (fn [fd]
-                         (when (= target-field (:name fd)) (:of-group fd)))
-                       fields)
-        of-ns    (when of-group (str app-ns "." of-group ".db"))
+        of-ns    (em/action-target-of-group-ns step fields app-ns)
         wrap     (fn [x] (if of-ns (str "(rf/qualify-map " x " \"" of-ns "\")") x))
         vexpr    (step-payload-expr step)
         fk       (str "::" db-alias "/" fname)]
@@ -1261,12 +1258,11 @@
         steps (actions/step-list action)]
     (cf/format-form
      (if (= 1 (count steps))
-       (let [{:keys [operation target-field]} (first steps)
-             fname       (cljs.core/name target-field)
-             of-group    (some (fn [fd]
-                                 (when (= target-field (:name fd)) (:of-group fd)))
-                               fields)
-             of-group-ns (when of-group (str app-ns "." of-group ".db"))]
+       (let [step                  (first steps)
+             {:keys [operation
+                     target-field]} step
+             fname                 (cljs.core/name target-field)
+             of-group-ns           (em/action-target-of-group-ns step fields app-ns)]
          (single-step-action-form ename db-alias fname operation of-group-ns))
        (multi-step-action-form ename steps db-alias fields app-ns)))))
 

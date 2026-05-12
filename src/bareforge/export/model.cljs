@@ -358,6 +358,26 @@
                       (:fields n))))
             all-groups))))
 
+(defn action-target-of-group-ns
+  "Resolve the fully-qualified db namespace for an action step's
+   target field's `:of-group`, or nil when the matching field-def
+   carries no `:of-group`. Used by plugins emitting collection
+   mutations: an `:add` step against a `:cart-items :of-group
+   \"cart-item\"` field needs the incoming payload re-keyed into
+   `<app-ns>.cart-item.db/*` before it lands in the collection.
+
+   `step` is an action step shaped `{:target-field <kw> …}`,
+   `group-fields` is the enclosing group's `:fields` vector,
+   `app-ns` is the root app namespace. Returns
+   `\"<app-ns>.<of-group>.db\"` or nil."
+  [step group-fields app-ns]
+  (let [tgt (:target-field step)]
+    (some (fn [fd]
+            (when (= tgt (:name fd))
+              (when-let [og (:of-group fd)]
+                (str app-ns "." og ".db"))))
+          group-fields)))
+
 ;; --- composed lowered representation -------------------------------------
 
 (defn lower-document
