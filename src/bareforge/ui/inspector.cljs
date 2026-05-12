@@ -126,7 +126,7 @@
         reader  (or event-reader read-event-value)]
     (case (or value-attr :value)
       :checked (when current (u/set-attr! el :checked ""))
-      :value   (when current (u/set-attr! el :value current)))
+      :value   (when current (u/set-attr! el :value (c/format-decimal current))))
     (u/on! el event
            (fn [^js e]
              (commit-fn! (:id node) (:name prop) (reader e))))
@@ -377,7 +377,7 @@
                     (tag-widget! (str "__layout__/" (name layout-key)) "layout"))
         raw     (get-in node [:layout layout-key])
         node-id (:id node)]
-    (when raw (u/set-attr! el :value (str raw)))
+    (when raw (u/set-attr! el :value (c/format-decimal raw)))
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)]
