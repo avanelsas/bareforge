@@ -91,40 +91,104 @@
      (.setAttribute el "data-prop-transform" (name transform)))
    el))
 
-(defn- build-boolean [node prop]
-  (let [el       (-> (u/el :x-switch {:class "inspector-field-widget"})
-                     (tag-widget! (:name prop) "boolean"))
-        current? (boolean (model/current-value node prop))]
-    (when current? (u/set-attr! el :checked ""))
-    (u/on! el :x-switch-change
+(defn- build-widget-shell
+  "Shared shape behind every `build-*` row builder: create the widget
+   element, tag it for the test harness, set the current value on the
+   widget, and wire its change event to a commit. Returns the element
+   so widget-specific specialisations (enum's `<option>` children,
+   search-field's datalist / scrub) can attach to it without forking
+   the shared boilerplate.
+
+   `spec` keys:
+     :widget-tag    — keyword tag passed to `u/el` (or `search-field`
+                      when `:x-search-field`).
+     :widget-attrs  — extra attrs merged over `{:class \"inspector-field-widget\"}`.
+     :prop-kind     — string for `data-prop-kind` on the host.
+     :transform     — optional transform keyword forwarded to
+                      `tag-widget!` (only the search-field row uses it).
+     :event         — event name to wire on the host.
+     :value-attr    — attr to receive the current value. Defaults to
+                      `:value`; widgets like `x-switch` use `:checked`
+                      (set to the empty string when truthy).
+     :event-reader  — `(fn [^js e] → v)`. Defaults to `read-event-value`.
+     :commit-fn!    — `(fn [node-id prop-name v])` invoked with the
+                      reader's output. The shell never calls
+                      `commit-attr!` / `commit-prop!` directly so the
+                      transform-aware search-field can wrap its own."
+  [node prop {:keys [widget-tag widget-attrs prop-kind transform
+                     event value-attr event-reader commit-fn!]}]
+  (let [attrs   (merge {:class "inspector-field-widget"} widget-attrs)
+        el      (-> (if (= :x-search-field widget-tag)
+                      (search-field attrs)
+                      (u/el widget-tag attrs))
+                    (tag-widget! (:name prop) prop-kind transform))
+        current (model/current-value node prop)
+        reader  (or event-reader read-event-value)]
+    (case (or value-attr :value)
+      :checked (when current (u/set-attr! el :checked ""))
+      :value   (when current (u/set-attr! el :value current)))
+    (u/on! el event
            (fn [^js e]
-             (commit-prop! (:id node) (:name prop) (read-event-checked e))))
+             (commit-fn! (:id node) (:name prop) (reader e))))
     el))
+
+(defn- build-boolean [node prop]
+  (build-widget-shell node prop
+                      {:widget-tag   :x-switch
+                       :prop-kind    "boolean"
+                       :event        :x-switch-change
+                       :value-attr   :checked
+                       :event-reader read-event-checked
+                       :commit-fn!   commit-prop!}))
+
+(defn- append-enum-options!
+  "Append one `<option>` per `:choices` entry, marking the entry that
+   matches `current` as `selected`. Separate fn so `build-enum` stays
+   a thin spec call plus this small DOM-decoration step."
+  [^js sel-el prop current]
+  (doseq [choice (:choices prop)]
+    (let [^js o (u/el :option {:value choice})]
+      (u/set-text! o choice)
+      (when (= choice current) (u/set-attr! o :selected ""))
+      (.appendChild sel-el o)))
+  sel-el)
 
 (defn- build-enum [node prop]
-  (let [sel-el  (-> (u/el :x-select {:class "inspector-field-widget"})
-                    (tag-widget! (:name prop) "enum"))
-        current (model/current-value node prop)
-        options (for [choice (:choices prop)]
-                  (let [o (u/el :option {:value choice})]
-                    (u/set-text! o choice)
-                    (when (= choice current) (u/set-attr! o :selected ""))
-                    o))]
-    (doseq [o options] (.appendChild sel-el o))
-    (u/on! sel-el :select-change
-           (fn [^js e]
-             (commit-attr! (:id node) (:name prop) (read-event-value e))))
-    sel-el))
+  (-> (build-widget-shell node prop
+                          {:widget-tag :x-select
+                           :prop-kind  "enum"
+                           :event      :select-change
+                           :commit-fn! commit-attr!})
+      (append-enum-options! prop (model/current-value node prop))))
 
 (defn- build-text-area [node prop]
-  (let [el      (-> (u/el :x-text-area {:class "inspector-field-widget"})
-                    (tag-widget! (:name prop) "text-long"))
-        current (model/current-value node prop)]
-    (when current (u/set-attr! el :value current))
-    (u/on! el :x-text-area-input
-           (fn [^js e]
-             (commit-attr! (:id node) (:name prop) (read-event-value e))))
-    el))
+  (build-widget-shell node prop
+                      {:widget-tag :x-text-area
+                       :prop-kind  "text-long"
+                       :event      :x-text-area-input
+                       :commit-fn! commit-attr!}))
+
+(defn- attach-numeric-scrub!
+  "Wire the numeric-drag scrub gesture on a search-field configured
+   for `:type \"number\"`. Reads the live attribute value through the
+   model so a fresh / non-numeric attr starts the drag at 0 instead
+   of silently doing nothing; commits coalesce after the first step."
+  [^js el node prop]
+  (let [node-id   (:id node)
+        attr-name (:name prop)]
+    (scrub/attach-scrub-meta!
+     el
+     {:read-fn    (fn []
+                    (let [doc (:document @state/app-state)
+                          n   (m/get-node doc node-id)]
+                      (c/parse-number-or-zero (model/current-value n prop))))
+      :commit-fn! (fn [new-val first?]
+                    (let [doc  (:document @state/app-state)
+                          doc' (ops/set-attr doc node-id attr-name (str new-val))]
+                      (if first?
+                        (state/commit! doc')
+                        (state/commit-coalesced! doc'))))
+      :step       1})))
 
 (defn- build-search-field [node prop spec]
   (let [transform (:transform prop)
@@ -134,39 +198,26 @@
         ;; shadow inner `<input>`, not the custom-element host — see
         ;; `attach-datalist-to-shadow-input!`.
         color?    (= :color (:kind prop))
-        el        (-> (search-field
-                       (cond-> {:class "inspector-field-widget"}
-                         numeric? (assoc :type "number")))
-                      (tag-widget! (:name prop) "text" transform))
-        current   (model/current-value node prop)
         node-id   (:id node)
-        attr-name (:name prop)]
+        attr-name (:name prop)
+        commit!   (fn [_id _name v]
+                    (let [v (if transform
+                              (model/transform-for-commit transform v)
+                              v)]
+                      (commit-attr! node-id attr-name v)))
+        el        (build-widget-shell
+                   node prop
+                   {:widget-tag   :x-search-field
+                    :widget-attrs (cond-> {}
+                                    numeric? (assoc :type "number"))
+                    :prop-kind    "text"
+                    :transform    transform
+                    :event        :x-search-field-input
+                    :commit-fn!   commit!})]
     (when color?
       (tokens/attach-datalist-to-shadow-input! el tokens/color-datalist-id))
-    (when current (u/set-attr! el :value current))
-    (u/on! el :x-search-field-input
-           (fn [^js e]
-             (let [v (read-event-value e)
-                   v (if transform (model/transform-for-commit transform v) v)]
-               (commit-attr! node-id attr-name v))))
     (cond-> el
-      numeric?
-      (scrub/attach-scrub-meta!
-       {:read-fn   (fn []
-                     ;; Empty / non-numeric attr starts the drag at 0
-                     ;; so unset fields are still scrubbable from
-                     ;; nothing — otherwise the gesture would silently
-                     ;; do nothing on a fresh component.
-                     (let [doc (:document @state/app-state)
-                           n   (m/get-node doc node-id)]
-                       (c/parse-number-or-zero (model/current-value n prop))))
-        :commit-fn! (fn [new-val first?]
-                      (let [doc  (:document @state/app-state)
-                            doc' (ops/set-attr doc node-id attr-name (str new-val))]
-                        (if first?
-                          (state/commit! doc')
-                          (state/commit-coalesced! doc'))))
-        :step       1}))))
+      numeric? (attach-numeric-scrub! node prop))))
 
 (defn- build-widget [node prop]
   (let [spec (model/editor-spec prop)]
