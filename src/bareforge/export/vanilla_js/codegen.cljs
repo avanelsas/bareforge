@@ -830,14 +830,9 @@
                    (for [[child-slot cs] (m/slot-entries node)
                          c cs]
                      (if-let [sg (get sub-groups-by-id (:id c))]
-                       (let [tpl? (contains? template-groups (:ns-name sg))]
-                         (if tpl?
-                           (let [node-info (m/get-node (:doc ctx) (:id c))
-                                 sg+src    (assoc sg
-                                                  :source-field (:source-field node-info)
-                                                  :source-sub   (:source-sub node-info))]
-                             (template-iteration-expr sg+src child-slot ctx))
-                           (named-group-call-expr sg child-slot)))
+                       (if (contains? template-groups (:ns-name sg))
+                         (template-iteration-expr sg child-slot ctx)
+                         (named-group-call-expr sg child-slot))
                        (node->js-hiccup c child-slot ctx))))
         parts    (cond-> [tag]
                    props (conj props)

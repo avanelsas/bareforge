@@ -589,21 +589,16 @@
         tpl-child-sub-aliases
         (distinct
          (concat
-          (for [sg sub-groups
-                :let [inst (m/get-node doc (:id sg))
-                      src  (:source-sub inst)]
-                :when (and (contains? template-groups (:ns-name sg)) src)]
-            (action-ref->alias src))
-          (for [sg sub-groups
-                :let [inst     (m/get-node doc (:id sg))
-                      sf       (:source-field inst)
-                      owner    (when sf (get owner-idx sf))
-                      fallback (when (and (nil? sf) (nil? (:source-sub inst)))
+          (for [{:keys [ns-name source-sub]} sub-groups
+                :when (and (contains? template-groups ns-name) source-sub)]
+            (action-ref->alias source-sub))
+          (for [{:keys [ns-name source-sub source-field]} sub-groups
+                :let [owner    (when source-field (get owner-idx source-field))
+                      fallback (when (and (nil? source-field) (nil? source-sub))
                                  (stateful-host-for-template
-                                  doc all-groups (:ns-name sg)))
+                                  doc all-groups ns-name))
                       owner*   (or owner (:ns-name fallback))]
-                :when (and (contains? template-groups (:ns-name sg))
-                           owner*)]
+                :when (and (contains? template-groups ns-name) owner*)]
             (str owner* ".subs"))))
         own-db-alias    (when template?
                           (str own-ns-name ".db"))

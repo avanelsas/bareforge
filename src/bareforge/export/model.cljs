@@ -323,7 +323,13 @@
   "Find every node under `node` that is an instance of another
    group, walking the whole subtree (but stopping at each sub-group
    boundary so we don't double-render nested groups). Returns
-   entries of `{:id :ns-name :slot-name}`."
+   entries of `{:id :ns-name :slot-name :source-sub :source-field}`.
+
+   `:source-sub` and `:source-field` are read from the instance node
+   itself — they only carry a value on template-instance children
+   that the user has bound to a runtime sub or a doc-level
+   collection. Plugins emitting template iteration consume them
+   directly instead of re-fetching the instance via `m/get-node`."
   [node all-groups]
   (let [group-ids (into #{} (mapcat :instance-ids) all-groups)
         walk (fn walk [n]
@@ -339,7 +345,11 @@
                  entry))]
     (for [{:keys [child slot-name]} (walk node)]
       (let [g (first (filter #(some #{(:id child)} (:instance-ids %)) all-groups))]
-        {:id (:id child) :ns-name (:ns-name g) :slot-name slot-name}))))
+        {:id           (:id child)
+         :ns-name      (:ns-name g)
+         :slot-name    slot-name
+         :source-sub   (:source-sub child)
+         :source-field (:source-field child)}))))
 
 (defn stateful-host-for-template
   "Find the `{:ns-name :field-name}` of the stateful group that

@@ -155,6 +155,23 @@
       (is (= "cart" (get field-owner-ns :cart-items))
           "the :cart-items field is declared on cart"))))
 
+;; --- find-sub-groups -----------------------------------------------------
+
+(deftest find-sub-groups-carries-source-fields
+  (testing "entries surface :source-sub and :source-field from each
+            instance node so plugins consume them directly instead of
+            re-fetching via m/get-node"
+    (let [doc       (demo-store-doc)
+          {:keys [groups]} (em/detect-groups doc)
+          cart      (first (filter #(= "cart" (:ns-name %)) groups))
+          cart-node (m/get-node doc (:id cart))
+          subs      (em/find-sub-groups cart-node groups)
+          tpl-subs  (filter #(= "cart-item" (:ns-name %)) subs)]
+      (is (seq tpl-subs)
+          "demo-store's cart contains cart-item template instance(s)")
+      (is (every? #(contains? % :source-sub)   tpl-subs))
+      (is (every? #(contains? % :source-field) tpl-subs)))))
+
 ;; --- resolve-explicit-field-owners ---------------------------------------
 
 (def ^:private node-with-explicit-owners
