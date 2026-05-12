@@ -340,6 +340,43 @@
                  :coerce-fn     c/nil-if-empty
                  :datalist-id   tokens/length-datalist-id}))
 
+(defn- visual-position-vs-parent
+  "Effectful: read the rendered DOM element for `node-id` plus its
+   immediate DOM parent and return `[x y]` in the content-pixel
+   coordinate space `:layout :x / :y` use on a `:free` node — viewport-
+   pixel offset divided by the active canvas zoom. nil when either
+   element can't be resolved (deleted between snapshot and render,
+   not yet mounted, etc.)."
+  [node-id]
+  (when-let [^js el (canvas/dom-for-id node-id)]
+    (when-let [^js parent-el (.-parentElement el)]
+      (let [^js ebcr (.getBoundingClientRect el)
+            ^js pbcr (.getBoundingClientRect parent-el)
+            zoom     (or (:zoom (state/canvas-view @state/app-state)) 1)]
+        [(/ (- (.-left ebcr) (.-left pbcr)) zoom)
+         (/ (- (.-top  ebcr) (.-top  pbcr)) zoom)]))))
+
+(defn- commit-promote-placement!
+  "Set a node's `:layout :placement`. When the transition is to
+   `:free` from any other placement, also capture the element's
+   current visual position into `:layout :x / :y` so the first
+   subsequent drag doesn't resolve its delta against (0, 0) and
+   snap the element away from where the user can see it. The
+   element keeps any pre-existing `:x / :y` if it was already
+   `:free` — only a fresh promotion writes the captured rect."
+  [node-id current-layout new-placement]
+  (let [becoming-free? (and (= :free new-placement)
+                            (not= :free (:placement current-layout)))
+        doc            (:document @state/app-state)
+        doc'           (ops/set-layout doc node-id :placement new-placement)
+        doc'           (if-let [pos (and becoming-free? (visual-position-vs-parent node-id))]
+                         (let [[x y] pos]
+                           (-> doc'
+                               (ops/set-layout node-id :x x)
+                               (ops/set-layout node-id :y y)))
+                         doc')]
+    (state/commit! doc')))
+
 (defn- build-placement-field
   "Editable x-select for the node's `:layout :placement`. Currently
    exposes `flow`, `background`, and `free`. Top/bottom-full-width
@@ -361,7 +398,7 @@
            (fn [^js e]
              (let [v (some-> e .-detail .-value)]
                (when v
-                 (commit-with! ops/set-layout (:id node) :placement (keyword v))))))
+                 (commit-promote-placement! (:id node) (:layout node) (keyword v))))))
     el))
 
 (defn- build-free-coord-field
