@@ -172,7 +172,6 @@
 (def ^:private computed-field?   em/computed?)
 (def ^:private collection-field? em/collection-field?)
 
-(def ^:private explicit-field-owners           em/explicit-field-owners)
 (def ^:private collect-read-bindings           em/collect-read-bindings)
 (def ^:private collect-trigger-payload-fields  em/collect-trigger-payload-fields)
 (def ^:private collect-trigger-action-refs     em/collect-trigger-action-refs)
@@ -562,9 +561,7 @@
                              distinct
                              (remove own-field-set))
         has-let?        (seq let-fields)
-        explicit        (into {}
-                              (for [[f owner] (explicit-field-owners node sub-group-ids)]
-                                [f (get name->ns owner owner)]))
+        explicit        (em/resolve-explicit-field-owners node sub-group-ids name->ns)
         field->owner    (into {} (for [f let-fields]
                                    [f (or (get explicit f)
                                           (get owner-idx f)
@@ -592,21 +589,16 @@
         tpl-child-sub-aliases
         (distinct
          (concat
-          (for [sg sub-groups
-                :let [inst (m/get-node doc (:id sg))
-                      src  (:source-sub inst)]
-                :when (and (contains? template-groups (:ns-name sg)) src)]
-            (action-ref->alias src))
-          (for [sg sub-groups
-                :let [inst     (m/get-node doc (:id sg))
-                      sf       (:source-field inst)
-                      owner    (when sf (get owner-idx sf))
-                      fallback (when (and (nil? sf) (nil? (:source-sub inst)))
+          (for [{:keys [ns-name source-sub]} sub-groups
+                :when (and (contains? template-groups ns-name) source-sub)]
+            (action-ref->alias source-sub))
+          (for [{:keys [ns-name source-sub source-field]} sub-groups
+                :let [owner    (when source-field (get owner-idx source-field))
+                      fallback (when (and (nil? source-field) (nil? source-sub))
                                  (stateful-host-for-template
-                                  doc all-groups (:ns-name sg)))
+                                  doc all-groups ns-name))
                       owner*   (or owner (:ns-name fallback))]
-                :when (and (contains? template-groups (:ns-name sg))
-                           owner*)]
+                :when (and (contains? template-groups ns-name) owner*)]
             (str owner* ".subs"))))
         own-db-alias    (when template?
                           (str own-ns-name ".db"))
@@ -1175,10 +1167,7 @@
    Honours `:of-group` payload re-keying for `:set` / `:add` / `:remove`."
   [{:keys [operation target-field] :as step} db-alias fields app-ns]
   (let [fname    (cljs.core/name target-field)
-        of-group (some (fn [fd]
-                         (when (= target-field (:name fd)) (:of-group fd)))
-                       fields)
-        of-ns    (when of-group (str app-ns "." of-group ".db"))
+        of-ns    (em/action-target-of-group-ns step fields app-ns)
         wrap     (fn [x] (if of-ns (str "(rf/qualify-map " x " \"" of-ns "\")") x))
         vexpr    (step-payload-expr step)
         fk       (str "::" db-alias "/" fname)]
@@ -1261,12 +1250,11 @@
         steps (actions/step-list action)]
     (cf/format-form
      (if (= 1 (count steps))
-       (let [{:keys [operation target-field]} (first steps)
-             fname       (cljs.core/name target-field)
-             of-group    (some (fn [fd]
-                                 (when (= target-field (:name fd)) (:of-group fd)))
-                               fields)
-             of-group-ns (when of-group (str app-ns "." of-group ".db"))]
+       (let [step                  (first steps)
+             {:keys [operation
+                     target-field]} step
+             fname                 (cljs.core/name target-field)
+             of-group-ns           (em/action-target-of-group-ns step fields app-ns)]
          (single-step-action-form ename db-alias fname operation of-group-ns))
        (multi-step-action-form ename steps db-alias fields app-ns)))))
 
@@ -1400,9 +1388,7 @@
                          g)
         read-fields    (collect-read-bindings node sg-ids)
         payload-fields (collect-trigger-payload-fields node sg-ids)
-        explicit       (into {}
-                             (for [[f o] (explicit-field-owners node sg-ids)]
-                               [f (get name->ns o o)]))
+        explicit       (em/resolve-explicit-field-owners node sg-ids name->ns)
         candidate-let  (distinct (concat read-fields payload-fields))
         field->owner   (into {}
                              (for [f candidate-let

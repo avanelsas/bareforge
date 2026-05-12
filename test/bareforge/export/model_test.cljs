@@ -155,6 +155,98 @@
       (is (= "cart" (get field-owner-ns :cart-items))
           "the :cart-items field is declared on cart"))))
 
+;; --- find-sub-groups -----------------------------------------------------
+
+(deftest find-sub-groups-carries-source-fields
+  (testing "entries surface :source-sub and :source-field from each
+            instance node so plugins consume them directly instead of
+            re-fetching via m/get-node"
+    (let [doc       (demo-store-doc)
+          {:keys [groups]} (em/detect-groups doc)
+          cart      (first (filter #(= "cart" (:ns-name %)) groups))
+          cart-node (m/get-node doc (:id cart))
+          subs      (em/find-sub-groups cart-node groups)
+          tpl-subs  (filter #(= "cart-item" (:ns-name %)) subs)]
+      (is (seq tpl-subs)
+          "demo-store's cart contains cart-item template instance(s)")
+      (is (every? #(contains? % :source-sub)   tpl-subs))
+      (is (every? #(contains? % :source-field) tpl-subs)))))
+
+;; --- resolve-explicit-field-owners ---------------------------------------
+
+(def ^:private node-with-explicit-owners
+  ;; A subtree carrying both kinds of explicit owner annotation:
+  ;; - a :text-field + :text-field-owner pair on a typography child
+  ;; - a :bindings entry with :owner on a button grandchild
+  ;; A descendant whose id is in sub-group-ids must NOT contribute.
+  {:id "host"
+   :slots {"default" [{:id    "txt"
+                       :tag   "x-typography"
+                       :slots {}
+                       :text-field        :user-name
+                       :text-field-owner  "Account"}
+                      {:id "btn" :tag "x-button" :slots {}
+                       :bindings {"label" {:field :cta :owner "CtaWidget" :direction :read}}}
+                      ;; Sub-group instance — boundary stops the walk
+                      {:id "sub" :tag "x-card" :slots
+                       {"default" [{:id "leaked" :tag "x-typography" :slots {}
+                                    :text-field       :should-not-be-seen
+                                    :text-field-owner "Hidden"}]}}]}})
+
+(deftest resolve-explicit-field-owners-maps-through-name->ns
+  (let [name->ns {"Account" "account" "CtaWidget" "cta-widget"}
+        result   (em/resolve-explicit-field-owners
+                  node-with-explicit-owners #{"sub"} name->ns)]
+    (is (= {:user-name "account" :cta "cta-widget"} result))))
+
+(deftest resolve-explicit-field-owners-passes-through-unknown-name
+  (testing "owner name absent from name->ns survives unchanged so
+            callers fall back to the user-facing string"
+    (let [result (em/resolve-explicit-field-owners
+                  node-with-explicit-owners #{"sub"} {})]
+      (is (= {:user-name "Account" :cta "CtaWidget"} result)))))
+
+(deftest resolve-explicit-field-owners-stops-at-sub-group-boundary
+  (testing "fields recorded inside a sub-group id are excluded"
+    (let [result (em/resolve-explicit-field-owners
+                  node-with-explicit-owners #{"sub"} {})]
+      (is (not (contains? result :should-not-be-seen))))))
+
+;; --- action-target-of-group-ns -------------------------------------------
+
+(def ^:private cart-fields
+  [{:name :cart-items :type :vector :of-group "cart-item" :default []}
+   {:name :total      :type :number :default 0}])
+
+(deftest action-target-of-group-ns-collection-field
+  (testing "step targeting a collection field qualifies with that field's :of-group"
+    (is (= "app.cart-item.db"
+           (em/action-target-of-group-ns
+            {:operation :add :target-field :cart-items}
+            cart-fields
+            "app")))))
+
+(deftest action-target-of-group-ns-scalar-field
+  (testing "step targeting a scalar field returns nil — no :of-group to qualify"
+    (is (nil? (em/action-target-of-group-ns
+               {:operation :set :target-field :total}
+               cart-fields
+               "app")))))
+
+(deftest action-target-of-group-ns-unknown-target
+  (testing "target-field not present in :fields returns nil"
+    (is (nil? (em/action-target-of-group-ns
+               {:operation :set :target-field :nonexistent}
+               cart-fields
+               "app")))))
+
+(deftest action-target-of-group-ns-honours-app-ns
+  (is (= "myapp.cart-item.db"
+         (em/action-target-of-group-ns
+          {:operation :add :target-field :cart-items}
+          cart-fields
+          "myapp"))))
+
 (deftest lower-document-on-empty-doc
   (let [lowered (em/lower-document (m/empty-document))]
     (testing "empty doc still produces a valid lowered shape with the

@@ -252,6 +252,20 @@
                  pair)]
      (into {} (concat own kids)))))
 
+(defn resolve-explicit-field-owners
+  "`explicit-field-owners` records user-facing owner *names* on a
+   node's subtree; plugins emitting requires need those resolved to
+   compiled `:ns-name` segments. This helper composes the two: walk
+   the subtree, then map each picked-owner name through `name->ns`.
+   Names not present in `name->ns` are passed through unchanged
+   (matching the historical fallback at the call sites).
+
+   Returns `{field-kw → ns-name-string}`."
+  [node sub-group-ids name->ns]
+  (into {}
+        (for [[f owner] (explicit-field-owners node sub-group-ids)]
+          [f (get name->ns owner owner)])))
+
 ;; --- binding + trigger collection ----------------------------------------
 
 (defn collect-read-bindings
@@ -309,7 +323,13 @@
   "Find every node under `node` that is an instance of another
    group, walking the whole subtree (but stopping at each sub-group
    boundary so we don't double-render nested groups). Returns
-   entries of `{:id :ns-name :slot-name}`."
+   entries of `{:id :ns-name :slot-name :source-sub :source-field}`.
+
+   `:source-sub` and `:source-field` are read from the instance node
+   itself — they only carry a value on template-instance children
+   that the user has bound to a runtime sub or a doc-level
+   collection. Plugins emitting template iteration consume them
+   directly instead of re-fetching the instance via `m/get-node`."
   [node all-groups]
   (let [group-ids (into #{} (mapcat :instance-ids) all-groups)
         walk (fn walk [n]
@@ -325,7 +345,11 @@
                  entry))]
     (for [{:keys [child slot-name]} (walk node)]
       (let [g (first (filter #(some #{(:id child)} (:instance-ids %)) all-groups))]
-        {:id (:id child) :ns-name (:ns-name g) :slot-name slot-name}))))
+        {:id           (:id child)
+         :ns-name      (:ns-name g)
+         :slot-name    slot-name
+         :source-sub   (:source-sub child)
+         :source-field (:source-field child)}))))
 
 (defn stateful-host-for-template
   "Find the `{:ns-name :field-name}` of the stateful group that
@@ -357,6 +381,26 @@
                           (:of-group f)))
                       (:fields n))))
             all-groups))))
+
+(defn action-target-of-group-ns
+  "Resolve the fully-qualified db namespace for an action step's
+   target field's `:of-group`, or nil when the matching field-def
+   carries no `:of-group`. Used by plugins emitting collection
+   mutations: an `:add` step against a `:cart-items :of-group
+   \"cart-item\"` field needs the incoming payload re-keyed into
+   `<app-ns>.cart-item.db/*` before it lands in the collection.
+
+   `step` is an action step shaped `{:target-field <kw> …}`,
+   `group-fields` is the enclosing group's `:fields` vector,
+   `app-ns` is the root app namespace. Returns
+   `\"<app-ns>.<of-group>.db\"` or nil."
+  [step group-fields app-ns]
+  (let [tgt (:target-field step)]
+    (some (fn [fd]
+            (when (= tgt (:name fd))
+              (when-let [og (:of-group fd)]
+                (str app-ns "." og ".db"))))
+          group-fields)))
 
 ;; --- composed lowered representation -------------------------------------
 
