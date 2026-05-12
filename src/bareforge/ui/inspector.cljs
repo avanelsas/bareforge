@@ -143,14 +143,20 @@
 
 (defn- append-enum-options!
   "Append one `<option>` per `:choices` entry, marking the entry that
-   matches `current` as `selected`. Separate fn so `build-enum` stays
-   a thin spec call plus this small DOM-decoration step."
+   matches `current` as `selected`, then mirror `current` onto the host's
+   `value` attribute. The `selected` attribute on `<option>` is what a
+   native `<select>` honours, but BareDOM's x-select clones option nodes
+   into an internal `<select>` and applies its own `value` attribute to
+   that inner element via `render!` — `<option selected>` is *not*
+   consulted. Without the host-value mirror the picker renders blank
+   even when a stored value exists."
   [^js sel-el prop current]
   (doseq [choice (:choices prop)]
     (let [^js o (u/el :option {:value choice})]
       (u/set-text! o choice)
       (when (= choice current) (u/set-attr! o :selected ""))
       (.appendChild sel-el o)))
+  (when current (u/set-attr! sel-el :value current))
   sel-el)
 
 (defn- build-enum [node prop]
@@ -337,6 +343,10 @@
         (u/set-text! o (name choice))
         (when (= choice current) (.setAttribute o "selected" ""))
         (.appendChild el o)))
+    ;; x-select renders from the host's `value` attribute, not from
+    ;; `<option selected>` — without this the picker would always paint
+    ;; blank even though placement is set.
+    (when current (u/set-attr! el :value (name current)))
     (u/on! el :select-change
            (fn [^js e]
              (let [v (some-> e .-detail .-value)]
@@ -1076,7 +1086,10 @@
         ;; see "values differ" without an explicit choice having been
         ;; made; selecting a concrete option commits to all nodes.
         opts    (cond-> (vec (:choices prop))
-                  mixed? (->> (cons "—") vec))]
+                  mixed? (->> (cons "—") vec))
+        ;; Host value the picker paints. In mixed mode the "—" sentinel
+        ;; is the visible choice; in agreement mode the joint value is.
+        host-v  (cond mixed? "—" value value :else nil)]
     (doseq [choice opts]
       (let [o (u/el :option {:value choice})]
         (u/set-text! o choice)
@@ -1084,6 +1097,10 @@
                   (and mixed? (= choice "—")))
           (u/set-attr! o :selected ""))
         (.appendChild sel-el o)))
+    ;; x-select renders from the host's `value` attribute, not from
+    ;; `<option selected>` — set it after the options exist so the
+    ;; agreed-on enum value (or the mixed-mode sentinel) actually paints.
+    (when host-v (u/set-attr! sel-el :value host-v))
     (when mixed?
       (.. sel-el -classList (add "is-mixed")))
     (u/on! sel-el :select-change
