@@ -142,22 +142,32 @@
                        :commit-fn!   commit-prop!}))
 
 (defn- append-enum-options!
-  "Append one `<option>` per `:choices` entry, marking the entry that
-   matches `current` as `selected`, then mirror `current` onto the host's
-   `value` attribute. The `selected` attribute on `<option>` is what a
-   native `<select>` honours, but BareDOM's x-select clones option nodes
-   into an internal `<select>` and applies its own `value` attribute to
-   that inner element via `render!` — `<option selected>` is *not*
+  "Append one `<option>` per `:choices` entry, marking the displayed
+   choice as `selected`, then mirror it onto the host's `value`
+   attribute.
+
+   `current` is the node's stored value (or nil if the user never
+   explicitly set the attribute). When stored, that wins; when nil,
+   fall back to the property's `:default` so the picker shows what
+   BareDOM is actually rendering — an x-button with no `size=`
+   attribute paints as `md` because the component's internal default
+   is `md`, and the inspector should match.
+
+   The `selected` attribute on `<option>` is what a native `<select>`
+   honours, but BareDOM's x-select clones option nodes into an
+   internal `<select>` and applies its own `value` attribute to that
+   inner element via `render!` — `<option selected>` is *not*
    consulted. Without the host-value mirror the picker renders blank
    even when a stored value exists."
   [^js sel-el prop current]
-  (doseq [choice (:choices prop)]
-    (let [^js o (u/el :option {:value choice})]
-      (u/set-text! o choice)
-      (when (= choice current) (u/set-attr! o :selected ""))
-      (.appendChild sel-el o)))
-  (when current (u/set-attr! sel-el :value current))
-  sel-el)
+  (let [display (or current (:default prop))]
+    (doseq [choice (:choices prop)]
+      (let [^js o (u/el :option {:value choice})]
+        (u/set-text! o choice)
+        (when (= choice display) (u/set-attr! o :selected ""))
+        (.appendChild sel-el o)))
+    (when display (u/set-attr! sel-el :value display))
+    sel-el))
 
 (defn- build-enum [node prop]
   (-> (build-widget-shell node prop
@@ -1089,18 +1099,23 @@
                   mixed? (->> (cons "—") vec))
         ;; Host value the picker paints. In mixed mode the "—" sentinel
         ;; is the visible choice; in agreement mode the joint value is.
-        host-v  (cond mixed? "—" value value :else nil)]
+        ;; When the joint value is nil — every node unset → fall back
+        ;; to the prop's `:default` so the picker matches what BareDOM
+        ;; renders, same logic as the single-select enum row.
+        display (cond mixed?     "—"
+                      (some? value) value
+                      :else      (:default prop))]
     (doseq [choice opts]
       (let [o (u/el :option {:value choice})]
         (u/set-text! o choice)
-        (when (or (and (not mixed?) (= choice value))
+        (when (or (and (not mixed?) (= choice display))
                   (and mixed? (= choice "—")))
           (u/set-attr! o :selected ""))
         (.appendChild sel-el o)))
     ;; x-select renders from the host's `value` attribute, not from
     ;; `<option selected>` — set it after the options exist so the
-    ;; agreed-on enum value (or the mixed-mode sentinel) actually paints.
-    (when host-v (u/set-attr! sel-el :value host-v))
+    ;; displayed enum value (or the mixed-mode sentinel) actually paints.
+    (when display (u/set-attr! sel-el :value display))
     (when mixed?
       (.. sel-el -classList (add "is-mixed")))
     (u/on! sel-el :select-change
