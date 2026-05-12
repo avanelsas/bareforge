@@ -172,7 +172,6 @@
 (def ^:private computed-field?   em/computed?)
 (def ^:private collection-field? em/collection-field?)
 
-(def ^:private explicit-field-owners           em/explicit-field-owners)
 (def ^:private collect-read-bindings           em/collect-read-bindings)
 (def ^:private collect-trigger-payload-fields  em/collect-trigger-payload-fields)
 (def ^:private collect-trigger-action-refs     em/collect-trigger-action-refs)
@@ -562,9 +561,7 @@
                              distinct
                              (remove own-field-set))
         has-let?        (seq let-fields)
-        explicit        (into {}
-                              (for [[f owner] (explicit-field-owners node sub-group-ids)]
-                                [f (get name->ns owner owner)]))
+        explicit        (em/resolve-explicit-field-owners node sub-group-ids name->ns)
         field->owner    (into {} (for [f let-fields]
                                    [f (or (get explicit f)
                                           (get owner-idx f)
@@ -1396,9 +1393,7 @@
                          g)
         read-fields    (collect-read-bindings node sg-ids)
         payload-fields (collect-trigger-payload-fields node sg-ids)
-        explicit       (into {}
-                             (for [[f o] (explicit-field-owners node sg-ids)]
-                               [f (get name->ns o o)]))
+        explicit       (em/resolve-explicit-field-owners node sg-ids name->ns)
         candidate-let  (distinct (concat read-fields payload-fields))
         field->owner   (into {}
                              (for [f candidate-let

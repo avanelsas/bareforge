@@ -252,6 +252,20 @@
                  pair)]
      (into {} (concat own kids)))))
 
+(defn resolve-explicit-field-owners
+  "`explicit-field-owners` records user-facing owner *names* on a
+   node's subtree; plugins emitting requires need those resolved to
+   compiled `:ns-name` segments. This helper composes the two: walk
+   the subtree, then map each picked-owner name through `name->ns`.
+   Names not present in `name->ns` are passed through unchanged
+   (matching the historical fallback at the call sites).
+
+   Returns `{field-kw → ns-name-string}`."
+  [node sub-group-ids name->ns]
+  (into {}
+        (for [[f owner] (explicit-field-owners node sub-group-ids)]
+          [f (get name->ns owner owner)])))
+
 ;; --- binding + trigger collection ----------------------------------------
 
 (defn collect-read-bindings
