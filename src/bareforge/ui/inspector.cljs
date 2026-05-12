@@ -2509,6 +2509,70 @@
     (.appendChild bar st-tab)
     bar))
 
+(defn- node-structural-shape
+  "Pure: project a node down to the slice the inspector cares about
+   when deciding rebuild vs in-place patch. Drops `:default` and
+   `:locked?` from each field-def (those toggle as the user types
+   into the Name input's auto-::id insertion or edits a seed cell —
+   if we compared them we'd thrash the panel on every keystroke) and
+   reduces a vector `:default` to its count so adding / removing a
+   seed *does* trigger a rebuild."
+  [node]
+  (let [struct-field #(cond-> (dissoc % :default :locked?)
+                        (vector? (:default %))
+                        (assoc ::default-count (count (:default %))))]
+    {:fields       (->> (:fields node) (remove :locked?) (mapv struct-field))
+     :actions      (:actions node)
+     :bindings     (:bindings node)
+     :events       (:events node)
+     :text-field   (:text-field node)
+     :source-field (:source-field node)
+     :source-sub   (:source-sub node)}))
+
+(defn- watcher-action
+  "Pure: decide how the inspector should react to a transition from
+   `old-state` to `new-state`. Returns a tagged map:
+
+     {:kind :rebuild :model m}  ;; full render (model may be nil to clear)
+     {:kind :patch   :node n}   ;; in-place attribute update (keeps focus)
+     {:kind :skip}              ;; nothing relevant changed, or a multi-
+                                ;; select doc edit that we want to swallow
+                                ;; so every keystroke doesn't throw away
+                                ;; the focused shared-attr input.
+
+   Splits cleanly out of `create`'s `add-watch` so the decision
+   tree is testable and the effectful side reads as a one-line
+   dispatch on `:kind`."
+  [old-state new-state]
+  (let [sel-changed? (not= (:selection old-state) (:selection new-state))
+        doc-changed? (not= (:document old-state) (:document new-state))
+        ui-changed?  (or (not= (get-in old-state [:ui :inspector-collapsed])
+                               (get-in new-state [:ui :inspector-collapsed]))
+                         (not= (get-in old-state [:ui :expanded-seeds])
+                               (get-in new-state [:ui :expanded-seeds])))
+        new-model    (when (or sel-changed? doc-changed? ui-changed?)
+                       (model/inspector-model new-state))]
+    (cond
+      (or sel-changed? ui-changed?)
+      {:kind :rebuild :model new-model}
+
+      (and doc-changed? (nil? new-model))
+      {:kind :rebuild :model nil}
+
+      (and doc-changed? (:multi new-model))
+      {:kind :skip}
+
+      doc-changed?
+      (let [old-node (:node (model/inspector-model old-state))
+            new-node (:node new-model)]
+        (if (or (nil? old-node)
+                (not= (node-structural-shape old-node)
+                      (node-structural-shape new-node)))
+          {:kind :rebuild :model new-model}
+          {:kind :patch :node new-node}))
+
+      :else {:kind :skip})))
+
 (defn create
   "Build the right-hand panel: a two-tab control (Inspector / State)
    with both bodies mounted, only one visible at a time. Inspector
@@ -2526,60 +2590,9 @@
     (render! body (model/inspector-model @state/app-state))
     (add-watch state/app-state ::inspector
                (fn [_ _ old-state new-state]
-                 (let [sel-changed? (not= (:selection old-state)
-                                          (:selection new-state))
-                       doc-changed? (not= (:document old-state)
-                                          (:document new-state))
-                       ui-changed?  (or (not= (get-in old-state [:ui :inspector-collapsed])
-                                              (get-in new-state [:ui :inspector-collapsed]))
-                                        (not= (get-in old-state [:ui :expanded-seeds])
-                                              (get-in new-state [:ui :expanded-seeds])))
-                       new-model    (when (or sel-changed? doc-changed? ui-changed?)
-                                      (model/inspector-model new-state))]
-                   (cond
-                     (or sel-changed? ui-changed?)
-                     (render! body new-model)
-
-                     (and doc-changed? (nil? new-model))
-                     (render! body nil)
-
-                     ;; Multi-select: doc changed (most likely from
-                     ;; the user editing a shared-attr field). Skip
-                     ;; the rebuild — every keystroke would otherwise
-                     ;; throw away the focused input. The committed
-                     ;; values are correct in the doc; the panel's
-                     ;; visual "Mixed" markers may lag until the user
-                     ;; re-enters multi-select, which is acceptable.
-                     (and doc-changed? (:multi new-model))
-                     nil
-
-                     doc-changed?
-                     (let [old-model   (model/inspector-model old-state)
-                           old-node    (:node old-model)
-                           new-node    (:node new-model)
-                           ;; Compare fields with auto-locked entries
-                           ;; stripped AND vector :defaults reduced to
-                           ;; their count. Together these keep the
-                           ;; panel stable while the user types into
-                           ;; the Name input (auto-::id insertion) or
-                           ;; a seed-record cell (intra-record edit),
-                           ;; while still rebuilding when fields or
-                           ;; record counts actually change.
-                           struct-shape #(cond-> (dissoc % :default :locked?)
-                                           (vector? (:default %))
-                                           (assoc ::default-count (count (:default %))))
-                           user-fields #(->> (:fields %)
-                                             (remove :locked?)
-                                             (mapv struct-shape))
-                           structural? (or (nil? old-node)
-                                           (not= (user-fields old-node) (user-fields new-node))
-                                           (not= (:actions old-node) (:actions new-node))
-                                           (not= (:bindings old-node) (:bindings new-node))
-                                           (not= (:events old-node) (:events new-node))
-                                           (not= (:text-field old-node) (:text-field new-node))
-                                           (not= (:source-field old-node) (:source-field new-node))
-                                           (not= (:source-sub old-node) (:source-sub new-node)))]
-                       (if structural?
-                         (render! body new-model)
-                         (update-fields-in-place! body new-node)))))))
+                 (let [{:keys [kind model node]} (watcher-action old-state new-state)]
+                   (case kind
+                     :rebuild (render! body model)
+                     :patch   (update-fields-in-place! body node)
+                     :skip    nil))))
     panel))
