@@ -58,6 +58,36 @@
   [v]
   (or (parse-number v) 0))
 
+(defn format-decimal
+  "Pure: format a value for display in an inspector input. Numbers
+   (and purely-numeric strings) get rounded to at most `decimals`
+   places (default 2), with trailing zeros and the trailing decimal
+   point trimmed — so float-math artifacts like `939.8698120117188`
+   paint as `939.87` and crisp integers stay crisp (`50` not `50.00`).
+   Strings that aren't purely numeric (CSS lengths like `50%`,
+   compound forms like `10px 20px`) pass through unchanged so the
+   user's authoring intent is preserved. Nil → nil.
+
+   `js/parseFloat` is lenient (`50px` parses to 50, leaking digits)
+   so the string branch gates on a strict numeric regex before
+   touching `parseFloat` — partial parses fall through."
+  ([v] (format-decimal v 2))
+  ([v decimals]
+   (cond
+     (nil? v)
+     nil
+
+     (number? v)
+     (str (js/parseFloat (.toFixed v decimals)))
+
+     (string? v)
+     (if (re-matches #"-?\d+(?:\.\d+)?" v)
+       (str (js/parseFloat (.toFixed (js/parseFloat v) decimals)))
+       v)
+
+     :else
+     v)))
+
 (defn parse-length-value
   "Pure: coerce an inspector length string into a number when it
    parses cleanly to that exact representation, otherwise pass the

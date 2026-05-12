@@ -126,7 +126,7 @@
         reader  (or event-reader read-event-value)]
     (case (or value-attr :value)
       :checked (when current (u/set-attr! el :checked ""))
-      :value   (when current (u/set-attr! el :value current)))
+      :value   (when current (u/set-attr! el :value (c/format-decimal current))))
     (u/on! el event
            (fn [^js e]
              (commit-fn! (:id node) (:name prop) (reader e))))
@@ -142,16 +142,32 @@
                        :commit-fn!   commit-prop!}))
 
 (defn- append-enum-options!
-  "Append one `<option>` per `:choices` entry, marking the entry that
-   matches `current` as `selected`. Separate fn so `build-enum` stays
-   a thin spec call plus this small DOM-decoration step."
+  "Append one `<option>` per `:choices` entry, marking the displayed
+   choice as `selected`, then mirror it onto the host's `value`
+   attribute.
+
+   `current` is the node's stored value (or nil if the user never
+   explicitly set the attribute). When stored, that wins; when nil,
+   fall back to the property's `:default` so the picker shows what
+   BareDOM is actually rendering — an x-button with no `size=`
+   attribute paints as `md` because the component's internal default
+   is `md`, and the inspector should match.
+
+   The `selected` attribute on `<option>` is what a native `<select>`
+   honours, but BareDOM's x-select clones option nodes into an
+   internal `<select>` and applies its own `value` attribute to that
+   inner element via `render!` — `<option selected>` is *not*
+   consulted. Without the host-value mirror the picker renders blank
+   even when a stored value exists."
   [^js sel-el prop current]
-  (doseq [choice (:choices prop)]
-    (let [^js o (u/el :option {:value choice})]
-      (u/set-text! o choice)
-      (when (= choice current) (u/set-attr! o :selected ""))
-      (.appendChild sel-el o)))
-  sel-el)
+  (let [display (or current (:default prop))]
+    (doseq [choice (:choices prop)]
+      (let [^js o (u/el :option {:value choice})]
+        (u/set-text! o choice)
+        (when (= choice display) (u/set-attr! o :selected ""))
+        (.appendChild sel-el o)))
+    (when display (u/set-attr! sel-el :value display))
+    sel-el))
 
 (defn- build-enum [node prop]
   (-> (build-widget-shell node prop
@@ -324,6 +340,53 @@
                  :coerce-fn     c/nil-if-empty
                  :datalist-id   tokens/length-datalist-id}))
 
+(defn- visual-position-vs-parent
+  "Effectful: read the rendered DOM element for `node-id` plus its
+   immediate DOM parent and return `[x y]` in the content-pixel
+   coordinate space `:layout :x / :y` use on a `:free` node — viewport-
+   pixel offset divided by the active canvas zoom, then minus the
+   parent's border width.
+
+   CSS `position: absolute; left: Xpx; top: Ypx;` is measured from
+   the containing block's *padding* box (CSS positioning spec), not
+   its border-box BCR origin. Subtracting `clientLeft / clientTop`
+   (the rendered border width) brings the captured offset into the
+   same reference frame the reconciler will use when it re-renders
+   the just-promoted element. Without it a parent with a 1 px
+   border shifts the element 1 px on commit.
+
+   nil when either element can't be resolved (deleted between
+   snapshot and render, not yet mounted, etc.)."
+  [node-id]
+  (when-let [^js el (canvas/dom-for-id node-id)]
+    (when-let [^js parent-el (.-parentElement el)]
+      (let [^js ebcr (.getBoundingClientRect el)
+            ^js pbcr (.getBoundingClientRect parent-el)
+            zoom     (or (:zoom (state/canvas-view @state/app-state)) 1)]
+        [(- (/ (- (.-left ebcr) (.-left pbcr)) zoom) (.-clientLeft parent-el))
+         (- (/ (- (.-top  ebcr) (.-top  pbcr)) zoom) (.-clientTop  parent-el))]))))
+
+(defn- commit-promote-placement!
+  "Set a node's `:layout :placement`. When the transition is to
+   `:free` from any other placement, also capture the element's
+   current visual position into `:layout :x / :y` so the first
+   subsequent drag doesn't resolve its delta against (0, 0) and
+   snap the element away from where the user can see it. The
+   element keeps any pre-existing `:x / :y` if it was already
+   `:free` — only a fresh promotion writes the captured rect."
+  [node-id current-layout new-placement]
+  (let [becoming-free? (and (= :free new-placement)
+                            (not= :free (:placement current-layout)))
+        doc            (:document @state/app-state)
+        doc'           (ops/set-layout doc node-id :placement new-placement)
+        doc'           (if-let [pos (and becoming-free? (visual-position-vs-parent node-id))]
+                         (let [[x y] pos]
+                           (-> doc'
+                               (ops/set-layout node-id :x x)
+                               (ops/set-layout node-id :y y)))
+                         doc')]
+    (state/commit! doc')))
+
 (defn- build-placement-field
   "Editable x-select for the node's `:layout :placement`. Currently
    exposes `flow`, `background`, and `free`. Top/bottom-full-width
@@ -337,11 +400,15 @@
         (u/set-text! o (name choice))
         (when (= choice current) (.setAttribute o "selected" ""))
         (.appendChild el o)))
+    ;; x-select renders from the host's `value` attribute, not from
+    ;; `<option selected>` — without this the picker would always paint
+    ;; blank even though placement is set.
+    (when current (u/set-attr! el :value (name current)))
     (u/on! el :select-change
            (fn [^js e]
              (let [v (some-> e .-detail .-value)]
                (when v
-                 (commit-with! ops/set-layout (:id node) :placement (keyword v))))))
+                 (commit-promote-placement! (:id node) (:layout node) (keyword v))))))
     el))
 
 (defn- build-free-coord-field
@@ -357,7 +424,7 @@
                     (tag-widget! (str "__layout__/" (name layout-key)) "layout"))
         raw     (get-in node [:layout layout-key])
         node-id (:id node)]
-    (when raw (u/set-attr! el :value (str raw)))
+    (when raw (u/set-attr! el :value (c/format-decimal raw)))
     (u/on! el :x-search-field-input
            (fn [^js e]
              (let [v (read-event-value e)]
@@ -1076,14 +1143,26 @@
         ;; see "values differ" without an explicit choice having been
         ;; made; selecting a concrete option commits to all nodes.
         opts    (cond-> (vec (:choices prop))
-                  mixed? (->> (cons "—") vec))]
+                  mixed? (->> (cons "—") vec))
+        ;; Host value the picker paints. In mixed mode the "—" sentinel
+        ;; is the visible choice; in agreement mode the joint value is.
+        ;; When the joint value is nil — every node unset → fall back
+        ;; to the prop's `:default` so the picker matches what BareDOM
+        ;; renders, same logic as the single-select enum row.
+        display (cond mixed?     "—"
+                      (some? value) value
+                      :else      (:default prop))]
     (doseq [choice opts]
       (let [o (u/el :option {:value choice})]
         (u/set-text! o choice)
-        (when (or (and (not mixed?) (= choice value))
+        (when (or (and (not mixed?) (= choice display))
                   (and mixed? (= choice "—")))
           (u/set-attr! o :selected ""))
         (.appendChild sel-el o)))
+    ;; x-select renders from the host's `value` attribute, not from
+    ;; `<option selected>` — set it after the options exist so the
+    ;; displayed enum value (or the mixed-mode sentinel) actually paints.
+    (when display (u/set-attr! sel-el :value display))
     (when mixed?
       (.. sel-el -classList (add "is-mixed")))
     (u/on! sel-el :select-change
@@ -1178,7 +1257,12 @@
   "Effectful: write `new-v` to `el` if it differs from the current
    widget value. Booleans go through the `checked` attr (BareDOM
    boolean controls observe presence/absence); every other kind
-   goes through the `value` attr."
+   goes through the `value` attr.
+
+   Non-boolean values are routed through `format-decimal` so numeric
+   payloads from the patch path display the same rounded form the
+   build path uses (e.g. an x-coord of 257.29168701171875 paints as
+   `257.29` here too — not a twelve-decimal tail every keystroke)."
   [^js el kind new-v]
   (if (= "boolean" kind)
     (let [cur-v (boolean (.-checked el))]
@@ -1186,9 +1270,10 @@
         (if new-v
           (.setAttribute el "checked" "")
           (.removeAttribute el "checked"))))
-    (let [cur-v (widget-value el)]
-      (when (not= new-v cur-v)
-        (.setAttribute el "value" new-v)))))
+    (let [cur-v (widget-value el)
+          new-v* (or (c/format-decimal new-v) "")]
+      (when (not= new-v* cur-v)
+        (.setAttribute el "value" new-v*)))))
 
 (defn- update-field-in-place! [^js el node]
   (let [prop-name (.getAttribute el "data-prop-name")

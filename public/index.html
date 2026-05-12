@@ -98,6 +98,16 @@
       padding: 12px;
       overflow: auto;
       background: var(--x-color-surface);
+      /* Tool-panel chrome — labels, item titles, category headers etc.
+         should never be browser-text-selectable. Without this, dragging
+         a palette item across other labels paints them with the native
+         selection highlight and the user has to click somewhere else
+         to clear it before the next drag works. Native <input>s and
+         <textarea>s inside the panels (inspector search fields,
+         text-areas) still allow text selection because they override
+         user-select by default. */
+      -webkit-user-select: none;
+      user-select: none;
     }
     .panel-palette   { grid-area: palette; }
     .panel-inspector {

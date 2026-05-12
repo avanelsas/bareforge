@@ -102,3 +102,45 @@
 
 (deftest parse-length-decimal-pure-number
   (is (= 1.5 (c/parse-length-value "1.5"))))
+
+;; --- format-decimal -----------------------------------------------------
+
+(deftest format-decimal-nil
+  (is (nil? (c/format-decimal nil))))
+
+(deftest format-decimal-rounds-long-float
+  (testing "float-math artifacts like the drag-math example get
+            trimmed to two decimals by default"
+    (is (= "939.87" (c/format-decimal 939.8698120117188)))
+    (is (= "257.29" (c/format-decimal 257.29168701171875)))))
+
+(deftest format-decimal-drops-trailing-zeros
+  (testing "crisp integers stay crisp; .toFixed(2) artefacts go away"
+    (is (= "50"   (c/format-decimal 50)))
+    (is (= "0"    (c/format-decimal 0)))
+    (is (= "-3"   (c/format-decimal -3)))
+    (is (= "1.5"  (c/format-decimal 1.5)))
+    (is (= "0.25" (c/format-decimal 0.25)))))
+
+(deftest format-decimal-respects-custom-precision
+  (testing "callers that need a different precision can ask"
+    (is (= "3.142" (c/format-decimal 3.14159265 3)))
+    (is (= "3"     (c/format-decimal 3.14159265 0)))))
+
+(deftest format-decimal-numeric-strings-round
+  (testing "purely numeric strings get the same treatment so attrs
+            stored as `(str <float>)` still display cleanly"
+    (is (= "50"     (c/format-decimal "50")))
+    (is (= "50"     (c/format-decimal "50.00")))
+    (is (= "1.23"   (c/format-decimal "1.23")))
+    (is (= "1.23"   (c/format-decimal "1.230")))
+    (is (= "939.87" (c/format-decimal "939.8698120117188")))))
+
+(deftest format-decimal-non-numeric-strings-pass-through
+  (testing "CSS lengths and compound forms must survive unchanged
+            so authoring intent isn't silently rewritten"
+    (is (= "50%"       (c/format-decimal "50%")))
+    (is (= "10rem"     (c/format-decimal "10rem")))
+    (is (= "auto"      (c/format-decimal "auto")))
+    (is (= "10px 20px" (c/format-decimal "10px 20px")))
+    (is (= ""          (c/format-decimal "")))))
