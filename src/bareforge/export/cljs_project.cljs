@@ -578,28 +578,22 @@
         ;; group's `.events` ns to resolve `::<alias>/<field>-changed`.
         write-events-aliases (collect-write-binding-aliases
                               node sub-group-ids name->ns owner-idx own-ns-name)
-        ;; For each template sub-group child, its records come from
-        ;; either :source-sub (its own ns) or :source-field (owning
-        ;; group's subs ns — resolved via field-owner-idx). When
-        ;; :source-field is absent but exactly one collection targets
-        ;; the template via :of-group, the emitter falls back to that
-        ;; host (see collection-iteration-call's fallback); this
-        ;; require list must mirror that fallback so the auto-
-        ;; resolved sub's namespace is actually imported.
+        ;; For each template sub-group child, ask the model to resolve
+        ;; the records' source (`:source-sub` / `:source-field` /
+        ;; auto-host) and emit the matching require alias so the view
+        ;; can import it. Mirrors the per-sub-ref resolution in
+        ;; `collection-iteration-call` — both consume the same
+        ;; `resolve-template-source` helper, so they can never drift.
         tpl-child-sub-aliases
         (distinct
-         (concat
-          (for [{:keys [ns-name source-sub]} sub-groups
-                :when (and (contains? template-groups ns-name) source-sub)]
-            (action-ref->alias source-sub))
-          (for [{:keys [ns-name source-sub source-field]} sub-groups
-                :let [owner    (when source-field (get owner-idx source-field))
-                      fallback (when (and (nil? source-field) (nil? source-sub))
-                                 (stateful-host-for-template
-                                  doc all-groups ns-name))
-                      owner*   (or owner (:ns-name fallback))]
-                :when (and (contains? template-groups ns-name) owner*)]
-            (str owner* ".subs"))))
+         (for [{:keys [ns-name] :as sg} sub-groups
+               :when (contains? template-groups ns-name)
+               :let [src (em/resolve-template-source sg doc all-groups owner-idx)]
+               :when src]
+           (case (:kind src)
+             :source-sub   (action-ref->alias (:sub src))
+             :source-field (str (:owner-ns src) ".subs")
+             :auto-host    (str (:owner-ns src) ".subs"))))
         own-db-alias    (when template?
                           (str own-ns-name ".db"))
         all-subs-aliases (distinct (concat subs-aliases tpl-child-sub-aliases))
@@ -1468,19 +1462,30 @@
    group is a template, a `(for [p (rf/query [<sub>])] …)` loop
    wrapped in a `display: contents` div (see
    `collection-iteration-call` for the wrapper rationale)."
-  [entry {:keys [doc owner-idx template-names]}]
+  [entry {:keys [doc groups owner-idx template-names]}]
   (if-not (contains? template-names (:ns-name entry))
     (str "   (" (:ns-name entry) ".views/" (:ns-name entry) ")")
     (let [inst    (m/get-node doc (:id entry))
-          ss      (:source-sub inst)
-          sf      (:source-field inst)
-          owner   (get owner-idx sf)
-          sub-ref (cond
-                    ss             (str "::" (action-ref->alias ss) "/"
-                                        (name ss))
-                    (and sf owner) (str "::" owner ".subs/"
-                                        (cljs.core/name sf))
-                    :else          "::!no-source-for-template")]
+          ;; The root-order entry carries only :ns-name + :id, not the
+          ;; full source-* slice the helper expects — synthesise the
+          ;; instance shape from the actual canvas node so the three-
+          ;; way resolution (sub / field / auto-host) stays in one
+          ;; place. Auto-host fires for the demo-store pattern where
+          ;; a root-level template (e.g. cart-item, were it root-level)
+          ;; has no explicit source but exactly one collection points
+          ;; at it via :of-group.
+          tpl-inst {:ns-name      (:ns-name entry)
+                    :source-sub   (:source-sub inst)
+                    :source-field (:source-field inst)}
+          src     (em/resolve-template-source tpl-inst doc groups owner-idx)
+          sub-ref (case (and src (:kind src))
+                    :source-sub   (str "::" (action-ref->alias (:sub src)) "/"
+                                       (name (:sub src)))
+                    :source-field (str "::" (:owner-ns src) ".subs/"
+                                       (cljs.core/name (:field src)))
+                    :auto-host    (str "::" (:owner-ns src) ".subs/"
+                                       (:field-name src))
+                    "::!no-source-for-template")]
       (str "   [:div {:style \"display: contents\"}\n"
            "    (for [p (rf/query [" sub-ref "])]\n"
            "      (" (:ns-name entry) ".views/" (:ns-name entry) " p))]"))))

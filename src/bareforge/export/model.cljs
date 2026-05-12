@@ -382,6 +382,42 @@
                       (:fields n))))
             all-groups))))
 
+(defn resolve-template-source
+  "Resolve where a template-instance's records come from. Three
+   cases, tried in order:
+
+     1. `:source-sub` set on the instance — explicit runtime sub.
+        Returns `{:kind :source-sub :sub source-sub-kw}`.
+     2. `:source-field` set on the instance, and the field is owned
+        by some group in `field-owner-ns`. Returns
+        `{:kind :source-field :owner-ns string :field source-field-kw}`.
+     3. Neither set — implicit fallback to the unique stateful host
+        whose collection points at this template via `:of-group`.
+        Returns `{:kind :auto-host :owner-ns string :field-name string}`.
+
+   `nil` when none of the three resolves (no explicit source, no
+   field-owner match, and no auto-host).
+
+   `template-instance` is a map carrying at least `:ns-name`
+   (template group's ns-name), `:source-sub`, and `:source-field` —
+   the shape `find-sub-groups` returns. Plugins emitting template
+   iteration switch on `:kind` to format the appropriate sub-ref
+   string for their target."
+  [{:keys [ns-name source-sub source-field]} doc all-groups field-owner-ns]
+  (cond
+    source-sub
+    {:kind :source-sub :sub source-sub}
+
+    source-field
+    (when-let [owner-ns (get field-owner-ns source-field)]
+      {:kind :source-field :owner-ns owner-ns :field source-field})
+
+    :else
+    (when-let [host (stateful-host-for-template doc all-groups ns-name)]
+      {:kind       :auto-host
+       :owner-ns   (:ns-name host)
+       :field-name (:field-name host)})))
+
 (defn action-target-of-group-ns
   "Resolve the fully-qualified db namespace for an action step's
    target field's `:of-group`, or nil when the matching field-def

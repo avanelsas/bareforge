@@ -155,6 +155,51 @@
       (is (= "cart" (get field-owner-ns :cart-items))
           "the :cart-items field is declared on cart"))))
 
+;; --- resolve-template-source ---------------------------------------------
+
+(deftest resolve-template-source-source-sub-wins
+  (testing ":source-sub takes precedence over everything else"
+    (is (= {:kind :source-sub :sub :app.cart.subs/items}
+           (em/resolve-template-source
+            {:ns-name "cart-item"
+             :source-sub :app.cart.subs/items
+             :source-field :ignored}
+            nil [] {:ignored "ignored-owner"})))))
+
+(deftest resolve-template-source-source-field-resolves-owner
+  (testing ":source-field looks up its owning group via field-owner-ns"
+    (is (= {:kind :source-field :owner-ns "cart" :field :cart-items}
+           (em/resolve-template-source
+            {:ns-name "cart-item"
+             :source-sub nil
+             :source-field :cart-items}
+            nil [] {:cart-items "cart"})))))
+
+(deftest resolve-template-source-field-no-owner
+  (testing ":source-field set but absent from field-owner-ns yields nil"
+    (is (nil? (em/resolve-template-source
+               {:ns-name "cart-item"
+                :source-sub nil
+                :source-field :orphan}
+               nil [] {})))))
+
+(deftest resolve-template-source-auto-host-on-demo-store
+  (testing "neither source set, single collection points at the template
+            via :of-group → auto-host fallback resolves it"
+    (let [doc (demo-store-doc)
+          {:keys [groups]} (em/detect-groups doc)
+          {:keys [field-owner-ns]} (em/lower-document doc)]
+      (is (= {:kind :auto-host :owner-ns "cart" :field-name "cart-items"}
+             (em/resolve-template-source
+              {:ns-name "cart-item" :source-sub nil :source-field nil}
+              doc groups field-owner-ns))))))
+
+(deftest resolve-template-source-nil-when-no-host
+  (testing "nothing resolves → nil so plugins can emit a placeholder"
+    (is (nil? (em/resolve-template-source
+               {:ns-name "untargeted" :source-sub nil :source-field nil}
+               (m/empty-document) [] {})))))
+
 ;; --- find-sub-groups -----------------------------------------------------
 
 (deftest find-sub-groups-carries-source-fields

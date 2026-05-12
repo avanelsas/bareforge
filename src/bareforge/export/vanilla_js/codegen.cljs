@@ -679,30 +679,17 @@
         cart-item template instance has no explicit source; its
         records flow from cart's `:cart-items` collection."
   [sub-group slot-name ctx]
-  (let [app-ns (:app-ns ctx)
-        src-sub-kw (:source-sub sub-group)
-        src-field  (:source-field sub-group)
-        host       (when-not (or src-sub-kw src-field)
-                     (em/stateful-host-for-template
-                      (:doc ctx)
-                      (:all-groups ctx)
-                      (:ns-name sub-group)))
-        sub-ref (cond
-                  src-sub-kw
-                  (str app-ns "."
-                       (namespace src-sub-kw) "/"
-                       (cljs.core/name src-sub-kw))
-
-                  src-field
-                  (let [owner ((:field->owner ctx) src-field)]
-                    (str app-ns "." owner ".subs/"
-                         (cljs.core/name src-field)))
-
-                  host
-                  (str app-ns "." (:ns-name host)
-                       ".subs/" (:field-name host))
-
-                  :else
+  (let [app-ns  (:app-ns ctx)
+        src     (em/resolve-template-source
+                 sub-group (:doc ctx) (:all-groups ctx) (:field->owner ctx))
+        sub-ref (case (and src (:kind src))
+                  :source-sub   (str app-ns "."
+                                     (namespace (:sub src)) "/"
+                                     (cljs.core/name (:sub src)))
+                  :source-field (str app-ns "." (:owner-ns src) ".subs/"
+                                     (cljs.core/name (:field src)))
+                  :auto-host    (str app-ns "." (:owner-ns src) ".subs/"
+                                     (:field-name src))
                   "__NO_SOURCE__")
         tpl-ns  (:ns-name sub-group)
         slot-prop (when (and slot-name (not= "default" slot-name))
