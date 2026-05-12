@@ -43,11 +43,16 @@
 
 ;; --- effectful -----------------------------------------------------------
 
+;; Live DOM element refs and the in-flight edit's mode/node-id. Kept in a
+;; Clojure atom (not a JS object) so the cell is observable and the values
+;; behave like Clojure data. The serializable slice (`:text-editing-id`)
+;; is mirrored to `state/app-state` under `:ui` so the rest of the app can
+;; react to it via the single-atom convention.
 (defonce ^:private edit-state
-  #js {:el nil :host nil :node-id nil :mode nil :target nil :saved-color nil})
+  (atom {:el nil :host nil :node-id nil :mode nil :target nil :saved-color nil}))
 
 (defn- active? []
-  (some? (unchecked-get edit-state "el")))
+  (some? (:el @edit-state)))
 
 (defn- bcr->map [^js r]
   {:left (.-left r) :top (.-top r) :width (.-width r) :height (.-height r)})
@@ -62,9 +67,8 @@
 (declare teardown!)
 
 (defn- on-input! [^js e]
-  (let [value   (.. e -target -value)
-        node-id (unchecked-get edit-state "node-id")
-        mode    (unchecked-get edit-state "mode")]
+  (let [value                  (.. e -target -value)
+        {:keys [node-id mode]} @edit-state]
     (commit-text-edit! node-id mode value)))
 
 (defn- on-keydown! [^js e]
@@ -79,23 +83,16 @@
   "Exit inline edit mode. Safe to call when not editing (no-op)."
   []
   (when (active?)
-    (let [^js el     (unchecked-get edit-state "el")
-          ^js host   (unchecked-get edit-state "host")
-          ^js target (unchecked-get edit-state "target")
-          saved      (unchecked-get edit-state "saved-color")]
+    (let [{:keys [^js el ^js host ^js target saved-color]} @edit-state]
       (.removeEventListener el "input" on-input!)
       (.removeEventListener el "keydown" on-keydown!)
       (.removeEventListener el "blur" on-blur!)
       (when (and host (.-parentNode el))
         (.removeChild host el))
       (when target
-        (set! (.. target -style -visibility) (or saved ""))))
-    (unchecked-set edit-state "el"          nil)
-    (unchecked-set edit-state "host"        nil)
-    (unchecked-set edit-state "node-id"     nil)
-    (unchecked-set edit-state "mode"        nil)
-    (unchecked-set edit-state "target"      nil)
-    (unchecked-set edit-state "saved-color" nil)
+        (set! (.. target -style -visibility) (or saved-color ""))))
+    (reset! edit-state
+            {:el nil :host nil :node-id nil :mode nil :target nil :saved-color nil})
     (state/assoc-ui! :text-editing-id nil)))
 
 (defn- apply-font-style! [^js textarea ^js target-el]
@@ -140,21 +137,21 @@
             (set! (.-value ta) (or (read-text mode node) ""))
             ;; Hide the element's rendered text so it doesn't show
             ;; through behind the textarea overlay.
-            (unchecked-set edit-state "saved-color"
-                           (.. target-el -style -visibility))
-            (set! (.. target-el -style -visibility) "hidden")
-            (.addEventListener ta "input" on-input!)
-            (.addEventListener ta "keydown" on-keydown!)
-            (.addEventListener ta "blur" on-blur!)
-            (.appendChild canvas-host ta)
-            (unchecked-set edit-state "el"      ta)
-            (unchecked-set edit-state "host"    canvas-host)
-            ;; Store the canonical doc id — on-input! commits a
-            ;; doc mutation (ops/set-text) and must address the
-            ;; template, not the clicked clone.
-            (unchecked-set edit-state "node-id" canonical)
-            (unchecked-set edit-state "mode"    mode)
-            (unchecked-set edit-state "target"  target-el)
+            (let [saved (.. target-el -style -visibility)]
+              (set! (.. target-el -style -visibility) "hidden")
+              (.addEventListener ta "input" on-input!)
+              (.addEventListener ta "keydown" on-keydown!)
+              (.addEventListener ta "blur" on-blur!)
+              (.appendChild canvas-host ta)
+              ;; Store the canonical doc id — on-input! commits a
+              ;; doc mutation (ops/set-text) and must address the
+              ;; template, not the clicked clone.
+              (reset! edit-state {:el          ta
+                                  :host        canvas-host
+                                  :node-id     canonical
+                                  :mode        mode
+                                  :target      target-el
+                                  :saved-color saved}))
             (state/assoc-ui! :text-editing-id canonical)
             (.focus ta)
             (.select ta)))))))
