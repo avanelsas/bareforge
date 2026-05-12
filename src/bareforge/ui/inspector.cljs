@@ -91,40 +91,104 @@
      (.setAttribute el "data-prop-transform" (name transform)))
    el))
 
-(defn- build-boolean [node prop]
-  (let [el       (-> (u/el :x-switch {:class "inspector-field-widget"})
-                     (tag-widget! (:name prop) "boolean"))
-        current? (boolean (model/current-value node prop))]
-    (when current? (u/set-attr! el :checked ""))
-    (u/on! el :x-switch-change
+(defn- build-widget-shell
+  "Shared shape behind every `build-*` row builder: create the widget
+   element, tag it for the test harness, set the current value on the
+   widget, and wire its change event to a commit. Returns the element
+   so widget-specific specialisations (enum's `<option>` children,
+   search-field's datalist / scrub) can attach to it without forking
+   the shared boilerplate.
+
+   `spec` keys:
+     :widget-tag    — keyword tag passed to `u/el` (or `search-field`
+                      when `:x-search-field`).
+     :widget-attrs  — extra attrs merged over `{:class \"inspector-field-widget\"}`.
+     :prop-kind     — string for `data-prop-kind` on the host.
+     :transform     — optional transform keyword forwarded to
+                      `tag-widget!` (only the search-field row uses it).
+     :event         — event name to wire on the host.
+     :value-attr    — attr to receive the current value. Defaults to
+                      `:value`; widgets like `x-switch` use `:checked`
+                      (set to the empty string when truthy).
+     :event-reader  — `(fn [^js e] → v)`. Defaults to `read-event-value`.
+     :commit-fn!    — `(fn [node-id prop-name v])` invoked with the
+                      reader's output. The shell never calls
+                      `commit-attr!` / `commit-prop!` directly so the
+                      transform-aware search-field can wrap its own."
+  [node prop {:keys [widget-tag widget-attrs prop-kind transform
+                     event value-attr event-reader commit-fn!]}]
+  (let [attrs   (merge {:class "inspector-field-widget"} widget-attrs)
+        el      (-> (if (= :x-search-field widget-tag)
+                      (search-field attrs)
+                      (u/el widget-tag attrs))
+                    (tag-widget! (:name prop) prop-kind transform))
+        current (model/current-value node prop)
+        reader  (or event-reader read-event-value)]
+    (case (or value-attr :value)
+      :checked (when current (u/set-attr! el :checked ""))
+      :value   (when current (u/set-attr! el :value current)))
+    (u/on! el event
            (fn [^js e]
-             (commit-prop! (:id node) (:name prop) (read-event-checked e))))
+             (commit-fn! (:id node) (:name prop) (reader e))))
     el))
+
+(defn- build-boolean [node prop]
+  (build-widget-shell node prop
+                      {:widget-tag   :x-switch
+                       :prop-kind    "boolean"
+                       :event        :x-switch-change
+                       :value-attr   :checked
+                       :event-reader read-event-checked
+                       :commit-fn!   commit-prop!}))
+
+(defn- append-enum-options!
+  "Append one `<option>` per `:choices` entry, marking the entry that
+   matches `current` as `selected`. Separate fn so `build-enum` stays
+   a thin spec call plus this small DOM-decoration step."
+  [^js sel-el prop current]
+  (doseq [choice (:choices prop)]
+    (let [^js o (u/el :option {:value choice})]
+      (u/set-text! o choice)
+      (when (= choice current) (u/set-attr! o :selected ""))
+      (.appendChild sel-el o)))
+  sel-el)
 
 (defn- build-enum [node prop]
-  (let [sel-el  (-> (u/el :x-select {:class "inspector-field-widget"})
-                    (tag-widget! (:name prop) "enum"))
-        current (model/current-value node prop)
-        options (for [choice (:choices prop)]
-                  (let [o (u/el :option {:value choice})]
-                    (u/set-text! o choice)
-                    (when (= choice current) (u/set-attr! o :selected ""))
-                    o))]
-    (doseq [o options] (.appendChild sel-el o))
-    (u/on! sel-el :select-change
-           (fn [^js e]
-             (commit-attr! (:id node) (:name prop) (read-event-value e))))
-    sel-el))
+  (-> (build-widget-shell node prop
+                          {:widget-tag :x-select
+                           :prop-kind  "enum"
+                           :event      :select-change
+                           :commit-fn! commit-attr!})
+      (append-enum-options! prop (model/current-value node prop))))
 
 (defn- build-text-area [node prop]
-  (let [el      (-> (u/el :x-text-area {:class "inspector-field-widget"})
-                    (tag-widget! (:name prop) "text-long"))
-        current (model/current-value node prop)]
-    (when current (u/set-attr! el :value current))
-    (u/on! el :x-text-area-input
-           (fn [^js e]
-             (commit-attr! (:id node) (:name prop) (read-event-value e))))
-    el))
+  (build-widget-shell node prop
+                      {:widget-tag :x-text-area
+                       :prop-kind  "text-long"
+                       :event      :x-text-area-input
+                       :commit-fn! commit-attr!}))
+
+(defn- attach-numeric-scrub!
+  "Wire the numeric-drag scrub gesture on a search-field configured
+   for `:type \"number\"`. Reads the live attribute value through the
+   model so a fresh / non-numeric attr starts the drag at 0 instead
+   of silently doing nothing; commits coalesce after the first step."
+  [^js el node prop]
+  (let [node-id   (:id node)
+        attr-name (:name prop)]
+    (scrub/attach-scrub-meta!
+     el
+     {:read-fn    (fn []
+                    (let [doc (:document @state/app-state)
+                          n   (m/get-node doc node-id)]
+                      (c/parse-number-or-zero (model/current-value n prop))))
+      :commit-fn! (fn [new-val first?]
+                    (let [doc  (:document @state/app-state)
+                          doc' (ops/set-attr doc node-id attr-name (str new-val))]
+                      (if first?
+                        (state/commit! doc')
+                        (state/commit-coalesced! doc'))))
+      :step       1})))
 
 (defn- build-search-field [node prop spec]
   (let [transform (:transform prop)
@@ -134,39 +198,26 @@
         ;; shadow inner `<input>`, not the custom-element host — see
         ;; `attach-datalist-to-shadow-input!`.
         color?    (= :color (:kind prop))
-        el        (-> (search-field
-                       (cond-> {:class "inspector-field-widget"}
-                         numeric? (assoc :type "number")))
-                      (tag-widget! (:name prop) "text" transform))
-        current   (model/current-value node prop)
         node-id   (:id node)
-        attr-name (:name prop)]
+        attr-name (:name prop)
+        commit!   (fn [_id _name v]
+                    (let [v (if transform
+                              (model/transform-for-commit transform v)
+                              v)]
+                      (commit-attr! node-id attr-name v)))
+        el        (build-widget-shell
+                   node prop
+                   {:widget-tag   :x-search-field
+                    :widget-attrs (cond-> {}
+                                    numeric? (assoc :type "number"))
+                    :prop-kind    "text"
+                    :transform    transform
+                    :event        :x-search-field-input
+                    :commit-fn!   commit!})]
     (when color?
       (tokens/attach-datalist-to-shadow-input! el tokens/color-datalist-id))
-    (when current (u/set-attr! el :value current))
-    (u/on! el :x-search-field-input
-           (fn [^js e]
-             (let [v (read-event-value e)
-                   v (if transform (model/transform-for-commit transform v) v)]
-               (commit-attr! node-id attr-name v))))
     (cond-> el
-      numeric?
-      (scrub/attach-scrub-meta!
-       {:read-fn   (fn []
-                     ;; Empty / non-numeric attr starts the drag at 0
-                     ;; so unset fields are still scrubbable from
-                     ;; nothing — otherwise the gesture would silently
-                     ;; do nothing on a fresh component.
-                     (let [doc (:document @state/app-state)
-                           n   (m/get-node doc node-id)]
-                       (c/parse-number-or-zero (model/current-value n prop))))
-        :commit-fn! (fn [new-val first?]
-                      (let [doc  (:document @state/app-state)
-                            doc' (ops/set-attr doc node-id attr-name (str new-val))]
-                        (if first?
-                          (state/commit! doc')
-                          (state/commit-coalesced! doc'))))
-        :step       1}))))
+      numeric? (attach-numeric-scrub! node prop))))
 
 (defn- build-widget [node prop]
   (let [spec (model/editor-spec prop)]
@@ -2458,6 +2509,70 @@
     (.appendChild bar st-tab)
     bar))
 
+(defn- node-structural-shape
+  "Pure: project a node down to the slice the inspector cares about
+   when deciding rebuild vs in-place patch. Drops `:default` and
+   `:locked?` from each field-def (those toggle as the user types
+   into the Name input's auto-::id insertion or edits a seed cell —
+   if we compared them we'd thrash the panel on every keystroke) and
+   reduces a vector `:default` to its count so adding / removing a
+   seed *does* trigger a rebuild."
+  [node]
+  (let [struct-field #(cond-> (dissoc % :default :locked?)
+                        (vector? (:default %))
+                        (assoc ::default-count (count (:default %))))]
+    {:fields       (->> (:fields node) (remove :locked?) (mapv struct-field))
+     :actions      (:actions node)
+     :bindings     (:bindings node)
+     :events       (:events node)
+     :text-field   (:text-field node)
+     :source-field (:source-field node)
+     :source-sub   (:source-sub node)}))
+
+(defn- watcher-action
+  "Pure: decide how the inspector should react to a transition from
+   `old-state` to `new-state`. Returns a tagged map:
+
+     {:kind :rebuild :model m}  ;; full render (model may be nil to clear)
+     {:kind :patch   :node n}   ;; in-place attribute update (keeps focus)
+     {:kind :skip}              ;; nothing relevant changed, or a multi-
+                                ;; select doc edit that we want to swallow
+                                ;; so every keystroke doesn't throw away
+                                ;; the focused shared-attr input.
+
+   Splits cleanly out of `create`'s `add-watch` so the decision
+   tree is testable and the effectful side reads as a one-line
+   dispatch on `:kind`."
+  [old-state new-state]
+  (let [sel-changed? (not= (:selection old-state) (:selection new-state))
+        doc-changed? (not= (:document old-state) (:document new-state))
+        ui-changed?  (or (not= (get-in old-state [:ui :inspector-collapsed])
+                               (get-in new-state [:ui :inspector-collapsed]))
+                         (not= (get-in old-state [:ui :expanded-seeds])
+                               (get-in new-state [:ui :expanded-seeds])))
+        new-model    (when (or sel-changed? doc-changed? ui-changed?)
+                       (model/inspector-model new-state))]
+    (cond
+      (or sel-changed? ui-changed?)
+      {:kind :rebuild :model new-model}
+
+      (and doc-changed? (nil? new-model))
+      {:kind :rebuild :model nil}
+
+      (and doc-changed? (:multi new-model))
+      {:kind :skip}
+
+      doc-changed?
+      (let [old-node (:node (model/inspector-model old-state))
+            new-node (:node new-model)]
+        (if (or (nil? old-node)
+                (not= (node-structural-shape old-node)
+                      (node-structural-shape new-node)))
+          {:kind :rebuild :model new-model}
+          {:kind :patch :node new-node}))
+
+      :else {:kind :skip})))
+
 (defn create
   "Build the right-hand panel: a two-tab control (Inspector / State)
    with both bodies mounted, only one visible at a time. Inspector
@@ -2475,60 +2590,9 @@
     (render! body (model/inspector-model @state/app-state))
     (add-watch state/app-state ::inspector
                (fn [_ _ old-state new-state]
-                 (let [sel-changed? (not= (:selection old-state)
-                                          (:selection new-state))
-                       doc-changed? (not= (:document old-state)
-                                          (:document new-state))
-                       ui-changed?  (or (not= (get-in old-state [:ui :inspector-collapsed])
-                                              (get-in new-state [:ui :inspector-collapsed]))
-                                        (not= (get-in old-state [:ui :expanded-seeds])
-                                              (get-in new-state [:ui :expanded-seeds])))
-                       new-model    (when (or sel-changed? doc-changed? ui-changed?)
-                                      (model/inspector-model new-state))]
-                   (cond
-                     (or sel-changed? ui-changed?)
-                     (render! body new-model)
-
-                     (and doc-changed? (nil? new-model))
-                     (render! body nil)
-
-                     ;; Multi-select: doc changed (most likely from
-                     ;; the user editing a shared-attr field). Skip
-                     ;; the rebuild — every keystroke would otherwise
-                     ;; throw away the focused input. The committed
-                     ;; values are correct in the doc; the panel's
-                     ;; visual "Mixed" markers may lag until the user
-                     ;; re-enters multi-select, which is acceptable.
-                     (and doc-changed? (:multi new-model))
-                     nil
-
-                     doc-changed?
-                     (let [old-model   (model/inspector-model old-state)
-                           old-node    (:node old-model)
-                           new-node    (:node new-model)
-                           ;; Compare fields with auto-locked entries
-                           ;; stripped AND vector :defaults reduced to
-                           ;; their count. Together these keep the
-                           ;; panel stable while the user types into
-                           ;; the Name input (auto-::id insertion) or
-                           ;; a seed-record cell (intra-record edit),
-                           ;; while still rebuilding when fields or
-                           ;; record counts actually change.
-                           struct-shape #(cond-> (dissoc % :default :locked?)
-                                           (vector? (:default %))
-                                           (assoc ::default-count (count (:default %))))
-                           user-fields #(->> (:fields %)
-                                             (remove :locked?)
-                                             (mapv struct-shape))
-                           structural? (or (nil? old-node)
-                                           (not= (user-fields old-node) (user-fields new-node))
-                                           (not= (:actions old-node) (:actions new-node))
-                                           (not= (:bindings old-node) (:bindings new-node))
-                                           (not= (:events old-node) (:events new-node))
-                                           (not= (:text-field old-node) (:text-field new-node))
-                                           (not= (:source-field old-node) (:source-field new-node))
-                                           (not= (:source-sub old-node) (:source-sub new-node)))]
-                       (if structural?
-                         (render! body new-model)
-                         (update-fields-in-place! body new-node)))))))
+                 (let [{:keys [kind model node]} (watcher-action old-state new-state)]
+                   (case kind
+                     :rebuild (render! body model)
+                     :patch   (update-fields-in-place! body node)
+                     :skip    nil))))
     panel))
