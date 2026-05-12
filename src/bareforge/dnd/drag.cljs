@@ -16,6 +16,7 @@
   (:require [bareforge.dnd.guides :as guides]
             [bareforge.dnd.resolve :as resolve]
             [bareforge.dnd.snap :as snap]
+            [bareforge.dnd.target :as target]
             [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
             [bareforge.meta.registry :as registry]
@@ -25,24 +26,6 @@
             [bareforge.state :as state]
             [bareforge.ui.palette :as palette]
             [bareforge.util.dom :as u]))
-
-(defn classify-position
-  "Pure: given a hovered element's `{:top :height}`, the cursor's
-   `clientY`, and whether the target is a container, return one of
-   `:before`, `:after`, or `:inside`. Containers get a 25/50/25 split
-   (top quarter → :before, middle half → :inside, bottom quarter →
-   :after); leaves get a 50/50 split with no `:inside` band."
-  [{:keys [top height]} cursor-y container?]
-  (let [bottom (+ top height)
-        clamped (max top (min cursor-y bottom))
-        offset (- clamped top)
-        ratio (if (pos? height) (/ offset height) 0.5)]
-    (if container?
-      (cond
-        (< ratio 0.25) :before
-        (> ratio 0.75) :after
-        :else          :inside)
-      (if (< ratio 0.5) :before :after))))
 
 ;; --- mutable drag state ---------------------------------------------------
 
@@ -356,7 +339,7 @@
                      (boolean (and tag (registry/container? tag))))
         ^js bcr    (.getBoundingClientRect node-el)
         rect       {:top (.-top bcr) :height (.-height bcr)}]
-    (classify-position rect cursor-y container?)))
+    (target/classify-position rect cursor-y container?)))
 
 (defn- canvas-target-el
   "Find the element with `data-bareforge-id` that is also inside the
