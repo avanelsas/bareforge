@@ -10,6 +10,113 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 Nothing yet.
 
+## [0.6.0] — 2026-05-12
+
+A bug-fix + audit-driven internal-refactor pass on top of BareDOM
+3.0.0. No new user-facing features; the visible work is six bug
+fixes the maintainer surfaced from smoke testing, and the bulk
+of the diff is an audit sweep that leaves the codebase noticeably
+closer to its own stated design rules.
+
+### Fixed
+
+- **Inspector Escape erased bound text.** Pressing Escape inside
+  any `x-search-field`-backed inspector input (text attributes,
+  layout fields, name, CSS-var editors, seed cells, bind pickers)
+  silently committed an empty string to the doc. Browsers treat
+  Escape on `<input type="search">` as a clear gesture and fire
+  an `input` event with the cleared value, which the inspector
+  then committed. Every inspector `x-search-field` now intercepts
+  `keydown` and suppresses Escape's default behaviour.
+- **`x-select` pickers painted blank.** Placement, single-select
+  enum, and multi-select shared-attribute pickers showed no value
+  even when a stored attribute existed. BareDOM's x-select renders
+  from the host's `value` attribute, not from a slotted
+  `<option selected>`. Every inspector x-select now mirrors the
+  current value onto the host attribute.
+- **Picker stuck at blank when the attribute was at its default.**
+  A fresh `x-button`'s `size` and `type` pickers were empty because
+  `model/current-value` returned nil for unset attrs. The display
+  layer now falls back to the property's `:default` so the picker
+  matches what BareDOM is actually rendering.
+- **Float-math tails in numeric fields.** Free-coord x/y from drag
+  math (e.g. `939.8698120117188`) painted full precision in the
+  inspector. A new `format-decimal` helper in `bareforge.util.coerce`
+  rounds for display (2 decimals by default, trailing zeros trimmed)
+  without changing stored values.
+- **Promoting placement to `:free` snapped the element on the first
+  drag.** Setting `:layout :placement` to `:free` left `:x` / `:y`
+  nil; the first drag captured `free-initial-x = 0` and committed
+  cursor-delta as the new absolute coordinate. The inspector's
+  placement picker now freezes the element's current visual
+  position into `:x` / `:y` at promotion time so the follow-up drag
+  behaves identically to a second drag.
+- **Palette text-selection blocked the next drag.** Dragging a
+  palette item painted the browser's native text-selection
+  highlight across other palette labels, and the highlight survived
+  the drop. `user-select: none` is now applied to the base `.panel`
+  rule, covering palette, layers, and inspector chrome; native
+  inputs inside the panels still allow text selection because the
+  user-agent stylesheet overrides `user-select` for form controls.
+
+### Changed
+
+- **BareDOM 2.9.0 → 3.0.0** — primarily the addition of BareDOM's
+  new `x-trace-history` debugger dock and the supporting internal
+  hooks (dispatch / state-mutation / lifecycle / component-id
+  tracking). The major bump reflects internal API additions in
+  BareDOM, not a public-surface break — Bareforge compiles clean
+  against 3.0.0 with no consumer code changes. `x-trace-history`
+  is dev-only (URL-flag-activated, no `public-api` map, no
+  `model.cljs` under `components/`) and is intentionally not
+  scaffolded into the palette.
+
+### Internal
+
+A focused audit-driven refactor sweep. None of these change
+behaviour; each adds a small named pure surface and shrinks an
+imperative tangle.
+
+- **Selection-overlay listeners installed once.** The resize-drag
+  `pointermove` / `pointerup` listeners were re-attached on every
+  handle pointerdown and detached on pointerup, so a missed cleanup
+  (hot reload, exception) leaked handlers. Both are now installed
+  once at mount and gated by an internal `resize-active?` flag,
+  matching the `dnd/drag` pattern.
+- **Export model lifts.** `bareforge.export.model` grew four
+  per-document fact helpers — `action-target-of-group-ns`,
+  `resolve-explicit-field-owners`, `:source-sub` / `:source-field`
+  riding on every `find-sub-groups` entry, and
+  `resolve-template-source`. The `cljs_project` and `vanilla_js`
+  plugins stopped re-deriving these facts independently; ~120 lines
+  of duplicated three-way conditional logic moved into the model
+  with focused unit tests.
+- **Inspector decomposition.** The four imperative `build-*` row
+  builders (`build-boolean`, `build-enum`, `build-text-area`,
+  `build-search-field`) now share one `build-widget-shell`; enum
+  option decoration and numeric scrub wiring are named helpers.
+  The 56-line `cond` inside `inspector/create`'s `add-watch`
+  becomes a pure `watcher-action` returning a tagged map, and the
+  watch callback collapses to a four-line `case` dispatch.
+- **Drag target classification.** The drag layer's `resolve-target!`
+  was an 80-line `cond` with a self-recursive branch — the
+  recursion existed because mounting slot strips inserts new DOM
+  under the cursor, and the second pass needed to pick the
+  freshly-mounted strip up. A new pure
+  `bareforge.dnd.target/classify-drop-target` consumes a snapshot
+  of the cursor's DOM context and returns a tagged action
+  (`:slot-row` / `:layer-row` / `:canvas-element` / `:needs-strips`
+  / `:invalid`). The orchestrator now collects the snapshot,
+  dispatches on the result, and explicitly two-passes when strips
+  need mounting — no recursion; the classifier never invokes
+  itself. 24 new unit tests pin the classifier.
+
+### Verified
+
+- 847 tests / 2454 assertions / 0 failures, 0 errors.
+- `clj-kondo`, `cljfmt`, `shadow-cljs compile test`, and
+  `shadow-cljs release app` — all clean.
+
 ## [0.5.0] — 2026-05-09
 
 A BareDOM bump and five new components. 813 tests, zero
