@@ -30,6 +30,22 @@
 
 (declare build-editor-row)
 
+(defn- search-field
+  "Wrapper around `(u/el :x-search-field attrs)` that also blocks the
+   browser's native Escape-clear behaviour on the inner
+   `<input type=\"search\">`. Without this, pressing Escape inside any
+   inspector text input clears the field AND fires
+   `x-search-field-input` with `value=\"\"`, which the inspector
+   commits to the doc — silently erasing the user's text on every
+   accidental Esc press. Returns the x-search-field element."
+  ^js [attrs]
+  (let [^js el (u/el :x-search-field attrs)]
+    (.addEventListener el "keydown"
+                       (fn [^js e]
+                         (when (= "Escape" (.-key e))
+                           (.preventDefault e))))
+    el))
+
 (defn- commit-with!
   "Apply a `doc.ops/*` fn to the current document (as the first arg)
    with `args` trailing, and commit the result. Every inspector-side
@@ -118,9 +134,9 @@
         ;; shadow inner `<input>`, not the custom-element host — see
         ;; `attach-datalist-to-shadow-input!`.
         color?    (= :color (:kind prop))
-        el        (-> (u/el :x-search-field
-                            (cond-> {:class "inspector-field-widget"}
-                              numeric? (assoc :type "number")))
+        el        (-> (search-field
+                       (cond-> {:class "inspector-field-widget"}
+                         numeric? (assoc :type "number")))
                       (tag-widget! (:name prop) "text" transform))
         current   (model/current-value node prop)
         node-id   (:id node)
@@ -195,7 +211,9 @@
   (let [coerce  (or coerce-fn identity)
         reader  (or event-value-reader read-event-value)
         getter  (or read-fn (fn [n] (get-in n read-path)))
-        el      (-> (u/el widget-tag widget-attrs)
+        el      (-> (if (= :x-search-field widget-tag)
+                      (search-field widget-attrs)
+                      (u/el widget-tag widget-attrs))
                     (tag-widget! prop-name prop-kind))
         current (getter node)]
     (when datalist-id
@@ -282,9 +300,9 @@
    Free-coord fields always store numbers (the reconciler turns them
    into px lengths), so the row is uniformly scrubbable."
   [node layout-key placeholder]
-  (let [el      (-> (u/el :x-search-field
-                          {:class "inspector-field-widget"
-                           :placeholder placeholder})
+  (let [el      (-> (search-field
+                     {:class "inspector-field-widget"
+                      :placeholder placeholder})
                     (tag-widget! (str "__layout__/" (name layout-key)) "layout"))
         raw     (get-in node [:layout layout-key])
         node-id (:id node)]
@@ -441,9 +459,9 @@
   (let [placeholder (case kind
                       :length "12px / 1rem / 50%"
                       :string "")
-        el       (-> (u/el :x-search-field
-                           {:class "inspector-field-widget"
-                            :placeholder placeholder})
+        el       (-> (search-field
+                      {:class "inspector-field-widget"
+                       :placeholder placeholder})
                      (tag-widget! (str "__css-var__/" (:label entry)) "css-var-text"))
         var-name (resolve-css-var entry node)
         current  (when var-name (get-in node [:layout :css-vars var-name]))]
@@ -575,9 +593,9 @@
    is called with the picked field keyword."
   [doc tmpl-name prop-kind on-pick]
   (let [wrap    (u/el :div {:class "inspector-bind-picker"})
-        search  (u/el :x-search-field
-                      {:class       "inspector-bind-input"
-                       :placeholder "search fields…"})
+        search  (search-field
+                 {:class       "inspector-bind-input"
+                  :placeholder "search fields…"})
         body    (u/el :div {:class "inspector-bind-picker-body"})
         all     (collect-all-fields doc)
         sects   (picker-sections doc all tmpl-name)
@@ -892,10 +910,10 @@
   (let [tag-seg (-> (:tag node)
                     (str/replace #"^x-" "")
                     (str/replace #"-" "_"))
-        name-el (u/el :x-search-field
-                      {:class "inspector-field-widget"
-                       :placeholder (str "e.g. " tag-seg)
-                       :value (or (:name node) "")})]
+        name-el (search-field
+                 {:class "inspector-field-widget"
+                  :placeholder (str "e.g. " tag-seg)
+                  :value (or (:name node) "")})]
     (u/on! name-el :x-search-field-input
            (fn [^js e]
              (commit-name! (:id node) (read-event-value e))))
@@ -963,10 +981,10 @@
         transform (:transform prop)
         numeric?  (= "number" (:type spec))
         color?    (= :color (:kind prop))
-        el        (-> (u/el :x-search-field
-                            (cond-> {:class "inspector-field-widget"}
-                              numeric? (assoc :type "number")
-                              mixed?   (assoc :placeholder "Mixed")))
+        el        (-> (search-field
+                       (cond-> {:class "inspector-field-widget"}
+                         numeric? (assoc :type "number")
+                         mixed?   (assoc :placeholder "Mixed")))
                       (tag-widget! (:name prop) "text" transform))
         ids       (mapv :id nodes)]
     (when color?
@@ -1307,10 +1325,10 @@
                       caption  (u/set-text!
                                 (u/el :small {:class "inspector-seed-caption"})
                                 (field-name-str (:name tf)))
-                      cell     (u/el :x-search-field
-                                     {:class       "inspector-seed-cell"
-                                      :placeholder fname
-                                      :value       (seed-cell-display (get rec (:name tf)))})]]
+                      cell     (search-field
+                                {:class       "inspector-seed-cell"
+                                 :placeholder fname
+                                 :value       (seed-cell-display (get rec (:name tf)))})]]
           (u/on! cell :x-search-field-input
                  (fn [^js e]
                    (let [v      (read-event-value e)
@@ -1628,12 +1646,12 @@
   [doc node]
   (let [other-groups   (->> (actions/field-groups-for-picker doc (:name node))
                             (remove :enclosing?))
-        name-in        (u/el :x-search-field
-                             {:class "inspector-bind-input"
-                              :placeholder "field name"})
-        default-in     (u/el :x-search-field
-                             {:class "inspector-bind-input"
-                              :placeholder "default value"})
+        name-in        (search-field
+                        {:class "inspector-bind-input"
+                         :placeholder "field name"})
+        default-in     (search-field
+                        {:class "inspector-bind-input"
+                         :placeholder "default value"})
         type-sel       (u/el :x-select {:class "inspector-field-widget"})
         computed-sw    (u/el :x-switch {:class "inspector-field-widget"})
         op-sel         (u/el :x-select {:class "inspector-field-widget"})
@@ -1812,9 +1830,9 @@
     (field-row "source field" sel)))
 
 (defn- build-source-sub-row [node]
-  (let [in    (u/el :x-search-field
-                    {:class "inspector-bind-input"
-                     :placeholder ":app.cart.subs/cart-with-products"})
+  (let [in    (search-field
+               {:class "inspector-bind-input"
+                :placeholder ":app.cart.subs/cart-with-products"})
         curr  (some-> (:source-sub node) str)]
     (when curr (u/set-attr! in :value curr))
     (u/on! in :input
@@ -1881,9 +1899,9 @@
    `on-pick` with the chosen action-ref keyword."
   [all-actions tmpl-name on-pick]
   (let [wrap    (u/el :div {:class "inspector-bind-picker"})
-        search  (u/el :x-search-field
-                      {:class       "inspector-bind-input"
-                       :placeholder "search actions…"})
+        search  (search-field
+                 {:class       "inspector-bind-input"
+                  :placeholder "search actions…"})
         body    (u/el :div {:class "inspector-bind-picker-body"})
         by-grp  (group-by :group-name all-actions)
         grp-ord (sort (keys by-grp))
@@ -2270,9 +2288,9 @@
 
 (defn- build-add-action-form [node]
   (let [form          (u/el :div {:class "inspector-event-form"})
-        name-in       (u/el :x-search-field
-                            {:class "inspector-bind-input"
-                             :placeholder "action name, e.g. add-to-cart"})
+        name-in       (search-field
+                       {:class "inspector-bind-input"
+                        :placeholder "action name, e.g. add-to-cart"})
         op-sel        (u/el :x-select {:class "inspector-field-widget"})
         target-sel    (u/el :x-select {:class "inspector-field-widget"})
         ;; Actions can only write to STORED or COLLECTION fields —
