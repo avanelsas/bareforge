@@ -7,7 +7,7 @@ First-time contributor walkthrough. After a clean clone, you should reach a gree
 Bareforge expects:
 
 - **Java 21** (Temurin LTS)
-- **Node 20** (LTS) plus `npm`
+- **Node 22** (LTS) plus `npm`
 - **Clojure CLI** 1.12+ — `clj` / `clojure` on PATH
 - **clj-kondo** and **cljfmt** on PATH
 
@@ -15,7 +15,7 @@ A `.tool-versions` file at the repo root pins exact versions. If you use [`mise`
 
 ```bash
 java -version          # 21.x
-node --version         # v20.x
+node --version         # v22.x
 clojure --version      # 1.12+
 clj-kondo --version
 cljfmt --version
