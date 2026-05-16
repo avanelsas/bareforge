@@ -8,7 +8,16 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **BareDOM 3.0.0 → 3.1.0.** Upstream internal-audit cycle: Golden
+  Sample render-pipeline retrofit across the majority of the 83
+  components, `define-parsed-prop!` migrations, listener-leak
+  hygiene, and a `du/` interop-discipline sweep. No public API
+  changes; existing documents render unchanged. Bareforge's only
+  edits are the version bumps in `deps.edn` and
+  `src/bareforge/meta/versions.cljs` (lockstep). Release notes:
+  https://github.com/avanelsas/baredom/releases/tag/v3.1.0
 
 ## [0.6.0] — 2026-05-12
 
