@@ -8,6 +8,10 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.6.1] — 2026-05-16
+
 ### Changed
 
 - **BareDOM 3.0.0 → 3.1.0.** Upstream internal-audit cycle: Golden
