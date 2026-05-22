@@ -1,0 +1,65 @@
+name: Publish GitHub Release
+
+# Publish a GitHub Release whenever a vN.N.N tag is pushed, so the
+# repo's Releases page tracks every tagged version automatically.
+# Release notes are lifted verbatim from the matching CHANGELOG.md
+# section.
+#
+# The tag itself is still cut by hand by the maintainer (see
+# scripts/release.clj and CLAUDE.md) — this workflow only turns the
+# pushed tag into a published Release. It is a sibling of pages.yml,
+# which deploys the demo on the same trigger.
+#
+# Re-running is safe: an already-published release is left untouched.
+on:
+  push:
+    tags: ['v*']
+
+# gh release create writes to the Releases API.
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish GitHub Release from CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+
+          # Idempotent: a workflow re-run must not fail on an
+          # already-published release.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists — nothing to do."
+            exit 0
+          fi
+
+          # Lift the `## [version]` block out of CHANGELOG.md, stopping
+          # at the next `## [` heading. scripts/release.clj always
+          # promotes a [version] section, so a correctly-cut release
+          # has one; a missing section means a botched release and is
+          # surfaced as a hard failure rather than papered over.
+          awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" { grab = 1; next }
+            grab && /^## \[/         { exit }
+            grab                     { print }
+          ' CHANGELOG.md > notes.md
+
+          if [ ! -s notes.md ]; then
+            echo "::error::No CHANGELOG.md section for [$version]." >&2
+            exit 1
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Bareforge $GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --latest
