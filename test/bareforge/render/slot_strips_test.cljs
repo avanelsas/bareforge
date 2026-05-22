@@ -8,17 +8,17 @@
     ;; `render-strips?` composes with `registry/container?`, which
     ;; requires at least one `:multiple? true` slot. x-card / x-grid /
     ;; x-container are single-slot containers (they get one full-size
-    ;; strip with a label). x-navbar / x-modal / x-drawer / x-popover
-    ;; are multi-slot containers (they get N subdivisions). Leaves
-    ;; like x-button / x-typography / x-icon have no :multiple? slot,
-    ;; so `classify-position` never returns :inside for them and the
-    ;; strips would be dead zones — `render-strips?` excludes them.
+    ;; strip with a label). x-navbar / x-modal / x-drawer / x-popover /
+    ;; x-split-pane are multi-slot containers (they get N subdivisions).
+    ;; Leaves like x-button / x-typography / x-icon have no :multiple?
+    ;; slot, so `classify-position` never returns :inside for them and
+    ;; the strips would be dead zones — `render-strips?` excludes them.
     (let [all-tags   (keys slots/slots)
           qualifiers (set (filter ss/render-strips? all-tags))]
       (is (= #{"x-card" "x-grid" "x-container"
-               "x-navbar" "x-modal" "x-drawer" "x-popover"}
+               "x-navbar" "x-modal" "x-drawer" "x-popover" "x-split-pane"}
              qualifiers)
-          "seven container tags qualify; leaves (x-button / x-typography / x-icon) do not")))
+          "eight container tags qualify; leaves (x-button / x-typography / x-icon) do not")))
   (testing "unknown tags fall through to single-slot default and return false"
     (is (false? (ss/render-strips? "x-made-up-tag")))
     (is (false? (ss/render-strips? nil)))

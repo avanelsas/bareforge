@@ -28,6 +28,10 @@
    "x-grid"
    [{:name "default" :label "Items" :multiple? true}]
 
+   "x-split-pane"
+   [{:name "start" :label "Start panel" :multiple? true}
+    {:name "end"   :label "End panel"   :multiple? true}]
+
    "x-navbar"
    [{:name "brand"   :label "Brand"   :multiple? false}
     {:name "start"   :label "Start"   :multiple? true}

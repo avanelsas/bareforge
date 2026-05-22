@@ -127,7 +127,12 @@
    "x-kbd"                :text
    "x-otp-input"          :form
    "x-proximity-list"     :navigation
-   "x-spotlight-card"     :layout})
+   "x-spotlight-card"     :layout
+   "x-split-pane"         :layout
+   "x-code"               :text
+   "x-calendar"           :form
+   "x-range-slider"       :form
+   "x-rating"             :form})
 
 (defn category-for
   "Return the category keyword for `tag`, or `:other` when unknown."

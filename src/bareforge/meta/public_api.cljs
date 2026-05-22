@@ -23,12 +23,14 @@
             [baredom.components.x-bento-item.model          :as x-bento-item]
             [baredom.components.x-breadcrumbs.model         :as x-breadcrumbs]
             [baredom.components.x-button.model              :as x-button]
+            [baredom.components.x-calendar.model          :as x-calendar]
             [baredom.components.x-cancel-dialogue.model     :as x-cancel-dialogue]
             [baredom.components.x-card.model                :as x-card]
             [baredom.components.x-carousel.model            :as x-carousel]
             [baredom.components.x-chart.model               :as x-chart]
             [baredom.components.x-checkbox.model            :as x-checkbox]
             [baredom.components.x-chip.model                :as x-chip]
+            [baredom.components.x-code.model              :as x-code]
             [baredom.components.x-collapse.model            :as x-collapse]
             [baredom.components.x-color-picker.model        :as x-color-picker]
             [baredom.components.x-combobox.model          :as x-combobox]
@@ -80,6 +82,8 @@
             [baredom.components.x-progress-circle.model     :as x-progress-circle]
             [baredom.components.x-proximity-list.model    :as x-proximity-list]
             [baredom.components.x-radio.model               :as x-radio]
+            [baredom.components.x-range-slider.model      :as x-range-slider]
+            [baredom.components.x-rating.model            :as x-rating]
             [baredom.components.x-ripple-effect.model       :as x-ripple-effect]
             [baredom.components.x-scroll.model              :as x-scroll]
             [baredom.components.x-scroll-parallax.model     :as x-scroll-parallax]
@@ -96,6 +100,7 @@
             [baredom.components.x-spacer.model              :as x-spacer]
             [baredom.components.x-spinner.model             :as x-spinner]
             [baredom.components.x-splash.model              :as x-splash]
+            [baredom.components.x-split-pane.model        :as x-split-pane]
             [baredom.components.x-spotlight-card.model    :as x-spotlight-card]
             [baredom.components.x-stat.model                :as x-stat]
             [baredom.components.x-stepper.model             :as x-stepper]
@@ -136,12 +141,14 @@
    x-bento-item/tag-name         (api x-bento-item/tag-name         x-bento-item/property-api         x-bento-item/observed-attributes)
    x-breadcrumbs/tag-name        (api x-breadcrumbs/tag-name        x-breadcrumbs/property-api        x-breadcrumbs/observed-attributes)
    x-button/tag-name             (api x-button/tag-name             x-button/property-api             x-button/observed-attributes)
+   x-calendar/tag-name          (api x-calendar/tag-name x-calendar/property-api x-calendar/observed-attributes)
    x-cancel-dialogue/tag-name    (api x-cancel-dialogue/tag-name    x-cancel-dialogue/property-api    x-cancel-dialogue/observed-attributes)
    x-card/tag-name               (api x-card/tag-name               x-card/property-api               x-card/observed-attributes)
    x-carousel/tag-name           (api x-carousel/tag-name           x-carousel/property-api           x-carousel/observed-attributes)
    x-chart/tag-name              (api x-chart/tag-name              x-chart/property-api              x-chart/observed-attributes)
    x-checkbox/tag-name           (api x-checkbox/tag-name           x-checkbox/property-api           x-checkbox/observed-attributes)
    x-chip/tag-name               (api x-chip/tag-name               x-chip/property-api               x-chip/observed-attributes)
+   x-code/tag-name              (api x-code/tag-name x-code/property-api x-code/observed-attributes)
    x-collapse/tag-name           (api x-collapse/tag-name           x-collapse/property-api           x-collapse/observed-attributes)
    x-color-picker/tag-name       (api x-color-picker/tag-name       x-color-picker/property-api       x-color-picker/observed-attributes)
    x-combobox/tag-name          (api x-combobox/tag-name x-combobox/property-api x-combobox/observed-attributes)
@@ -193,6 +200,8 @@
    x-progress-circle/tag-name    (api x-progress-circle/tag-name    x-progress-circle/property-api    x-progress-circle/observed-attributes)
    x-proximity-list/tag-name    (api x-proximity-list/tag-name x-proximity-list/property-api x-proximity-list/observed-attributes)
    x-radio/tag-name              (api x-radio/tag-name              x-radio/property-api              x-radio/observed-attributes)
+   x-range-slider/tag-name      (api x-range-slider/tag-name x-range-slider/property-api x-range-slider/observed-attributes)
+   x-rating/tag-name            (api x-rating/tag-name x-rating/property-api x-rating/observed-attributes)
    x-ripple-effect/tag-name      (api x-ripple-effect/tag-name      x-ripple-effect/property-api      x-ripple-effect/observed-attributes)
    x-scroll/tag-name             (api x-scroll/tag-name             x-scroll/property-api             x-scroll/observed-attributes)
    x-scroll-parallax/tag-name    (api x-scroll-parallax/tag-name    x-scroll-parallax/property-api    x-scroll-parallax/observed-attributes)
@@ -209,6 +218,7 @@
    x-spacer/tag-name             (api x-spacer/tag-name             x-spacer/property-api             x-spacer/observed-attributes)
    x-spinner/tag-name            (api x-spinner/tag-name            x-spinner/property-api            x-spinner/observed-attributes)
    x-splash/tag-name             (api x-splash/tag-name             x-splash/property-api             x-splash/observed-attributes)
+   x-split-pane/tag-name        (api x-split-pane/tag-name x-split-pane/property-api x-split-pane/observed-attributes)
    x-spotlight-card/tag-name    (api x-spotlight-card/tag-name x-spotlight-card/property-api x-spotlight-card/observed-attributes)
    x-stat/tag-name               (api x-stat/tag-name               x-stat/property-api               x-stat/observed-attributes)
    x-stepper/tag-name            (api x-stepper/tag-name            x-stepper/property-api            x-stepper/observed-attributes)

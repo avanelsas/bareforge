@@ -7,11 +7,11 @@
             [bareforge.meta.slots :as sl]))
 
 (def expected-tag-count
-  "BareDOM 2.9.0 exposes 99 components hand-curated into Bareforge
-   (2.8.0's 94 + x-confetti, x-kbd, x-otp-input, x-proximity-list,
-   x-spotlight-card). Bumping this number is intentional — it documents
+  "BareDOM 3.2.0 exposes 104 components hand-curated into Bareforge
+   (3.1.0's 99 + x-split-pane, x-code, x-calendar, x-range-slider,
+   x-rating). Bumping this number is intentional — it documents
    a version bump in the public-api require list."
-  99)
+  104)
 
 (deftest api-map-has-expected-tag-count
   (is (= expected-tag-count (count pa/api-map))
