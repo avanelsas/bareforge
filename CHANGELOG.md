@@ -10,6 +10,31 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 Nothing yet.
 
+## [0.7.0] — 2026-05-22
+
+### Added
+
+- **Five new BareDOM 3.2.0 components.** `x-split-pane` (resizable
+  two-panel layout), `x-code` (syntax-highlighted code display),
+  `x-calendar` (inline month calendar), `x-range-slider` (dual-handle
+  range slider), and `x-rating` (star / heart rating input) now appear
+  in the palette with curated inspector metadata — enum, boolean, and
+  numeric property kinds rather than the raw-attribute fallback.
+  `x-split-pane` is a multi-slot container (`start` / `end` panels);
+  the other four are leaves. All five are interactive and surface
+  their DOM events in the inspector's Events section.
+
+### Changed
+
+- **BareDOM 3.1.0 → 3.2.0.** Upstream adds the five components above,
+  an element-highlight feature for the `x-trace-history` dev tool, two
+  bug fixes (`x-card` interactive listeners, `x-modal` open toggle),
+  and a shared `baredom.utils.dates` namespace. Bareforge's edits are
+  the lockstep version bumps in `deps.edn` and
+  `src/bareforge/meta/versions.cljs` plus the scaffolded component
+  metadata. Release notes:
+  https://github.com/avanelsas/baredom/releases/tag/v3.2.0
+
 ## [0.6.1] — 2026-05-16
 
 ### Changed

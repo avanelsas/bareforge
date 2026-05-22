@@ -1932,6 +1932,92 @@
     {:name "size" :kind :string-short}
     {:name "static" :kind :string-short}]})
 
+(def ^:private x-split-pane
+  {:category :layout
+   :label    "Split pane"
+   :properties
+   [{:name "orientation" :kind :enum :choices ["horizontal" "vertical"]
+     :default "horizontal"}
+    {:name "position"      :kind :number}
+    {:name "min-start"     :kind :number}
+    {:name "min-end"       :kind :number}
+    {:name "disabled"      :kind :boolean :default false}
+    {:name "divider-label" :kind :string-short}]})
+
+(def ^:private x-code
+  {:category :text
+   :label    "Code"
+   :properties
+   [{:name "language" :kind :enum :choices ["text" "js" "json" "css" "html"]
+     :default "text"}
+    {:name "filename"     :kind :string-short}
+    {:name "show-copy"    :kind :boolean :default false}
+    {:name "line-numbers" :kind :boolean :default false}
+    {:name "wrap"         :kind :boolean :default false}
+    {:name "max-lines"    :kind :number}
+    {:name "expanded"     :kind :boolean :default false}
+    {:name "code"         :kind :string-long}]})
+
+(def ^:private x-calendar
+  {:category :form
+   :label    "Calendar"
+   :properties
+   [{:name "mode" :kind :enum :choices ["single" "range"] :default "single"}
+    {:name "value"          :kind :string-short}
+    {:name "start"          :kind :string-short}
+    {:name "end"            :kind :string-short}
+    {:name "min"            :kind :string-short}
+    {:name "max"            :kind :string-short}
+    {:name "disabled-dates" :kind :string-short}
+    {:name "first-day-of-week" :kind :enum
+     :choices ["sunday" "monday" "tuesday" "wednesday"
+               "thursday" "friday" "saturday"]
+     :default "sunday"}
+    {:name "locale"               :kind :string-short}
+    {:name "month"                :kind :string-short}
+    {:name "show-week-numbers"    :kind :boolean :default false}
+    {:name "disabled"             :kind :boolean :default false}
+    {:name "range-allow-same-day" :kind :boolean :default false}
+    {:name "auto-swap"            :kind :boolean :default false}]})
+
+(def ^:private x-range-slider
+  {:category :form
+   :label    "Range slider"
+   :properties
+   [{:name "start"      :kind :number}
+    {:name "end"        :kind :number}
+    {:name "min"        :kind :number}
+    {:name "max"        :kind :number}
+    {:name "step"       :kind :number}
+    {:name "min-gap"    :kind :number}
+    {:name "disabled"   :kind :boolean :default false}
+    {:name "readonly"   :kind :boolean :default false}
+    {:name "name"       :kind :string-short}
+    {:name "label"      :kind :string-short}
+    {:name "show-value" :kind :boolean :default false}
+    {:name "size"       :kind :enum :choices ["sm" "md" "lg"] :default "md"}
+    {:name "aria-label"       :kind :string-short}
+    {:name "aria-labelledby"  :kind :string-short}
+    {:name "aria-describedby" :kind :string-short}]})
+
+(def ^:private x-rating
+  {:category :form
+   :label    "Rating"
+   :properties
+   [{:name "value"       :kind :number}
+    {:name "max"         :kind :number}
+    {:name "precision"   :kind :enum :choices ["full" "half"] :default "full"}
+    {:name "shape"       :kind :enum :choices ["star" "heart"] :default "star"}
+    {:name "allow-clear" :kind :boolean :default false}
+    {:name "disabled"    :kind :boolean :default false}
+    {:name "readonly"    :kind :boolean :default false}
+    {:name "name"        :kind :string-short}
+    {:name "label"       :kind :string-short}
+    {:name "size"        :kind :enum :choices ["sm" "md" "lg"] :default "md"}
+    {:name "aria-label"       :kind :string-short}
+    {:name "aria-labelledby"  :kind :string-short}
+    {:name "aria-describedby" :kind :string-short}]})
+
 (def augment
   "{tag-name → augmentation-map}. Hand-curated. Omissions are intentional —
    tags not present here fall through to the raw-attribute inspector."
@@ -2032,4 +2118,9 @@
    "x-kbd"                x-kbd
    "x-otp-input"          x-otp-input
    "x-proximity-list"     x-proximity-list
-   "x-spotlight-card"     x-spotlight-card})
+   "x-spotlight-card"     x-spotlight-card
+   "x-split-pane"         x-split-pane
+   "x-code"               x-code
+   "x-calendar"           x-calendar
+   "x-range-slider"       x-range-slider
+   "x-rating"             x-rating})

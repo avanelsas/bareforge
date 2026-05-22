@@ -31,7 +31,16 @@
    "x-i18n-provider" ["x-i18n-loading" "x-i18n-change" "x-i18n-error"]
    "x-confetti"       ["x-confetti-fire" "x-confetti-end"]
    "x-otp-input"      ["x-otp-input-input" "x-otp-input-change" "x-otp-input-complete"]
-   "x-proximity-list" ["x-proximity-list-select"]})
+   "x-proximity-list" ["x-proximity-list-select"]
+   "x-split-pane"     ["x-split-pane-resize" "x-split-pane-resize-end"]
+   "x-code"           ["x-code-copy" "x-code-toggle"]
+   "x-calendar"       ["x-calendar-change" "x-calendar-navigate"]
+   "x-range-slider"   ["x-range-slider-change-request"
+                       "x-range-slider-input"
+                       "x-range-slider-change"]
+   "x-rating"         ["x-rating-change-request"
+                       "x-rating-change"
+                       "x-rating-hover"]})
 
 (defn events-for
   "Return the vector of supported event names for `tag`, or nil."
