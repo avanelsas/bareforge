@@ -8,7 +8,13 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **BareDOM 3.2.0 → 3.3.0.** Adapter-only upstream release: no new
+  components, no public API changes. Existing documents render
+  unchanged. Bareforge's only edits are the lockstep version bumps in
+  `deps.edn` and `src/bareforge/meta/versions.cljs`. Release notes:
+  https://github.com/avanelsas/baredom/releases/tag/v3.3.0
 
 ## [0.7.0] — 2026-05-22
 
