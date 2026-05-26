@@ -562,18 +562,9 @@
   [trigger {:keys [template-record-sym template-field-syms]
             :as   ctx}]
   (let [aref    (:action-ref trigger)
-        ;; Canonicalise the action-ref's group segment: an older doc
-        ;; can carry `:app.Dashboard.events/tick` (raw user-typed
-        ;; name) while the registry id was built from the lowercased
-        ;; `:ns-name` — without this, `dispatch` fires on a key the
-        ;; registry doesn't know.
-        alias   (let [ns        (namespace aref)
-                      first-dot (.indexOf ns ".")
-                      last-dot  (.lastIndexOf ns ".")
-                      app-pref  (subs ns 0 (inc first-dot))
-                      grp       (subs ns (inc first-dot) last-dot)
-                      suffix    (subs ns last-dot)]
-                  (str app-pref (actions/name->ns-segment grp) suffix))
+        ;; Shared with the CLJS plugin via em/action-ref-canonical-ns,
+        ;; so the two emitters dispatch on identical alias strings.
+        alias   (em/action-ref-canonical-ns aref)
         ename   (cljs.core/name aref)
         payload (:payload trigger)
         args    (cond

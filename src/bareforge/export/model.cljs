@@ -64,6 +64,39 @@
                ns-name)]
     [pick (conj seen pick)]))
 
+;; --- action-ref canonicalisation -----------------------------------------
+
+(defn action-ref-canonical-ns
+  "Canonicalise an action-ref qualified keyword's namespace so the
+   group segment matches the rest of the generator. An action-ref
+   committed before the canonicalisation fix can carry the raw
+   user-typed name (`:app.Dashboard.events/tick`); every other
+   generator path (file paths, ns forms, db aliases) uses
+   `name->ns-segment` to lowercase / dash-collapse it. Without this
+   pass, dispatch fires on a key the registry doesn't know.
+
+   Single source of truth for both plugins (`cljs_project` and
+   `vanilla_js`). Returns the full canonical namespace string —
+   e.g. `\"app.dashboard.events\"`."
+  [ref]
+  (let [ns        (namespace ref)
+        first-dot (.indexOf ns ".")
+        last-dot  (.lastIndexOf ns ".")
+        app-pref  (subs ns 0 (inc first-dot))
+        grp-seg   (subs ns (inc first-dot) last-dot)
+        suffix    (subs ns last-dot)]
+    (str app-pref (name->ns-segment grp-seg) suffix)))
+
+(defn action-ref-alias
+  "The require-alias string for an action-ref qualified keyword:
+   `action-ref-canonical-ns` with the leading `app.` prefix stripped.
+   Used by the CLJS plugin as the `[<canonical> :as <alias>]` form.
+
+   `:app.Dashboard.events/tick` → `\"dashboard.events\"`."
+  [ref]
+  (let [ns (action-ref-canonical-ns ref)]
+    (subs ns (inc (.indexOf ns ".")))))
+
 ;; --- group detection -----------------------------------------------------
 
 (defn- named-node?

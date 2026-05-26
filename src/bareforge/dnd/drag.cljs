@@ -229,22 +229,22 @@
   (let [^js br    (.getBoundingClientRect host)
         sl        (.-scrollLeft host)
         st        (.-scrollTop  host)
-        ^js nodes (.querySelectorAll host "[data-bareforge-id]")
-        out       (volatile! [])]
-    (dotimes [i (.-length nodes)]
-      (let [^js el (.item nodes i)
-            id     (.getAttribute el "data-bareforge-id")]
-        (when (and id (not= id "root"))
-          (let [^js eb (.getBoundingClientRect el)
-                left   (+ (- (.-left   eb) (.-left br)) sl)
-                top    (+ (- (.-top    eb) (.-top  br)) st)
-                rect   {:left   left
-                        :top    top
-                        :right  (+ left (.-width  eb))
-                        :bottom (+ top  (.-height eb))}]
-            (when (rects-overlap? marquee-rect rect)
-              (vswap! out conj id))))))
-    @out))
+        ^js nodes (.querySelectorAll host "[data-bareforge-id]")]
+    (into []
+          (keep (fn [i]
+                  (let [^js el (.item nodes i)
+                        id     (.getAttribute el "data-bareforge-id")]
+                    (when (and id (not= id "root"))
+                      (let [^js eb (.getBoundingClientRect el)
+                            left   (+ (- (.-left eb) (.-left br)) sl)
+                            top    (+ (- (.-top  eb) (.-top  br)) st)
+                            rect   {:left   left
+                                    :top    top
+                                    :right  (+ left (.-width  eb))
+                                    :bottom (+ top  (.-height eb))}]
+                        (when (rects-overlap? marquee-rect rect)
+                          id))))))
+          (range (.-length nodes)))))
 
 (defn- commit-marquee! [^js e]
   (let [^js host (canvas-el)

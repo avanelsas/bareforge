@@ -93,6 +93,18 @@
       background: var(--x-color-border, rgba(127, 127, 127, 0.35));
     }
     .toolbar-icon-button span { font-size: 16px; line-height: 1; }
+    .toolbar-autosave-warn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      margin-left: 6px;
+      color: var(--x-color-warning, #c97a00);
+      font-size: 16px;
+      cursor: help;
+    }
+    .toolbar-autosave-warn[hidden] { display: none; }
     .panel {
       border-right: 1px solid var(--x-color-border, rgba(127, 127, 127, 0.2));
       padding: 12px;

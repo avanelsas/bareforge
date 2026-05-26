@@ -3,6 +3,7 @@
             [bareforge.doc.ops :as ops]
             [bareforge.state :as state]
             [bareforge.storage.indexeddb :as idb]
+            [bareforge.storage.project-file :as pf]
             [bareforge.ui.app :as app]
             [bareforge.ui.inspector.tokens :as inspector-tokens]
             [bareforge.ui.welcome-tour :as welcome-tour]
@@ -23,16 +24,30 @@
                                       :attrs {"variant" "body1"}})]
     (state/commit! doc-2)))
 
+(defn- finish-init! [restored?]
+  (when-not restored? (seed-document!))
+  (idb/install-autosave!)
+  ;; First-run only: opens the tour when the seen flag is missing.
+  ;; Re-launch lives on the File menu.
+  (welcome-tour/maybe-auto-open!))
+
 (defn ^:export init
   []
   (baredom/register!)
   (inspector-tokens/install-token-datalists!)
   (app/mount! (u/by-id "app"))
   (-> (idb/restore!)
-      (.then (fn [restored?]
-               (when-not restored?
-                 (seed-document!))
-               (idb/install-autosave!)
-               ;; First-run only: opens the tour when the seen flag
-               ;; is missing. Re-launch lives on the File menu.
-               (welcome-tour/maybe-auto-open!)))))
+      (.then (fn [parsed]
+               ;; `parsed` is the raw IDB payload (or nil). The
+               ;; load-boundary policy lives in project-file/apply-
+               ;; autosave!, which runs spec + sanitiser before
+               ;; touching state.
+               (let [restored? (boolean (and parsed (pf/apply-autosave! parsed)))]
+                 (finish-init! restored?))))
+      (.catch (fn [^js err]
+                ;; A rejection in the chain (deserialize, validation,
+                ;; or install) shouldn't strand the user on a blank
+                ;; page. Seed the document, install the watcher, and
+                ;; log enough detail for a dev to follow up.
+                (js/console.error "init failed; falling back to empty doc" err)
+                (finish-init! false)))))

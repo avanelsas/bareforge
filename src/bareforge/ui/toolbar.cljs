@@ -19,9 +19,10 @@
 (defn toolbar-state
   "Project app-state into the subset of values the toolbar cares about."
   [app-state]
-  {:undo-disabled? (empty? (get-in app-state [:history :past]))
-   :redo-disabled? (empty? (get-in app-state [:history :future]))
-   :preview?       (= :preview (:mode app-state))})
+  {:undo-disabled?   (empty? (get-in app-state [:history :past]))
+   :redo-disabled?   (empty? (get-in app-state [:history :future]))
+   :preview?         (= :preview (:mode app-state))
+   :autosave-failed? (boolean (get-in app-state [:ui :autosave-failed?]))})
 
 ;; --- effectful ------------------------------------------------------------
 
@@ -65,14 +66,17 @@
 
 (defn- apply-toolbar-state!
   "Push derived state onto the toolbar buttons."
-  [{:keys [^js undo-btn ^js redo-btn ^js preview-btn ^js preview-text]}
-   {:keys [undo-disabled? redo-disabled? preview?]}]
+  [{:keys [^js undo-btn ^js redo-btn ^js preview-btn ^js preview-text
+           ^js autosave-warn]}
+   {:keys [undo-disabled? redo-disabled? preview? autosave-failed?]}]
   (u/set-attr! undo-btn :disabled (when undo-disabled? ""))
   (u/set-attr! redo-btn :disabled (when redo-disabled? ""))
   (u/set-attr! preview-btn :pressed (when preview? ""))
   (let [label (if preview? "Edit" "Preview")]
     (u/set-attr! preview-btn :label label)
-    (when preview-text (u/set-text! preview-text label))))
+    (when preview-text (u/set-text! preview-text label)))
+  (when autosave-warn
+    (u/set-attr! autosave-warn :hidden (when-not autosave-failed? ""))))
 
 (defn- toggle-preview! [_]
   (state/set-mode! (if (= :preview (:mode @state/app-state))
@@ -185,6 +189,15 @@
         {preview-btn :el preview-text :text-el}
         (button+text "Preview" toggle-preview!)
         theme-btn     (button "Theme" (fn [_] (when on-theme-toggle (on-theme-toggle))))
+        ;; Hidden by default; the watcher flips `hidden` when
+        ;; `:ui :autosave-failed?` is set so the user sees a quiet
+        ;; warning instead of silent data-loss risk.
+        autosave-warn (u/el :span
+                            {:class      "toolbar-autosave-warn"
+                             :title      "Autosave failed — your work may not be saved."
+                             :aria-label "Autosave failed"
+                             :hidden     ""}
+                            [(u/set-text! (u/el :span) "⚠")])
         ;; data-tour selectors so the welcome tour can target each
         ;; control individually. Avoids polluting the id namespace
         ;; for what are otherwise unique-but-anonymous buttons.
@@ -208,14 +221,15 @@
                              (u/el :img
                                    {:src "assets/bareforge_lightmode.png"
                                     :alt "Bareforge"})])
-        ;; The six top-level controls go into the navbar's "actions"
-        ;; slot. Row order: File, Templates, ↶, ↷, │, Preview, Theme.
+        ;; The seven top-level controls go into the navbar's "actions"
+        ;; slot. Row order: File, Templates, ↶, ↷, │, Preview, Theme,
+        ;; trailed by a hidden-by-default autosave-failed indicator.
         actions       (u/el :div
                             {:class "toolbar-actions"
                              :slot  "actions"}
                             [file-btn templates-btn
                              undo-btn redo-btn divider
-                             preview-btn theme-btn])
+                             preview-btn theme-btn autosave-warn])
         ;; Document title between brand and actions — goes into the
         ;; navbar's default slot. Reflects the loaded project filename
         ;; (without .json), or "untitled" when nothing is loaded.
@@ -227,10 +241,11 @@
                            :variant   "default"
                            :alignment "space-between"}
                           [brand title actions])
-        buttons     {:undo-btn      undo-btn
-                     :redo-btn      redo-btn
-                     :preview-btn   preview-btn
-                     :preview-text  preview-text}]
+        buttons     {:undo-btn       undo-btn
+                     :redo-btn       redo-btn
+                     :preview-btn    preview-btn
+                     :preview-text   preview-text
+                     :autosave-warn  autosave-warn}]
     (apply-toolbar-state! buttons (toolbar-state @state/app-state))
     (add-watch state/app-state ::toolbar
                (fn [_ _ old-state new-state]

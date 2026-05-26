@@ -178,3 +178,62 @@
 (deftest sanitize-doc-leaves-clean-doc-unchanged
   (let [doc (doc-with-attr "href" "/page")]
     (is (= doc (sn/sanitize-doc doc)))))
+
+;; --- identifier-shape scanner --------------------------------------------
+;;
+;; Every doc field below is interpolated verbatim into emitted CLJS / JS
+;; source by `bareforge.export.*`. A character outside the identifier
+;; regex can break out of a string literal in the generated artifact —
+;; the load-boundary scanner refuses the file so the export pipeline
+;; never sees the smuggled value.
+
+(defn- doc-with-node [extra-keys]
+  (let [node (merge {:id "n-1" :tag "x-button" :attrs {} :props {} :slots {}
+                     :layout {:placement :flow}}
+                    extra-keys)]
+    (assoc-in (m/empty-document) [:root :slots "default"] [node])))
+
+(deftest unsafe-findings-flags-attr-key-with-quote
+  (let [f (sn/unsafe-findings
+           (doc-with-node {:attrs {"foo\")]; alert('x" "1"}}))]
+    (is (= 1 (count f)))
+    (is (str/includes? (:reason (first f)) "attr key"))))
+
+(deftest unsafe-findings-flags-binding-key-with-paren
+  (let [f (sn/unsafe-findings
+           (doc-with-node {:bindings {"open)bad" {:field :x :direction :read}}}))]
+    (is (= 1 (count f)))
+    (is (str/includes? (:reason (first f)) "binding prop name"))))
+
+(deftest unsafe-findings-flags-action-ref-with-quote
+  (let [aref (keyword "app.cart.events" "foo\"-bar")
+        f    (sn/unsafe-findings
+              (doc-with-node
+               {:events [{:trigger    "click"
+                          :action-ref aref}]}))]
+    (is (seq f))
+    (is (some #(str/includes? (:reason %) "action-ref") f))))
+
+(deftest unsafe-findings-flags-field-name-with-bracket
+  (let [bad-name (keyword "bad-name]; (do-evil)")
+        f        (sn/unsafe-findings
+                  (doc-with-node
+                   {:name   "thing"
+                    :fields [{:name bad-name :type :string}]}))]
+    (is (some #(str/includes? (:reason %) "field-def :name") f))))
+
+(deftest unsafe-findings-accepts-normal-identifiers
+  (is (empty?
+       (sn/unsafe-findings
+        (doc-with-node
+         {:name     "cart"
+          :attrs    {"variant" "primary" "data-foo" "bar"}
+          :bindings {"open" {:field :open :direction :read}
+                     "xlink:href" {:field :the-href :direction :read}}
+          :events   [{:trigger "click"
+                      :action-ref :app.cart.events/add-to-cart
+                      :payload [{:field :item-id}]}]
+          :fields   [{:name :is-open :type :boolean}]
+          :actions  [{:name      :toggle-open
+                      :operation :toggle
+                      :target-field :is-open}]})))))

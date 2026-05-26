@@ -12,24 +12,35 @@
 
 ;; --- pure ----------------------------------------------------------------
 
+(def ^:const supported-version
+  "Schema version this build writes and accepts. Bump in lockstep with
+   any breaking change to `serialize` output. A reader that sees an
+   unknown version refuses to load rather than partially installing the
+   wrong shape — load failure is recoverable (the user falls back to
+   the file-open path), silent corruption is not."
+  1)
+
 (defn serialize
   "Project the persistable slice of app-state. Only :document and
    :theme survive a reload — history, selection, mode, and ui are
    all reset when the page loads."
   [app-state]
   {:format   "bareforge-project"
-   :version  1
+   :version  supported-version
    :document (:document app-state)
    :theme    (:theme app-state)})
 
 (defn deserialize
   "Parse an EDN string previously written by `serialize`. Returns nil
-   for anything that fails to parse or fails the format check."
+   for anything that fails to parse, fails the format check, or
+   carries an unsupported `:version`. Strict version match (no
+   silent fallback) so a future bump fails loud."
   [raw]
   (try
     (let [v (edn/read-string raw)]
       (when (and (map? v)
                  (= "bareforge-project" (:format v))
+                 (= supported-version (:version v))
                  (contains? v :document))
         v))
     (catch :default _ nil)))
@@ -111,12 +122,34 @@
         (fn [^js db]
           (let [payload (pr-str (serialize @state/app-state))]
             (write-value db autosave-key payload))))
-      (.catch (fn [^js err] (js/console.warn "autosave failed" err)))))
+      (.then (fn [_]
+               ;; Clear a previously-set failure flag so the UI's
+               ;; warning indicator disappears as soon as autosave
+               ;; recovers (e.g. user freed quota by deleting old
+               ;; projects in another tab).
+               (when (get-in @state/app-state [:ui :autosave-failed?])
+                 (state/assoc-ui! :autosave-failed? false))))
+      (.catch (fn [^js err]
+                (js/console.warn "autosave failed" err)
+                ;; Surface the failure as a UI flag so a toolbar /
+                ;; status component can warn the user — a silent
+                ;; console.warn lets them believe their work is safe
+                ;; when it isn't.
+                (state/assoc-ui! :autosave-failed? true)))))
 
 (defn- schedule-save! []
   (cancel-timer!)
   (unchecked-set autosave-timer "id"
                  (js/setTimeout save-now! autosave-delay-ms)))
+
+(defn cancel-autosave-timer!
+  "Cancel any pending autosave write. Callers on the load path
+   (`project-file/apply-loaded-project!`) use this to drop the timer
+   the watcher just armed when swapping in a freshly opened file —
+   otherwise the pending `save-now!` fires after `clear-autosave!`
+   completes and re-populates the autosave slot."
+  []
+  (cancel-timer!))
 
 (defn install-autosave!
   "Install the autosave watcher on `state/app-state`. Writes trigger
@@ -131,28 +164,25 @@
 ;; --- restore --------------------------------------------------------------
 
 (defn restore!
-  "Attempt to restore the last autosave into `state/app-state`. Returns
-   a JS Promise resolving to true when content was restored, false
-   otherwise (no autosave present or parse/read failure)."
+  "Read the persisted autosave from IDB and resolve to the parsed
+   project payload (already deserialised + version-checked) or nil
+   when nothing is stored, parse fails, or the IDB read errors.
+
+   Does NOT install the result. The caller (see
+   `storage/project-file/apply-autosave!`) is responsible for
+   validating the payload through the same load-boundary checks the
+   file-open path uses, so a corrupted or tampered autosave can't
+   bypass spec + sanitiser."
   []
   (-> (open-db)
       (.then (fn [db]
                (unchecked-set db-ref "db" db)
                (read-value db autosave-key)))
       (.then (fn [raw]
-               (if-let [parsed (and raw (deserialize raw))]
-                 (do
-                   (swap! state/app-state
-                          (fn [s]
-                            (-> s
-                                (assoc :document (:document parsed))
-                                (assoc :theme    (or (:theme parsed) (:theme s)))
-                                (assoc :dirty?   false))))
-                   true)
-                 false)))
+               (when raw (deserialize raw))))
       (.catch (fn [^js err]
                 (js/console.warn "autosave restore failed" err)
-                false))))
+                nil))))
 
 (defn clear-autosave!
   "Remove the autosave key. Called when a fresh project is opened from
