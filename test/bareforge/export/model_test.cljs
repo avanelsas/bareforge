@@ -39,6 +39,22 @@
   (is (= "cart"         (em/name->ns-segment "  Cart  ")))
   (is (= "my-group"     (em/name->ns-segment "My Group!"))))
 
+(deftest action-ref-canonical-ns-lowercases-group-segment
+  (testing "canonical form already lowercase passes through unchanged"
+    (is (= "app.cart.events"
+           (em/action-ref-canonical-ns :app.cart.events/add-to-cart))))
+  (testing "raw user-typed group is normalised via name->ns-segment"
+    (is (= "app.dashboard.events"
+           (em/action-ref-canonical-ns :app.Dashboard.events/tick)))
+    (is (= "app.product-feed.events"
+           (em/action-ref-canonical-ns
+            (keyword "app.Product Feed.events" "load"))))))
+
+(deftest action-ref-alias-strips-app-prefix
+  (is (= "cart.events"      (em/action-ref-alias :app.cart.events/add-to-cart)))
+  (is (= "dashboard.events" (em/action-ref-alias :app.Dashboard.events/tick))
+      "the alias agrees with the canonical ns minus the app. prefix"))
+
 (deftest unique-ns-name-suffix-on-collision
   (let [[n1 seen1] (em/unique-ns-name "cart" #{})
         [n2 seen2] (em/unique-ns-name "cart" seen1)

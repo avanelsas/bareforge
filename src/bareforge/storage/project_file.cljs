@@ -71,7 +71,11 @@
                (assoc-in [:history :future] [])
                (assoc    :dirty?    false)
                (assoc-in [:project-file :name]
-                         (or filename "untitled.json"))))))
+                         (or filename "untitled.json")))))
+  ;; The swap above fires the autosave watcher synchronously, arming
+  ;; a 750ms timer. Cancel it so the immediately-following
+  ;; `clear-autosave!` isn't re-clobbered by a stale `save-now!`.
+  (idb/cancel-autosave-timer!))
 
 (defn validate-project
   "Pure: check a deserialized project payload against
@@ -200,3 +204,31 @@
             (-> (state/initial-state)
                 (assoc :theme theme))))
   (idb/clear-autosave!))
+
+(defn apply-autosave!
+  "Install a parsed autosave `parsed` payload into `state/app-state`
+   after the same load-boundary checks the file-open path runs.
+   Returns true on success; false (with a console error naming the
+   findings) when the payload fails spec or sanitiser checks. Unlike
+   `apply-loaded-project!`, this leaves `:selection`, `:history`,
+   `:dirty?`, and `:project-file` alone — the autosave restore runs
+   on a fresh page-load, so there is no other state to clear."
+  [parsed]
+  (let [classification (classify-payload parsed)]
+    (case (:status classification)
+      :ok
+      (let [safe (update parsed :document sanitize/sanitize-doc)]
+        (swap! state/app-state
+               (fn [s]
+                 (-> s
+                     (assoc :document (:document safe))
+                     (assoc :theme    (or (:theme safe) (:theme s)))
+                     (assoc :dirty?   false))))
+        true)
+
+      ;; :unparseable / :invalid / :unsafe all collapse to "refuse and
+      ;; warn" — the page-load path has no UI surface to nag the user
+      ;; with, but a console error names the offending paths so a dev
+      ;; can recover by clearing IDB or opening the original .json.
+      (do (js/console.error "Autosave restore refused" (clj->js classification))
+          false))))

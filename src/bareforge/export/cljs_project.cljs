@@ -176,24 +176,11 @@
 (def ^:private collect-trigger-payload-fields  em/collect-trigger-payload-fields)
 (def ^:private collect-trigger-action-refs     em/collect-trigger-action-refs)
 
-(defn- action-ref->alias
-  "Turn an action-ref qualified keyword like :app.cart.events/add-to-cart
-   into the require alias string: \"cart.events\". Matches the
-   dot-notation alias convention used elsewhere in the generator.
-
-   The group segment is passed through `actions/name->ns-segment`
-   so an action-ref that was committed before the
-   `bareforge.doc.actions/action-ref` canonicalisation fix (e.g.
-   `:app.Dashboard.events/tick` in an older doc) still emits a
-   lowercase require — `[app.dashboard.events :as dashboard.events]`
-   matching the file at `src/app/dashboard/events.cljs`."
-  [ref]
-  (let [ns         (namespace ref)
-        first-dot  (.indexOf ns ".")
-        last-dot   (.lastIndexOf ns ".")
-        group-seg  (subs ns (inc first-dot) last-dot)
-        suffix     (subs ns last-dot)]   ;; ".events" or ".subs"
-    (str (actions/name->ns-segment group-seg) suffix)))
+(def ^:private action-ref->alias
+  "Shared action-ref → require-alias helper. Lives in the export
+   model so the cljs and vanilla-js plugins agree byte-for-byte on
+   the canonical form (see `em/action-ref-canonical-ns` for why)."
+  em/action-ref-alias)
 
 ;; --- :write / :read-write binding → DOM event handler ---------------------
 ;;
@@ -390,7 +377,12 @@
    template sub-group emits its iteration form; later encounters
    return nil so a parent with N seed-backed clones still emits
    one iteration. Singleton sub-groups return the plain
-   `(<ns>.views/<ns>)` call as a `:raw` value."
+   `(<ns>.views/<ns>)` call as a `:raw` value.
+
+   Template-source resolution routes through
+   `em/resolve-template-source` — single source of truth shared with
+   the vanilla-js plugin, so both targets pick the same source for
+   every instance."
   [ctx child gname tpl? rendered-tpls]
   (let [{:keys [doc all-groups field-owner-ns-map]} ctx]
     (cond
@@ -398,24 +390,23 @@
       [nil rendered-tpls]
 
       tpl?
-      (let [;; Fall back to the (single) collection field that
-            ;; points at this template when the instance has no
-            ;; explicit :source-field / :source-sub set. Lets the
-            ;; user declare a collection + name the template
-            ;; without also having to manually wire the
-            ;; 'Rendered from' source in the inspector.
-            fallback  (when (and (nil? (:source-sub child))
-                                 (nil? (:source-field child)))
-                        (stateful-host-for-template
-                         doc all-groups gname))
-            src-field (or (:source-field child)
-                          (when fallback (keyword (:field-name fallback))))
-            field-ns  (or (get field-owner-ns-map (:source-field child))
-                          (when fallback (:ns-name fallback)))]
-        [(collection-iteration-form gname
-                                    (:source-sub child)
-                                    src-field
-                                    field-ns)
+      (let [src       (em/resolve-template-source
+                       (assoc child :ns-name gname)
+                       doc all-groups field-owner-ns-map)
+            ;; Map the resolver's :kind back onto the three values
+            ;; `collection-iteration-form` already accepts. :source-sub
+            ;; carries the explicit sub keyword; :source-field carries
+            ;; an explicit field + owner; :auto-host is the implicit
+            ;; fallback where the field-name is a string we re-key.
+            [source-sub source-field field-owner-ns]
+            (case (and src (:kind src))
+              :source-sub   [(:sub src) nil nil]
+              :source-field [nil (:field src) (:owner-ns src)]
+              :auto-host    [nil
+                             (keyword (:field-name src))
+                             (:owner-ns src)]
+              [nil nil nil])]
+        [(collection-iteration-form gname source-sub source-field field-owner-ns)
          (conj rendered-tpls gname)])
 
       :else

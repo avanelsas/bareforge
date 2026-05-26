@@ -50,8 +50,19 @@
   (is (nil? (idb/deserialize "{:format \"other\" :document {}}")))
   (is (nil? (idb/deserialize nil))))
 
+(deftest deserialize-rejects-unsupported-version
+  (is (nil? (idb/deserialize (pr-str {:format "bareforge-project"
+                                      :version 999
+                                      :document (m/empty-document)})))
+      "future version is refused so a build older than the writer fails
+       loud instead of partially installing an unknown shape")
+  (is (nil? (idb/deserialize (pr-str {:format "bareforge-project"
+                                      :document (m/empty-document)})))
+      "missing version is treated as unsupported — version is part of
+       the wire contract, not optional"))
+
 (deftest deserialize-accepts-minimal-valid
   (is (some? (idb/deserialize (pr-str {:format "bareforge-project"
-                                       :version 1
+                                       :version idb/supported-version
                                        :document (m/empty-document)
                                        :theme {}})))))
