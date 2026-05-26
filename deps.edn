@@ -2,7 +2,7 @@
  :deps  {org.clojure/clojure          {:mvn/version "1.12.0"}
          org.clojure/clojurescript    {:mvn/version "1.11.132"}
          thheller/shadow-cljs         {:mvn/version "2.28.18"}
-         com.github.avanelsas/baredom {:mvn/version "3.2.0"}
+         com.github.avanelsas/baredom {:mvn/version "3.3.0"}
          ;; test.check is required only by property tests under
          ;; test/bareforge/**/*_property_test.cljs. Closure Advanced
          ;; doesn't include namespaces no production code requires,
