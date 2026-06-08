@@ -121,6 +121,13 @@
   (testing "older nodes without a :placement key still get flow handles"
     (is (= :flow (sel/resize-mode-for-node {:id "n" :layout {}})))))
 
+(deftest resize-mode-overlay-tags-get-no-handles
+  (testing "overlay components size via CSS vars, not flow w/h — no handles"
+    (doseq [tag ["x-sidebar" "x-drawer" "x-modal" "x-popover"]]
+      (is (nil? (sel/resize-mode-for-node
+                 {:id "n" :tag tag :layout {:placement :flow}}))
+          (str tag " should expose no resize handles")))))
+
 ;; --- resize-mode-handle-allowed? -----------------------------------------
 
 (deftest handle-allowed-free-accepts-everything

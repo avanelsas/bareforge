@@ -21,6 +21,9 @@
    "x-menu-item"    ["click"]
    "x-checkbox"     ["change"]
    "x-popover"      ["x-popover-toggle" "mouseenter" "mouseleave"]
+   "x-sidebar"      ["toggle" "dismiss"]
+   "x-drawer"       ["x-drawer-toggle" "x-drawer-dismiss"]
+   "x-modal"        ["x-modal-toggle" "x-modal-dismiss"]
    "x-combobox"     ["x-combobox-change" "x-combobox-input" "x-combobox-toggle"]
    "x-multi-combobox" ["x-multi-combobox-change-request"
                        "x-multi-combobox-change"

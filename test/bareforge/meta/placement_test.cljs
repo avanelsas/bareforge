@@ -10,8 +10,12 @@
 ;; --- hint-for sanity ----------------------------------------------------
 
 (deftest hint-for-structural-tags
-  (is (= :top-full-width (:hint (p/hint-for "x-navbar"))))
-  (is (= :top-full-width (:hint (p/hint-for "x-sidebar")))))
+  (is (= :top-full-width (:hint (p/hint-for "x-navbar")))))
+
+(deftest hint-for-sidebar-is-flow
+  ;; A sidebar is a flow container the user places like any other block —
+  ;; not a top-snapped bar. (x-navbar keeps :top-full-width.)
+  (is (= :flow (:hint (p/hint-for "x-sidebar")))))
 
 (deftest hint-for-unknown-tag-defaults-to-flow
   (is (= :flow (:hint (p/hint-for "x-totally-made-up")))))
