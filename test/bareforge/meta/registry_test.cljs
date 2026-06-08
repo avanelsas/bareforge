@@ -146,7 +146,7 @@
 
 (deftest container-true-for-registered-multi-slot-tags
   (doseq [tag ["x-container" "x-grid" "x-card" "x-navbar"
-               "x-modal" "x-drawer" "x-popover"]]
+               "x-modal" "x-drawer" "x-popover" "x-sidebar"]]
     (is (true? (r/container? tag))
         (str tag " should be a container"))))
 

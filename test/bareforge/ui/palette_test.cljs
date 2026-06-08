@@ -58,6 +58,12 @@
   (testing "button seeds visible label"
     (is (= "Button" (:text (p/seed-for-tag "x-button"))))
     (is (= "Button" (get-in (p/seed-for-tag "x-button") [:attrs "label"]))))
+  (testing "overlay components seed open so they're visible on drop"
+    (doseq [tag ["x-sidebar" "x-drawer" "x-modal" "x-popover"]]
+      (is (= "" (get-in (p/seed-for-tag tag) [:attrs "open"]))
+          (str tag " should seed open=\"\""))))
+  (testing "sidebar seeds full width so a flow drop is a droppable block"
+    (is (= "100%" (get-in (p/seed-for-tag "x-sidebar") [:layout :width]))))
   (testing "unknown tags get empty overrides"
     (is (= {} (p/seed-for-tag "x-some-unknown")))))
 

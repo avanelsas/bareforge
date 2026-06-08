@@ -13,7 +13,6 @@
 
 (def placement
   {"x-navbar"          {:hint :top-full-width}
-   "x-sidebar"         {:hint :top-full-width}
 
    "x-gaussian-blur"   {:hint :background}
    "x-liquid-fill"     {:hint :background}

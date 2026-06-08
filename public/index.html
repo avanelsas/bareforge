@@ -1221,6 +1221,32 @@
     .chrome[data-mode="preview"] [data-bareforge-placement="background"] {
       pointer-events: none;
     }
+    /* --- editor-only overlay flattening (x-modal / x-drawer) ---------- */
+    /* x-modal and x-drawer are `:host { display: contents }` fixed-overlay
+       components: their dialog/panel paints via `position: fixed` and the
+       host itself generates no box. On the canvas that means the host
+       can't be measured, the empty-container affordance has nothing to
+       size, and the drop hit-test (which reads the host's
+       getBoundingClientRect) can never classify a drop as :inside — so
+       content can't be dropped into them. Their fixed backdrop also
+       covers the canvas and swallows pointer events. We flatten them for
+       editing only (scoped to `.canvas-host`, never exported): give the
+       host a real box, hide the backdrop, and render the dialog/panel in
+       normal flow through the public ::part() API so it can be selected,
+       measured, and dropped into. The `!important` flags override the
+       components' high-specificity `:host([data-open=true])` animation
+       rules. */
+    .canvas-host x-modal,
+    .canvas-host x-drawer { display: block; }
+    .canvas-host x-modal::part(backdrop),
+    .canvas-host x-drawer::part(backdrop) { display: none !important; }
+    .canvas-host x-modal::part(dialog),
+    .canvas-host x-drawer::part(panel) {
+      position: relative !important;
+      inset: auto !important;
+      transform: none !important;
+      max-height: none !important;
+    }
   </style>
 </head>
 <body>

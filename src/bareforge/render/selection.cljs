@@ -25,6 +25,7 @@
    pointerup keeps the undo history clean."
   (:require [bareforge.doc.model :as m]
             [bareforge.doc.ops :as ops]
+            [bareforge.meta.probes :as probes]
             [bareforge.render.canvas :as canvas]
             [bareforge.state :as state]))
 
@@ -79,10 +80,16 @@
    and grows `:width / :height` instead of moving x/y."
   [node]
   (when node
-    (case (get-in node [:layout :placement])
-      :background nil
-      :free       :free
-      :flow)))
+    ;; Overlay components (sidebar/drawer/modal/popover) size their
+    ;; panel from CSS custom properties, not from flow width/height —
+    ;; flow-resize handles would write `:layout :width/:height` onto the
+    ;; host and change nothing visible. Suppress handles for them; they
+    ;; are exactly the tags carrying a selection probe.
+    (when-not (probes/selection-selector (:tag node))
+      (case (get-in node [:layout :placement])
+        :background nil
+        :free       :free
+        :flow))))
 
 (def ^:private flow-handles #{:e :s :se})
 
@@ -153,6 +160,32 @@
 (defn- bcr->map [^js r]
   {:left (.-left r) :top (.-top r) :width (.-width r) :height (.-height r)})
 
+(defn- ^js nonzero-box
+  "Return `el` when its bounding box has a positive area, else nil. A
+   collapsed panel (e.g. an empty docked sidebar whose `min-block-size:
+   100%` resolves against an auto-height host) reports a zero-area box."
+  [^js el]
+  (when el
+    (let [r (.getBoundingClientRect el)]
+      (when (and (pos? (.-width r)) (pos? (.-height r)))
+        el))))
+
+(defn- ^js measure-target
+  "The element whose box the overlay should trace for the rendered host
+   `el` of `tag`. Overlay components paint a panel outside their host
+   box (a docked sidebar is narrower than its full-width host; drawer /
+   modal / popover panels are position:fixed and leave it entirely), so
+   for those we measure the shadow-DOM panel named by
+   `probes/selection-selector` — the border then hugs the visible
+   surface across every variant. Falls back to the host element when
+   there is no probe (the common case), the panel isn't in the shadow
+   tree yet, or the panel is collapsed to zero area (an empty docked
+   sidebar — the host then carries the empty-container affordance box)."
+  [^js el tag]
+  (or (when-let [sel (probes/selection-selector tag)]
+        (nonzero-box (some-> (.-shadowRoot el) (.querySelector sel))))
+      el))
+
 (defn- show!
   [^js overlay ^js el ^js host]
   (let [er   (.getBoundingClientRect el)
@@ -220,8 +253,9 @@
           (dotimes [i n]
             (let [{:keys [id el node]} (nth entries i)
                   ^js o (aget p i)
+                  ^js target (measure-target el (:tag node))
                   primary? (zero? i)]
-              (show! o el host)
+              (show! o target host)
               (if (and primary? single? (not= "root" id))
                 (let [mode (resize-mode-for-node node)]
                   (if mode

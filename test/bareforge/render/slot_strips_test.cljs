@@ -10,15 +10,16 @@
     ;; x-container are single-slot containers (they get one full-size
     ;; strip with a label). x-navbar / x-modal / x-drawer / x-popover /
     ;; x-split-pane are multi-slot containers (they get N subdivisions).
+    ;; x-sidebar is a single-slot container (one full-size strip).
     ;; Leaves like x-button / x-typography / x-icon have no :multiple?
     ;; slot, so `classify-position` never returns :inside for them and
     ;; the strips would be dead zones — `render-strips?` excludes them.
     (let [all-tags   (keys slots/slots)
           qualifiers (set (filter ss/render-strips? all-tags))]
-      (is (= #{"x-card" "x-grid" "x-container"
+      (is (= #{"x-card" "x-grid" "x-container" "x-sidebar"
                "x-navbar" "x-modal" "x-drawer" "x-popover" "x-split-pane"}
              qualifiers)
-          "eight container tags qualify; leaves (x-button / x-typography / x-icon) do not")))
+          "nine container tags qualify; leaves (x-button / x-typography / x-icon) do not")))
   (testing "unknown tags fall through to single-slot default and return false"
     (is (false? (ss/render-strips? "x-made-up-tag")))
     (is (false? (ss/render-strips? nil)))

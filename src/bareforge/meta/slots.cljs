@@ -40,6 +40,9 @@
     {:name "actions" :label "Actions" :multiple? true}
     {:name "toggle"  :label "Toggle"  :multiple? false}]
 
+   "x-sidebar"
+   [{:name "default" :label "Content" :multiple? true}]
+
    "x-typography"
    [{:name "default" :label "Text" :multiple? false}]
 

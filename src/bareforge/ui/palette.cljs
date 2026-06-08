@@ -107,6 +107,21 @@
     ;; integer-string coercion exists as a safety net for legacy
     ;; docs, not as the authoring default.
     "x-grid"       {:attrs {"columns" "repeat(3, 1fr)"}}
+    ;; Overlay components default to `open=false`, so a bare drop renders
+    ;; them closed — zero visible footprint on the canvas (collapsed
+    ;; height, full-width host). Seed them open so they're visible and
+    ;; selectable the moment they land. Presence-attr convention follows
+    ;; the root node's `"fluid" ""` (see doc.model/empty-document).
+    ;; A docked sidebar has no intrinsic width in its parent's layout, so
+    ;; in plain `:flow` it collapses to a thin strip. Seed `width:100%`
+    ;; so it lands as a full-width, droppable block; the empty-container
+    ;; affordance supplies the height. (This width was previously a side
+    ;; effect of the `:top-full-width` placement snap — now that the
+    ;; sidebar is correctly `:flow`, it belongs here as an explicit seed.)
+    "x-sidebar"    {:attrs {"open" ""} :layout {:width "100%"}}
+    "x-drawer"     {:attrs {"open" ""}}
+    "x-modal"      {:attrs {"open" ""}}
+    "x-popover"    {:attrs {"open" ""}}
     {}))
 
 ;; --- effectful ------------------------------------------------------------
