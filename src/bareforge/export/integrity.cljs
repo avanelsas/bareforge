@@ -43,9 +43,9 @@
 ;; --- pure: URL composition ----------------------------------------------
 
 (defn manifest-url
-  "Compose the URL of BareDOM's integrity manifest at version `v` on
-   the CDN rooted at `cdn-base` (e.g. `https://cdn.jsdelivr.net/npm/
-   @vanelsas/baredom`)."
+  "Compose the URL of BareDOM's integrity manifest at version `v` on the
+   CDN rooted at `cdn-base`
+   (e.g. `https://cdn.jsdelivr.net/npm/@vanelsas/baredom`)."
   [cdn-base v]
   (str cdn-base "@" v "/dist/integrity.json"))
 
