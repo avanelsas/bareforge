@@ -97,3 +97,28 @@
   (is (= "83%"  (cv/format-zoom-percent 0.834)))
   (is (= "25%"  (cv/format-zoom-percent cv/min-zoom)))
   (is (= "400%" (cv/format-zoom-percent cv/max-zoom))))
+
+;; --- editable-target? ----------------------------------------------------
+
+(deftest editable-target-recognises-native-inputs
+  (testing "Native text-editable tags arm typing, not pan"
+    (is (true? (cv/editable-target? #js {:tagName "INPUT"})))
+    (is (true? (cv/editable-target? #js {:tagName "TEXTAREA"})))
+    (is (true? (cv/editable-target? #js {:tagName "SELECT"})))
+    (is (true? (cv/editable-target? #js {:tagName "input"}))
+        "tag match is case-insensitive")
+    (is (true? (cv/editable-target? #js {:isContentEditable true
+                                         :tagName "DIV"}))
+        "contenteditable host counts as editable")))
+
+(deftest editable-target-rejects-non-editables
+  (testing "Non-editable targets fall through to the pan gesture"
+    (is (false? (cv/editable-target? #js {:tagName "DIV"})))
+    (is (false? (cv/editable-target? nil)))
+    ;; The crux of the bug: a keydown bubbling out of an inspector
+    ;; field's shadow DOM is retargeted to the custom-element host.
+    ;; That host must still be treated as non-editable here — the real
+    ;; editable check happens against composedPath()[0] (the inner
+    ;; native input), not this retargeted host.
+    (is (false? (cv/editable-target? #js {:tagName "X-SEARCH-FIELD"})))
+    (is (false? (cv/editable-target? #js {:tagName "X-TEXT-AREA"})))))

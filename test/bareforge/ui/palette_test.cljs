@@ -64,6 +64,8 @@
           (str tag " should seed open=\"\""))))
   (testing "sidebar seeds full width so a flow drop is a droppable block"
     (is (= "100%" (get-in (p/seed-for-tag "x-sidebar") [:layout :width]))))
+  (testing "table seeds a default 3-column track layout"
+    (is (= "repeat(3, 1fr)" (get-in (p/seed-for-tag "x-table") [:attrs "columns"]))))
   (testing "unknown tags get empty overrides"
     (is (= {} (p/seed-for-tag "x-some-unknown")))))
 

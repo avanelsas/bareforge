@@ -146,7 +146,15 @@
 
 (deftest container-true-for-registered-multi-slot-tags
   (doseq [tag ["x-container" "x-grid" "x-card" "x-navbar"
-               "x-modal" "x-drawer" "x-popover" "x-sidebar"]]
+               "x-modal" "x-drawer" "x-popover" "x-sidebar"
+               "x-table" "x-table-row" "x-table-cell"
+               ;; structural containers registered so they're droppable
+               "x-bento-grid" "x-bento-item" "x-fieldset" "x-form"
+               "x-collapse" "x-tabs" "x-carousel" "x-breadcrumbs"
+               "x-timeline" "x-timeline-item" "x-spotlight-card"
+               "x-morph-stack" "x-proximity-list" "x-scroll"
+               "x-scroll-stack" "x-scroll-story" "x-scroll-timeline"
+               "x-scroll-parallax"]]
     (is (true? (r/container? tag))
         (str tag " should be a container"))))
 

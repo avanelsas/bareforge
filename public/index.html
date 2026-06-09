@@ -1190,6 +1190,57 @@
     .canvas-host [data-bareforge-container][data-bareforge-hint]:empty::before {
       content: attr(data-bareforge-hint);
     }
+    /* --- editor-only table fallback (no `columns` configured) -------- */
+    /* x-table is `display:grid` and x-table-row is
+       `grid-template-columns: subgrid`, both driven by the table's
+       `columns` attribute. With no `columns`:
+         - the table falls back to *implicit* tracks that size to
+           max-content, so its cells overflow the page box and ignore the
+           container's padding; and
+         - the row's subgrid collapses to one column, stacking cells
+           vertically.
+       Until `columns` is configured (it's inspector-editable), give the
+       table one shrinkable full-width track so it fits the container, and
+       flow each row's cells into equal auto columns so they read
+       horizontally. The moment the user sets `columns`, neither rule
+       matches and the real subgrid takes over — on the canvas and in the
+       export. Editor-only (.canvas-host). */
+    .canvas-host x-table:not([columns]),
+    .canvas-host x-table[columns=""] {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+    .canvas-host x-table:not([columns]) x-table-row,
+    .canvas-host x-table[columns=""] x-table-row {
+      grid-template-columns: none !important;
+      grid-auto-flow: column !important;
+      grid-auto-columns: minmax(0, 1fr) !important;
+    }
+    /* The table/row/cell are nested grid items, and a grid item's default
+       `min-width: auto` (its content's min-content) blocks shrinking — so
+       populated cells refuse to fit and the row overflows the page box.
+       Let all three levels shrink to their track. Scoped to `:not(:empty)`
+       so EMPTY table elements keep the empty-container affordance's
+       `min-width: 120px` + `min-height: 80px` — otherwise an empty table
+       collapses in a flex/grid parent and has no droppable footprint to
+       drop the first row into. */
+    .canvas-host x-table:not(:empty),
+    .canvas-host x-table-row:not(:empty),
+    .canvas-host x-table-cell:not(:empty) { min-width: 0 !important; }
+    /* An EMPTY cell beside populated siblings is still a subgrid (or
+       auto-flow) grid item, not a standalone drop zone. The generic
+       empty-container affordance adds `margin: 4px 0`, and a stretched grid
+       item fills `track − margins` — so the empty cell renders ~8px shorter
+       than its populated siblings and sits vertically centred (4px gap top
+       and bottom) instead of filling the row. Its `min-width: 120px` also
+       fights the table's equal-width column tracks. Zero both for empty
+       table cells: the cell then stretches to the row height and follows its
+       column track, while the affordance's `min-height` floor + dashed
+       (empty) label survive so an all-empty row keeps a droppable footprint
+       (stretch wins whenever a sibling makes the row taller). */
+    .canvas-host x-table-cell[data-bareforge-container]:empty {
+      margin: 0;
+      min-width: 0;
+    }
     /* Containers that host an absolute :background child get this
        class from the reconciler so they form a positioned ancestor
        without touching their own inline style. `isolation: isolate`

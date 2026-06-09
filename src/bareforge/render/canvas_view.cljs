@@ -211,21 +211,38 @@
                        :pan-y (+ (unchecked-get pan-state "start-pan-y") dy))]
       (state/set-canvas-view! view'))))
 
+(defn editable-target?
+  "Pure: true when `el` is a text-editable widget (native input/
+   textarea/select or a contenteditable host). Used to decide whether
+   a Space keystroke is the user typing vs. arming the canvas pan."
+  [^js el]
+  (boolean
+   (and el
+        (or (.-isContentEditable el)
+            (contains? #{"input" "textarea" "select"}
+                       (some-> el .-tagName .toLowerCase))))))
+
 (defn- on-keydown!
   "Track Space so a subsequent left-button drag pans. Ignored when the
    keystroke targets an editable widget — typing a space into an
    inspector field must not arm pan. Preview mode is also ignored so
-   spaces typed into the rendered page stay spaces."
+   spaces typed into the rendered page stay spaces.
+
+   Reads the deepest composed-path node, not `.-target`: inspector
+   fields are custom elements (x-search-field, x-text-area) whose real
+   input lives in shadow DOM. A keydown bubbling to window is retargeted
+   to the host, so `.-target` would be the custom-element tag and the
+   editable check would miss it — swallowing the space."
   [^js e]
   (when (and (= " " (.-key e))
              (not (.-repeat e))
              (not (space-down?))
              (edit-mode?))
-    (let [^js t (.-target e)
-          tag   (some-> t .-tagName .toLowerCase)
-          ce?   (and t (.-isContentEditable t))]
-      (when-not (or ce?
-                    (contains? #{"input" "textarea" "select"} tag))
+    (let [^js path (.composedPath e)
+          ^js t    (if (and path (pos? (.-length path)))
+                     (aget path 0)
+                     (.-target e))]
+      (when-not (editable-target? t)
         (.preventDefault e)
         (unchecked-set pan-state "space-down?" true)
         (update-host-cursor!)))))
