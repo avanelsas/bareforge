@@ -653,7 +653,11 @@
   {:category :data
    :label    "Table"
    :properties
-   [{:name "columns"     :kind :number}
+   ;; `columns` is a grid-template-columns track list; the :grid-columns
+   ;; transform lets the inspector show/edit a simple count (3) while the
+   ;; stored attribute stays a real track layout ("repeat(3, 1fr)").
+   ;; Matches x-grid's columns field.
+   [{:name "columns"     :kind :number :transform :grid-columns}
     {:name "row-count"   :kind :number}
     {:name "caption"     :kind :string-short}
     {:name "selectable"  :kind :enum :choices ["none" "single" "multi"]

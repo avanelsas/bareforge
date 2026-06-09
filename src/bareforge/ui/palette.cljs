@@ -107,6 +107,13 @@
     ;; integer-string coercion exists as a safety net for legacy
     ;; docs, not as the authoring default.
     "x-grid"       {:attrs {"columns" "repeat(3, 1fr)"}}
+    ;; x-table is a CSS grid; its `columns` attr is a grid-template-columns
+    ;; track list that its subgrid rows inherit. Seed a default 3-column
+    ;; layout (same shape/convention as x-grid) so a dropped table has a
+    ;; real, inspector-editable column config — its `columns` field shows
+    ;; "3" via the :grid-columns transform — instead of an empty field and
+    ;; cells that depend on the canvas auto-flow fallback.
+    "x-table"      {:attrs {"columns" "repeat(3, 1fr)"}}
     ;; Overlay components default to `open=false`, so a bare drop renders
     ;; them closed — zero visible footprint on the canvas (collapsed
     ;; height, full-width host). Seed them open so they're visible and

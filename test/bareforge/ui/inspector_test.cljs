@@ -61,6 +61,15 @@
   (let [node {:id "n" :tag "x-button" :attrs {} :props {}}]
     (is (nil? (model/current-value node {:name "variant" :kind :enum})))))
 
+(deftest grid-columns-transform-round-trips-table-columns
+  (testing "a seeded track layout shows as a plain count in the number field"
+    (let [node {:id "n" :tag "x-table" :attrs {"columns" "repeat(3, 1fr)"} :props {}}]
+      (is (= "3" (model/current-value
+                  node {:name "columns" :kind :number :transform :grid-columns})))))
+  (testing "a typed count commits as a track layout, custom lists pass through"
+    (is (= "repeat(5, 1fr)" (model/transform-for-commit :grid-columns "5")))
+    (is (= "2fr 1fr 1fr" (model/transform-for-commit :grid-columns "2fr 1fr 1fr")))))
+
 ;; --- inspector-model ------------------------------------------------------
 
 (deftest inspector-model-nil-without-selection

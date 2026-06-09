@@ -28,6 +28,78 @@
    "x-grid"
    [{:name "default" :label "Items" :multiple? true}]
 
+   "x-table"
+   [{:name "default" :label "Rows" :multiple? true}]
+
+   "x-table-row"
+   [{:name "default" :label "Cells" :multiple? true}]
+
+   "x-table-cell"
+   [{:name "default"   :label "Content"   :multiple? true}
+    {:name "sort-icon" :label "Sort icon" :multiple? false}]
+
+   ;; --- structural containers that collapse to ~0 height when empty ---
+   ;; Without an entry these fall through to the leaf default, so they get
+   ;; no container affordance and can't be dropped into. They all hold
+   ;; child components, so register a multiple-child slot.
+   "x-bento-grid"
+   [{:name "default" :label "Items" :multiple? true}]
+
+   "x-bento-item"
+   [{:name "default" :label "Content" :multiple? true}]
+
+   "x-fieldset"
+   [{:name "default" :label "Fields" :multiple? true}]
+
+   "x-form"
+   [{:name "default" :label "Fields" :multiple? true}]
+
+   "x-collapse"
+   [{:name "default" :label "Content" :multiple? true}]
+
+   "x-tabs"
+   [{:name "default" :label "Tabs" :multiple? true}]
+
+   "x-carousel"
+   [{:name "default" :label "Slides" :multiple? true}]
+
+   "x-breadcrumbs"
+   [{:name "default" :label "Items" :multiple? true}]
+
+   "x-timeline"
+   [{:name "default" :label "Items" :multiple? true}]
+
+   "x-timeline-item"
+   [{:name "label"   :label "Label"   :multiple? false}
+    {:name "icon"    :label "Icon"    :multiple? false}
+    {:name "default" :label "Content" :multiple? true}
+    {:name "actions" :label "Actions" :multiple? true}]
+
+   "x-spotlight-card"
+   [{:name "default" :label "Content" :multiple? true}]
+
+   "x-morph-stack"
+   [{:name "state" :label "States" :multiple? true}]
+
+   "x-proximity-list"
+   [{:name "default" :label "Items" :multiple? true}]
+
+   "x-scroll"
+   [{:name "default" :label "Content" :multiple? true}]
+
+   "x-scroll-stack"
+   [{:name "default" :label "Content" :multiple? true}]
+
+   "x-scroll-story"
+   [{:name "media"   :label "Media" :multiple? false}
+    {:name "default" :label "Steps" :multiple? true}]
+
+   "x-scroll-timeline"
+   [{:name "default" :label "Content" :multiple? true}]
+
+   "x-scroll-parallax"
+   [{:name "default" :label "Content" :multiple? true}]
+
    "x-split-pane"
    [{:name "start" :label "Start panel" :multiple? true}
     {:name "end"   :label "End panel"   :multiple? true}]
