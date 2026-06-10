@@ -8,6 +8,25 @@ possible" — I won't promise API stability until `1.0.0` lands.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.7.1] — 2026-06-10
+
+### Fixed
+
+- **Tables and structural containers are usable on the canvas.** Empty
+  `x-table-cell`s now stretch to the row height: the generic
+  empty-container affordance's `margin` / `min-width` no longer fight the
+  table's subgrid, so a cell beside populated siblings fills its column
+  track instead of rendering short and vertically centred. Tables, rows
+  and cells — plus other structural containers — also get a droppable
+  footprint when empty. Editor-only; the export is unaffected. (#66)
+- **Overlay components (sidebar / drawer / modal) are usable on the
+  canvas.** They seed open on drop, the painted panel is measured for
+  selection, `x-sidebar` registers as a flow container, modal/drawer
+  overlays are flattened in the editor so they accept drops, and their
+  events are registered. (#65)
+
 ### Changed
 
 - **BareDOM 3.2.0 → 3.3.0.** Adapter-only upstream release: no new
@@ -15,6 +34,27 @@ possible" — I won't promise API stability until `1.0.0` lands.
   unchanged. Bareforge's only edits are the lockstep version bumps in
   `deps.edn` and `src/bareforge/meta/versions.cljs`. Release notes:
   https://github.com/avanelsas/baredom/releases/tag/v3.3.0
+- **Load-boundary hardening + codegen de-duplication.** Autosave restore
+  now routes through the same `classify-payload` + `sanitize-doc` checks
+  as file-open (a corrupted or tampered autosave can't bypass them), an
+  unknown `:version` is strict-rejected rather than partially installed,
+  the watcher-armed 750 ms save timer is cancelled on file load, and
+  autosave write failures surface a hidden ⚠ indicator in the toolbar
+  (`[:ui :autosave-failed?]`). Shared `action-ref` helpers and
+  template-source resolution are unified across both export plugins, and
+  a `volatile!` in marquee hit-testing is removed. (#64)
+- **GitHub Releases are published on tag push.** A `v*` tag now lifts its
+  matching `CHANGELOG.md` section as release notes and publishes the
+  Release (idempotent re-runs skip an already-published tag), so the
+  Releases page no longer stalls behind the tags. (#62)
+
+### Security
+
+- **Identifier-shape scanning at the load boundary.** Attribute keys,
+  binding prop names and `:field`s, trigger `:action-ref`s, payload
+  `:field`s, and field-def / action `:name`s carrying characters unsafe
+  for codegen are now refused when a document loads — closing the JS /
+  CLJS string-injection vectors in both export plugins. (#64)
 
 ## [0.7.0] — 2026-05-22
 

@@ -1,6 +1,6 @@
 {
   "name": "bareforge",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Visual landing-page builder for BareDOM",
   "scripts": {
